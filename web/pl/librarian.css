@@ -284,6 +284,45 @@
   color: var(--pl-text-dim);
 }
 
+/* --------------------------------------------------------------------------
+   Link toggle — sits immediately left of the target chip so the two read as
+   one statement: "⇅ linked  →  #12 Prompt Librarian".
+
+   Same pill geometry as .pl-target rather than .pl-chip: these two belong to
+   the header, and matching the neighbour matters more than matching the
+   filter chips down in the rail.
+   -------------------------------------------------------------------------- */
+.pl-link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--pl-border);
+  border-radius: 999px;
+  background: var(--pl-bg-pane);
+  font-family: var(--pl-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--pl-text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color var(--pl-fast) ease, color var(--pl-fast) ease,
+    background-color var(--pl-fast) ease;
+}
+
+.pl-link:hover {
+  border-color: var(--pl-accent);
+  color: var(--pl-text);
+}
+
+/* Linked is the default and the safe state, so it is the one that lights up. */
+.pl-link.is-on {
+  background: var(--pl-accent-soft);
+  border-color: var(--pl-accent);
+  color: var(--pl-accent);
+}
+
 .pl-target {
   flex: 0 0 auto;
   display: inline-flex;

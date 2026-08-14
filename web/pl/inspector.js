@@ -71,6 +71,7 @@ export function mountInspector(el, ctx) {
   const h = D.h || fallbackH;
   const clearEl = D.clear || ((n) => { if (n) n.textContent = ""; return n; });
   const debounce = D.debounce || fallbackDebounce;
+  const rafThrottle = D.rafThrottle || fallbackRafThrottle;
   const charCount = D.charCount || ((s) => (s == null ? 0 : Array.from(String(s)).length));
   const estimateTokens = D.estimateTokens || ((s) => (String(s || "").trim() ? String(s).trim().split(/\s+/).length : 0));
   const starsOf = D.stars || ((r) => "*".repeat(Math.max(0, Math.min(5, Math.round(r || 0)))));
@@ -734,11 +735,61 @@ export function mountInspector(el, ctx) {
       dupePaused = false;
       scheduleDupes();
       scheduleDraft();
+      // The one outbound hook. Every edit path funnels through here — the
+      // textarea's `oninput`, insertAtCaret() and setBody() — so binding it in
+      // one place is what keeps the node from ever missing a keystroke.
+      pushBody();
     }
   }
 
   const scheduleDupes = debounce(() => runDupes(false), DUPE_DEBOUNCE_MS);
   const scheduleDraft = debounce(() => saveDraft(), DRAFT_DEBOUNCE_MS);
+
+  /* ------------------------------------------------------------------ *
+   * Node binding — outbound half.                                       *
+   * --------------------------------------------------------------------
+   * modal.js owns the binding itself (the link toggle, the observer, the
+   * echo guard). This end only has to answer one question: is this edit
+   * ours to push? It is not, when the edit ARRIVED from the node — pushing
+   * it straight back would be a round trip for nothing, and on a slow
+   * frontend a visible one.
+   * ------------------------------------------------------------------ */
+
+  /**
+   * The last body that arrived FROM the node.
+   *
+   * Deliberately a value, not a flag or a depth counter: `pushBody` is
+   * rAF-coalesced, so it runs a frame after the edit that queued it — any
+   * "we are currently applying an inbound value" marker would already be
+   * cleared by then and would suppress nothing. Comparing the buffer against
+   * the last inbound value still holds a frame later, and self-clears the
+   * moment the user types anything of their own.
+   */
+  let lastInbound = null;
+
+  /** rAF-coalesced: a fast typist must not force a canvas repaint per key. */
+  const pushBody = rafThrottle(() => {
+    if (disposed) return;
+    if (lastInbound !== null && buf.body === lastInbound) return;
+    if (typeof ctx.pushToNode !== "function") return;
+    try {
+      ctx.pushToNode(buf.body);
+    } catch (_) { /* the binding is a convenience here, never a dependency */ }
+  });
+
+  /**
+   * Push a whole record — body AND link — to the node. Used only on explicit
+   * user selection; see the `push` option on adoptRecord() for why it is not
+   * simply "whenever the record changes".
+   */
+  function pushRecord(rec) {
+    if (!rec || typeof ctx.pushToNode !== "function") return;
+    lastInbound = null;
+    pushBody.cancel();
+    try {
+      ctx.pushToNode(String(rec.body == null ? "" : rec.body), String(rec.id == null ? "" : rec.id));
+    } catch (_) { /* never block a selection on the binding */ }
+  }
 
   async function runDupes(force) {
     if (disposed) return;
@@ -897,6 +948,23 @@ export function mountInspector(el, ctx) {
    * Selection / adoption.                                               *
    * ------------------------------------------------------------------ */
 
+  /**
+   * Take a server record as the new selection.
+   *
+   * @param {object|null} rec
+   * @param {{silent?: boolean, push?: boolean}} [opts]
+   *
+   * `push` writes the record through to the node (body AND `prompt_id` — the
+   * link is what makes usage counting work). It is opt-in, and set on exactly
+   * one path: a user picking a row. The three callers that must NOT push are
+   * the reason it is not simply "always":
+   *
+   *   - adoptRecord(null) on deselect — would wipe the node's prompt;
+   *   - the background refresh in onCurrentChanged() — the record did not
+   *     change under the user, the server just answered again;
+   *   - the initial paint from restored state — merely OPENING the panel must
+   *     never rewrite the node.
+   */
   function adoptRecord(rec, opts = {}) {
     current = rec || null;
     baseline = rec ? JSON.parse(JSON.stringify(rec)) : null;
@@ -906,6 +974,7 @@ export function mountInspector(el, ctx) {
     buf.tags = nb.tags;
     buf.body = nb.body;
     renderedId = rec && rec.id ? String(rec.id) : null;
+    if (opts.push && rec) pushRecord(rec);
     try {
       if (typeof ctx.setState === "function") {
         ctx.setState({ current: current, baseline: baseline, buffer: getBuffer() }, { silent: opts.silent !== false });
@@ -944,7 +1013,8 @@ export function mountInspector(el, ctx) {
     let rec;
     try { rec = unwrapRecord(ensureOk(r)); } catch (err) { toast("could not load prompt: " + errMsg(err), "error"); return; }
     if (!rec || !rec.id) { toast("prompt not found", "error"); return; }
-    adoptRecord(rec);
+    // The user picked this row, so it goes to the node — body and link both.
+    adoptRecord(rec, { push: true });
     maybeOfferDraft(rec);
     scheduleDupes.cancel();
     runDupes(false);
@@ -1096,7 +1166,7 @@ export function mountInspector(el, ctx) {
     const fn = pickFn(mod, ["openVersions", "openVersionsDialog", "versionsDialog"]);
     if (!fn) { toast("versions: " + NOT_YET); return; }
     try {
-      fn(ctx, { id: current.id, record: current, onRestored: (rec) => { if (rec) adoptRecord(unwrapRecord(rec)); } });
+      fn(ctx, { id: current.id, record: current, onRestored: (rec) => { if (rec) adoptRecord(unwrapRecord(rec), { push: true }); } });
     } catch (err) { toast("versions: " + NOT_YET); }
   }
 
@@ -1193,7 +1263,7 @@ export function mountInspector(el, ctx) {
     const rec = Object.assign({}, current || {}, getBuffer());
     let res;
     try {
-      res = typeof ctx.loadIntoNode === "function" ? ctx.loadIntoNode(rec) : { ok: false, reason: "node-missing" };
+      res = typeof ctx.loadIntoNode === "function" ? ctx.loadIntoNode(rec) : { ok: false, reason: "no_loader" };
     } catch (err) {
       toast("could not load into node: " + errMsg(err), "error");
       return;
@@ -1202,9 +1272,14 @@ export function mountInspector(el, ctx) {
       toast(isDirty() ? "loaded into node (unsaved draft)" : "loaded into node", "success");
       return;
     }
+    // These codes come from modal.js `loadIntoNode` / bind.js `writeNodeText`
+    // and are underscored there. They used to be spelt with hyphens here,
+    // which meant every branch fell through to the generic message.
     const reason = res && res.reason;
-    if (reason === "node-missing") toast("target node is gone — pick another in the header", "error");
-    else if (reason === "no-text-widget") toast("target node has no text widget", "error");
+    if (reason === "stale_target") toast("target node is gone — pick another in the header", "error");
+    else if (reason === "no_text_widget") toast("target node has no text widget", "error");
+    else if (reason === "no_record") toast("nothing to load", "error");
+    else if (reason === "no_loader") toast("the panel is not connected to the graph", "error");
     else toast("could not load into node" + (reason ? ": " + reason : ""), "error");
   }
 
@@ -1337,7 +1412,9 @@ export function mountInspector(el, ctx) {
     if (!rec || !rec.id) { toast("save failed: no record returned", "error"); return null; }
     if (current && current.id) clearDraft(current.id);
     clearDraft(rec.id);
-    adoptRecord(rec, { silent: false });
+    // push: a save can MINT AN ID ("save as new"). If the node keeps the old
+    // one — or none — usage silently stops counting against what just saved.
+    adoptRecord(rec, { silent: false, push: true });
     toast(isUpdate ? "saved" : "created " + LDQUO + rec.name + RDQUO, "success");
     if (typeof ctx.refreshAll === "function") ctx.refreshAll();
     scheduleDupes.cancel();
@@ -1400,7 +1477,7 @@ export function mountInspector(el, ctx) {
             // Take the server's copy; the local edit is dropped (it is still
             // in the sessionStorage draft until the next clean save).
             saveDraft();
-            adoptRecord(fresh, { silent: false });
+            adoptRecord(fresh, { silent: false, push: true });
             maybeOfferDraft(fresh);
             toast("reloaded their version");
             scheduleDupes.cancel();
@@ -1628,7 +1705,7 @@ export function mountInspector(el, ctx) {
       if (mine) clearDraft(mine);
       if (rec && rec.id) {
         clearDraft(rec.id);
-        adoptRecord(rec, { silent: false });
+        adoptRecord(rec, { silent: false, push: true });
         toast("merged into " + LDQUO + rec.name + RDQUO, "success");
       } else {
         toast("merged", "success");
@@ -1675,7 +1752,7 @@ export function mountInspector(el, ctx) {
       );
       if (rec && rec.id) {
         clearDraft(rec.id);
-        adoptRecord(rec, { silent: false });
+        adoptRecord(rec, { silent: false, push: true });
       }
       toast("overwrote " + LDQUO + m.name + RDQUO, "success");
       if (typeof ctx.refreshAll === "function") ctx.refreshAll();
@@ -1774,8 +1851,30 @@ export function mountInspector(el, ctx) {
    * Public surface.                                                     *
    * ------------------------------------------------------------------ */
 
-  function setBody(text) {
-    buf.body = String(text == null ? "" : text);
+  /**
+   * Replace the prompt body.
+   *
+   * @param {string} text
+   * @param {{fromNode?: boolean}} [opts] `fromNode` marks the inbound half of
+   *   the node binding: the value already IS what the node holds, so it must
+   *   not be pushed back, and it must not steal the box from someone who is
+   *   typing in it. Focus is the tiebreaker — whichever textarea the caret is
+   *   in wins, which is the only rule that never surprises the user.
+   */
+  function setBody(text, opts = {}) {
+    const next = String(text == null ? "" : text);
+    if (opts.fromNode) {
+      if (buf.body === next) return;
+      try {
+        if (typeof document !== "undefined" && document.activeElement === ta) return;
+      } catch (_) { /* no document.activeElement — apply it */ }
+      lastInbound = next;
+      buf.body = next;
+      ta.value = next;
+      afterEdit(true);
+      return;
+    }
+    buf.body = next;
     ta.value = buf.body;
     afterEdit(true);
   }
@@ -1790,6 +1889,8 @@ export function mountInspector(el, ctx) {
     dupeSeq++; // any in-flight response is now stale by definition
     try { scheduleDupes.cancel(); } catch (_) {}
     try { scheduleDraft.cancel(); } catch (_) {}
+    // A queued rAF push would fire into a node we no longer own the pane for.
+    try { pushBody.cancel(); } catch (_) {}
     // Abort in-flight lane work when the lane exposes a way to.
     try {
       const l = ctx.lanes || {};
@@ -1846,6 +1947,21 @@ function fallbackH(tag, props, ...children) {
   };
   children.forEach(add);
   return el;
+}
+
+function fallbackRafThrottle(fn) {
+  let queued = false;
+  let lastArgs = null;
+  const w = (...a) => {
+    lastArgs = a;
+    if (queued) return;
+    queued = true;
+    const run = () => { queued = false; const x = lastArgs; lastArgs = null; fn(...(x || [])); };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(run);
+    else setTimeout(run, 16);
+  };
+  w.cancel = () => { queued = false; lastArgs = null; };
+  return w;
 }
 
 function fallbackDebounce(fn, ms) {

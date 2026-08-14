@@ -34,6 +34,30 @@ Open it on a machine with no library and it still renders and still runs; it jus
 or show a name. That is also why there are no combo widgets: it sidesteps the entire class of
 LiteGraph/Vue combo-reactivity problems the older node has to work around.
 
+### The node and the panel are one field
+
+The panel's prompt box and the node's `text` widget are **two views of the same value**.
+Type in either and the other follows; the node's card preview follows too. Picking a prompt in
+the rail loads it straight into the node — body *and* `prompt_id`, which is what keeps usage
+counting honest.
+
+The header carries a **⇅ linked** chip. Turn it off to browse, edit and save library records
+without touching the node at all; `Load into node` still pushes on demand. The setting is
+remembered across reloads.
+
+Three rules decide who wins when both sides move at once:
+
+- **On connect the node wins.** Opening the panel, or re-pointing it at another node, pulls that
+  node's text in — it is what will actually render. With nothing selected it lands in the box as an
+  unsaved buffer, ready for `Save as new`.
+- **The caret wins.** Text arriving from the node is not applied while you are typing in the panel's
+  box.
+- **Selection is a commit, deselection is not.** Picking a row writes the node; clearing the
+  selection, a background refresh, or merely opening the panel never does.
+
+Binding to the node changes nothing about saving: text arriving from the node is an ordinary edit,
+so it marks the record `edited` and still goes through the full dupe-and-staleness gate below.
+
 ### The librarian panel
 
 Click **Open Librarian** on the node. The panel is a full-screen overlay:
@@ -187,7 +211,7 @@ librarian_wildcards.py   {a|b} / __file__ / [[snippet]] resolution
 librarian_api.py         31 routes under /prompt_librarian
 prompt_librarian.py      the node class
 web/pl_librarian.js      extension entry (the only file with import-time side effects)
-web/pl/*.js              api, dom, modal, list, inspector, dialogs, pickers
+web/pl/*.js              api, bind, dom, modal, list, inspector, dialogs, pickers
 web/pl/librarian.css     scoped dark theme
 tests/*.py               290 tests, stdlib + pytest only
 
@@ -290,6 +314,8 @@ via `addDOMWidget` (`buildDomFace` / `buildNodeCard`, with name, preview, star r
 falling back to plain button widgets (`buildButtonFace`) when the installed frontend doesn't mount
 it — hydrates metadata from the backend (`ensureHydrated`, `refreshMeta`), paints it (`paintFace`,
 `paintStars`), supports rating straight from the node, and opens the panel via `openLibrarian`.
+`bindFace` subscribes the card to bind.js so the preview line tracks edits made in the node's own
+text widget; it is independent of the panel and unsubscribes from a chained `onRemoved`.
 
 **`web/pl/api.js`** (627 lines) — the transport layer, and the only module under `web/pl/` that
 imports from ComfyUI. Uses `api.fetchApi` rather than bare `fetch` so the base URL / reverse-proxy
@@ -298,6 +324,20 @@ call site needs an AbortError try/catch), `ApiError`, `createLane` / `lanes` / `
 per-concern request coalescing, `caps` / `capable` for feature detection against the backend's
 `CAPABILITIES`, the `API` object with one method per route, and the metadata cache
 (`getPromptMeta`, `invalidateMeta`).
+
+**`web/pl/bind.js`** — the node ⇄ panel binding, and the only module that touches a LiteGraph
+widget's internals. `writeNodeText(node, {body, id})` is the single write path (used by both the live
+binding and `Load into node`): value first then callback, and it also sets the widget's backing
+`<textarea>` and dispatches a synthetic `input`, because assigning `.value` from JS fires no event and
+the on-canvas widget would otherwise keep painting stale text. `bindNode(node, onChange)` observes in
+three independent, individually optional layers — an `input`/`change` listener on that element, a
+chained `Object.defineProperty` over `widget.value`, and `poll()` driven by modal.js's existing 1 s
+heartbeat — because which of them exists depends on a frontend generation we cannot detect. The
+interception **chains onto the original descriptor** rather than replacing it: on the legacy frontend
+`value` is already an accessor over `inputEl`, and a plain data property on top silently disconnects
+the widget from its own element. Echoes are killed in one place for all three layers by `lastSeen`,
+the last value written or observed. `bindNode` reference-counts its subscribers, so the node card and
+the panel can both observe one node, and `unbind` restores exactly the descriptor it found.
 
 **`web/pl/dom.js`** (629 lines) — dependency-free DOM and formatting helpers, no ComfyUI import.
 `h()` hyperscript (with a `DIRECT_PROPS` set for props that must be assigned rather than
@@ -312,7 +352,11 @@ grapheme-aware `charCount` / `truncate` / `firstLine`, `estimateTokens`, `stars`
 inspector / footer DOM, the state store (`getState`, `setState`, `subscribe`), the layer stack
 (`pushLayer`, `popLayer`, `topLayer`), `toast()` and `confirmDialog()`, target-node resolution
 (`getTargetNodeId`, `loadIntoNode`), `refreshAll`, the shared `ctx()` handed to every submodule, and
-`openModal` / `closeModal`. It also installs the **key isolation** guard — a window-capture listener
+`openModal` / `closeModal`. It also owns the **node binding**: the `⇅ linked` toggle and its
+`localStorage` preference, `attachBinding` / `detachBinding` / `syncBinding` (reconciled on the same
+1 s heartbeat that re-resolves the target, so a re-pointed or re-created node is picked up without a
+hook of its own), and the `pushToNode` / `isLinked` / `setLinked` trio on `ctx`. The seed direction on
+attach is node → panel, deliberately: the node holds what will actually render. It also installs the **key isolation** guard — a window-capture listener
 that calls `stopImmediatePropagation()` on every key event originating inside `.pl-root` so ComfyUI's
 global shortcuts can't fire while you type — and re-delivers those events on its own key bus, which
 is why plain `addEventListener("keydown", …)` is dead code anywhere else in the panel. `list.js` and
@@ -328,7 +372,14 @@ the current page and a locally-filtered list would show rows whose badges disagr
 
 **`web/pl/inspector.js`** (1861 lines) — the right pane: name, category, tags, the prompt textarea
 with char/token counts and the `edited` marker, the duplicate-check panel, the four stat tiles and
-the action row. Single export, `mountInspector(el, ctx)`. Its reason for existing is the save flow:
+the action row. Single export, `mountInspector(el, ctx)`. Its half of the node binding is three
+hooks and no restructuring: `afterEdit()` pushes the buffer through an rAF-coalesced `pushBody` (so a
+fast typist costs one canvas repaint per frame, not per keystroke), `setBody(text, {fromNode})` marks
+the inbound direction and yields to whichever textarea holds the caret, and `adoptRecord(rec, {push})`
+writes body **and** `prompt_id` — opt-in, and set only on a user selection or a save, never on
+deselect, a background refresh, or the initial paint. The echo guard is `lastInbound`, a value rather
+than a flag, because the push is coalesced to the next frame and any "currently applying" marker would
+already be clear by the time it runs. Its reason for existing is the save flow:
 not-dirty check → staleness check → dupe gate (always re-run on save) → commit (`create`, or
 `update` with `expect_updated`, with a 409 re-entering the staleness step) → adopt the server's
 record as both `current` and `baseline`. The staleness and dupe dialogs are built inline via

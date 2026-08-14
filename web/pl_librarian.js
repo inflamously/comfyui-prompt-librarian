@@ -341,9 +341,64 @@ function ensureHydrated(node) {
 
   node.__plHydrated = true;
   hidePromptIdWidget(node);
+  bindFace(node);
   paintFace(node);
   refreshMeta(node);
   return true;
+}
+
+/**
+ * Repaint the node's face whenever its `text` widget changes.
+ *
+ * Without this the preview line is written once at hydration and then lies:
+ * `paintFace` reads `textW.value`, but nothing was ever watching it, so typing
+ * into the node's own widget left the card showing the previous prompt.
+ *
+ * Deliberately independent of the panel. This is about the NODE being honest
+ * about itself; the panel's two-way binding is modal.js's business and both
+ * can be installed at once — bind.js is idempotent per node and reference
+ * counts its subscribers.
+ *
+ * KNOWN LIMIT, accepted on purpose: no timer is started here, so bind.js's
+ * polling backstop does not run for the card on its own. On a frontend where
+ * neither the element listener nor the value interception can be installed the
+ * preview goes stale again until the panel is opened on this node — modal.js's
+ * heartbeat drives the poll then, and the resulting event reaches every
+ * subscriber including this one. A per-node interval running for the lifetime
+ * of every graph is not worth a preview line.
+ *
+ * The import is lazy and guarded like every other cross-module reach in this
+ * file: a missing bind.js costs a stale preview line, nothing more.
+ */
+function bindFace(node) {
+  if (node.__plFaceBound) return;
+  node.__plFaceBound = true;
+  import("./pl/bind.js")
+    .then((bind) => {
+      if (typeof bind.bindNode !== "function") throw new Error("bindNode missing");
+      const off = bind.bindNode(node, () => paintFace(node, node.__plMeta));
+      // LiteGraph calls onRemoved when the node leaves the graph. Chain rather
+      // than replace — another extension may have installed one.
+      const prev = node.onRemoved;
+      node.onRemoved = function (...args) {
+        try {
+          off();
+        } catch (_) {
+          /* best effort */
+        }
+        node.__plFaceBound = false;
+        if (typeof prev === "function") return prev.apply(this, args);
+        return undefined;
+      };
+    })
+    .catch((err) => {
+      node.__plFaceBound = false;
+      warnOnce(
+        "bind-missing",
+        "web/pl/bind.js is not available; the node card will not track edits made in the node's own text widget",
+        err && err.message
+      );
+    });
 }
 
 /**

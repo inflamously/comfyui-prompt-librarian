@@ -69,7 +69,7 @@ def store(tmp_path, monkeypatch, routes):
     handlers talking to the process-wide store.
     """
     target = librarian_store.LibrarianStore(path=str(tmp_path / "lib" / "library.json"))
-    for module in (api.utils, api.request):
+    for module in (api.utils, api.api):
         monkeypatch.setattr(module, "STORE", target)
     # id(store)-keyed caches must not survive between tests: CPython can hand a
     # new object the address of a collected one.
@@ -251,7 +251,7 @@ def test_dupes_all_coalesces_concurrent_callers(call, store, monkeypatch):
 
     async def _race():
         return await asyncio.gather(
-            *[api.request._dupes_all(0.9, False) for _ in range(5)])
+            *[api.api._dupes_all(0.9, False) for _ in range(5)])
 
     results = asyncio.run(_race())
     assert len(results) == 5

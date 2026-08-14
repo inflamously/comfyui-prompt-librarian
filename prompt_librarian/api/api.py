@@ -7,6 +7,13 @@ hands back. Read top to bottom it is index maintenance, the two shared search
 helpers, then GET, POST-reads and POST-writes in that order, with
 :func:`handlers` at the end.
 
+Every ``@_route`` carries its own description: an ``op`` (the OpenAPI operation
+id — stable, and what a generated client's method is called), a one-line
+summary, and the ``query`` / ``body`` / ``returns`` field maps in the shorthand
+:mod:`.utils` documents. None of it is read at runtime; it is what
+``scripts/openapi.py`` turns into a spec, and it lives here rather than in a
+table of its own so a handler and its contract cannot drift apart.
+
 ``_notify`` websocket events are emitted by the store itself; nothing here
 duplicates them.
 """
@@ -128,6 +135,10 @@ def _run_search(params, limit=None):
     )
 
 
+#: The selector every `/bulk/*` body accepts, spread into their `body` maps.
+_BULK_TARGET = {"ids": "str[]", "query": "object"}
+
+
 def _resolve_ids(data):
     """Ids for a bulk op: explicit ``ids``, or every hit of a stored ``query``.
 
@@ -149,7 +160,11 @@ def _resolve_ids(data):
 # GET
 # --------------------------------------------------------------------------- #
 
-@_route("get", "/ping")
+@_route("get", "/ping", op="ping",
+        summary="Store facts the panel boots from: schema, count, flags, capabilities.",
+        returns={"ok": "bool", "schema": "int", "count": "int", "path": "str",
+                 "corrupt": "bool", "readonly": "bool", "threshold": "float",
+                 "capabilities": "Capabilities"})
 async def ping(request):
     return _json({
         "ok": True,
@@ -163,7 +178,13 @@ async def ping(request):
     })
 
 
-@_route("get", "/search")
+@_route("get", "/search", op="searchPrompts",
+        summary="Filter, sort, page and badge the library. `q` and `query` are aliases.",
+        query={"q": "str", "query": "str", "category": "str", "tags": "str[]",
+               "dupes_only": "bool", "sort": "str=relevance|recent|most_used|az",
+               "mode": "str=all|any", "offset": "int", "limit": "int",
+               "threshold": "float", "match_id": "str"},
+        returns="SearchResult")
 async def search_route(request):
     params = _query(request)
     if _bool(params.get("dupes_only")):
@@ -173,7 +194,10 @@ async def search_route(request):
     return _json(_run_search(params))
 
 
-@_route("get", "/prompt")
+@_route("get", "/prompt", op="getPrompt",
+        summary="One full record, body included.",
+        query={"id": "str!"},
+        returns={"prompt": "Prompt"})
 async def prompt(request):
     pid = _str(_query(request).get("id"))
     rec = STORE.get(pid)
@@ -182,7 +206,10 @@ async def prompt(request):
     return _json({"prompt": rec})
 
 
-@_route("get", "/versions")
+@_route("get", "/versions", op="listVersions",
+        summary="Version history of one record as previews, never full bodies.",
+        query={"id": "str!", "chars": "int"},
+        returns={"id": "str", "versions": "VersionPreview[]"})
 async def versions(request):
     params = _query(request)
     pid = _str(params.get("id"))
@@ -192,7 +219,10 @@ async def versions(request):
     return _json({"id": pid, "versions": STORE.version_previews(pid, chars)})
 
 
-@_route("get", "/version")
+@_route("get", "/version", op="getVersion",
+        summary="One full version entry by index.",
+        query={"id": "str!", "index": "int!"},
+        returns={"id": "str", "index": "int", "version": "Version"})
 async def version(request):
     params = _query(request)
     pid = _str(params.get("id"))
@@ -200,12 +230,18 @@ async def version(request):
     return _json({"id": pid, "index": index, "version": STORE.version(pid, index)})
 
 
-@_route("get", "/taxonomy")
+@_route("get", "/taxonomy", op="getTaxonomy",
+        summary="Everything the filter rail needs: categories with counts, and tags.",
+        returns="Taxonomy")
 async def taxonomy(request):
     return _json(STORE.taxonomy())
 
 
-@_route("get", "/dupes/all")
+@_route("get", "/dupes/all", op="listAllDupes",
+        summary="Library-wide near-duplicate scan: per-record counts, groups and pairs.",
+        query={"threshold": "float", "exhaustive": "bool"},
+        returns={"threshold": "float", "exhaustive": "bool", "counts": "{int}",
+                 "groups": "str[][]", "pairs": "{str[]}"})
 async def dupes_all(request):
     params = _query(request)
     result = await _dupes_all(_threshold(params.get("threshold")),
@@ -219,7 +255,9 @@ async def dupes_all(request):
     })
 
 
-@_route("get", "/wildcards")
+@_route("get", "/wildcards", op="listWildcards",
+        summary="Names of the `__wildcard__` files, their directory and its signature.",
+        returns={"names": "str[]", "dir": "str", "signature": "str"})
 async def wildcards_route(request):
     files = wildcards.FILES
     return _json({
@@ -229,12 +267,16 @@ async def wildcards_route(request):
     })
 
 
-@_route("get", "/snippets")
+@_route("get", "/snippets", op="listSnippets",
+        summary="Every `[[snippet]]` body, keyed by name.",
+        returns={"snippets": "{Snippet}"})
 async def snippets(request):
     return _json({"snippets": STORE.snippets()})
 
 
-@_route("get", "/export")
+@_route("get", "/export", op="exportLibrary",
+        summary="The whole library envelope, ready to write to a file.",
+        returns={"library": "Library"})
 async def export(request):
     return _json({"library": await _offload(STORE.export_raw)})
 
@@ -290,7 +332,9 @@ async def _dupes_all(threshold, exhaustive):
 # POST — reads
 # --------------------------------------------------------------------------- #
 
-@_route("post", "/meta")
+@_route("post", "/meta", op="getPromptMeta",
+        body={"ids": "str[]!", "threshold": "float"},
+        returns={"meta": "{PromptMeta}"})
 async def meta(request):
     """Batch metadata for node faces. Ten Librarian nodes = one request."""
     data = await _body(request)
@@ -312,7 +356,11 @@ async def meta(request):
     return _json({"meta": out})
 
 
-@_route("post", "/dupes")
+@_route("post", "/dupes", op="findSimilar",
+        summary="One-vs-N near-duplicate check for a body given as `text` or as `id`.",
+        body={"text": "str", "id": "str", "exclude_id": "str", "threshold": "float",
+              "limit": "int", "summaries": "bool"},
+        returns={"matches": "DupeMatch[]", "threshold": "float"})
 async def dupes(request):
     """One-vs-N near-duplicate check — the hot path, fired on every edit.
 
@@ -339,7 +387,11 @@ async def dupes(request):
     return _json({"matches": list(matches), "threshold": threshold})
 
 
-@_route("post", "/compare")
+@_route("post", "/compare", op="compareBodies",
+        summary="Word-level diff of two bodies; each side is `<k>_text`, `<k>_id` or `<k>`.",
+        body={"a": "str", "a_id": "str", "a_text": "str",
+              "b": "str", "b_id": "str", "b_text": "str"},
+        returns="DiffResult")
 async def compare(request):
     """Word-level diff of two bodies, each given as an id or as raw text."""
     data = await _body(request)
@@ -357,7 +409,10 @@ def _side(data, key):
     return rec.get("body", "")
 
 
-@_route("post", "/resolve")
+@_route("post", "/resolve", op="resolveWildcards",
+        body={"text": "str!", "seed": "int", "n": "int"},
+        returns={"text": "str", "samples": "str[]", "picks": "WildcardPick[]",
+                 "missing": "str[]", "warnings": "str[]"})
 async def resolve(request):
     """Sample ``n`` wildcard resolutions in one call for the preview popover."""
     data = await _body(request)
@@ -382,7 +437,11 @@ async def resolve(request):
 # POST — writes (all offloaded)
 # --------------------------------------------------------------------------- #
 
-@_route("post", "/create")
+@_route("post", "/create", op="createPrompt",
+        summary="Create a record and return it.",
+        body={"name": "str", "body": "str", "category": "str", "tags": "str[]",
+              "rating": "int", "notes": "str", "pinned": "bool"},
+        returns={"prompt": "Prompt"})
 async def create(request):
     data = await _body(request)
 
@@ -403,7 +462,12 @@ async def create(request):
     return _json({"prompt": await _offload(_work)})
 
 
-@_route("post", "/update")
+@_route("post", "/update", op="updatePrompt",
+        summary="Partial update; omitted fields are left alone. 409 on `expect_updated` mismatch.",
+        body={"id": "str!", "name": "str", "body": "str", "category": "str",
+              "tags": "str[]", "rating": "int", "notes": "str", "pinned": "bool",
+              "snapshot": "bool", "expect_updated": "str"},
+        returns={"prompt": "Prompt"})
 async def update(request):
     data = await _body(request)
     pid = _str(data.get("id"))
@@ -431,7 +495,10 @@ async def update(request):
     return _json({"prompt": await _offload(_work)})
 
 
-@_route("post", "/rate")
+@_route("post", "/rate", op="ratePrompt",
+        summary="Set a record's 0-5 rating.",
+        body={"id": "str!", "rating": "int!"},
+        returns={"prompt": "Prompt"})
 async def rate(request):
     data = await _body(request)
     pid = _str(data.get("id"))
@@ -439,7 +506,10 @@ async def rate(request):
     return _json({"prompt": await _offload(STORE.set_rating, pid, rating)})
 
 
-@_route("post", "/delete")
+@_route("post", "/delete", op="deletePrompt",
+        summary="Delete a record outright — there is no trash bin.",
+        body={"id": "str!"},
+        returns={"deleted": "bool", "id": "str"})
 async def delete(request):
     data = await _body(request)
     pid = _str(data.get("id"))
@@ -455,7 +525,10 @@ async def delete(request):
     return _json({"deleted": True, "id": pid})
 
 
-@_route("post", "/usage")
+@_route("post", "/usage", op="recordUsage",
+        summary="Count one run. Writes nothing when `body` does not match the stored body.",
+        body={"id": "str!", "body": "str"},
+        returns={"prompt": "Prompt?", "counted": "bool"})
 async def usage(request):
     data = await _body(request)
     pid = _str(data.get("id"))
@@ -465,7 +538,10 @@ async def usage(request):
     return _json({"prompt": rec, "counted": rec is not None})
 
 
-@_route("post", "/bulk/delete")
+@_route("post", "/bulk/delete", op="bulkDeletePrompts",
+        summary="Delete every selected record. Selection is `ids` or a stored `query`.",
+        body=dict(_BULK_TARGET),
+        returns={"count": "int", "ids": "str[]"})
 async def bulk_delete(request):
     data = await _body(request)
 
@@ -477,7 +553,10 @@ async def bulk_delete(request):
     return _json({"count": count, "ids": ids})
 
 
-@_route("post", "/bulk/retag")
+@_route("post", "/bulk/retag", op="bulkRetagPrompts",
+        summary="Add, remove or wholesale replace tags across the selection.",
+        body={**_BULK_TARGET, "add": "str[]", "remove": "str[]", "replace": "str[]"},
+        returns={"count": "int", "ids": "str[]"})
 async def bulk_retag(request):
     data = await _body(request)
 
@@ -495,7 +574,10 @@ async def bulk_retag(request):
     return _json({"count": count, "ids": ids})
 
 
-@_route("post", "/bulk/categorize")
+@_route("post", "/bulk/categorize", op="bulkCategorizePrompts",
+        summary="Move the whole selection into one category.",
+        body={**_BULK_TARGET, "category": "str!"},
+        returns={"count": "int", "ids": "str[]"})
 async def bulk_categorize(request):
     data = await _body(request)
 
@@ -507,7 +589,10 @@ async def bulk_categorize(request):
     return _json({"count": count, "ids": ids})
 
 
-@_route("post", "/bulk/merge")
+@_route("post", "/bulk/merge", op="bulkMergePrompts",
+        summary="Merge the selection into one record — `winner`, or the first id.",
+        body={**_BULK_TARGET, "winner": "str"},
+        returns={"prompt": "Prompt", "ids": "str[]"})
 async def bulk_merge(request):
     data = await _body(request)
 
@@ -520,7 +605,10 @@ async def bulk_merge(request):
     return _json({"prompt": rec, "ids": ids})
 
 
-@_route("post", "/merge")
+@_route("post", "/merge", op="mergePrompts",
+        summary="Merge `loser` into `winner` and delete the loser. `*_id` aliases accepted.",
+        body={"winner": "str", "winner_id": "str", "loser": "str", "loser_id": "str"},
+        returns={"prompt": "Prompt"})
 async def merge(request):
     data = await _body(request)
     winner = _str(data.get("winner") or data.get("winner_id"))
@@ -528,7 +616,11 @@ async def merge(request):
     return _json({"prompt": await _offload(STORE.merge, winner, loser)})
 
 
-@_route("post", "/merge_new")
+@_route("post", "/merge_new", op="mergeIntoNewPrompt",
+        summary="Create a third record absorbing both inputs, then delete both.",
+        body={"a": "str", "a_id": "str", "b": "str", "b_id": "str",
+              "body": "str!", "name": "str!"},
+        returns={"prompt": "Prompt"})
 async def merge_new(request):
     data = await _body(request)
     return _json({"prompt": await _offload(
@@ -540,7 +632,10 @@ async def merge_new(request):
     )})
 
 
-@_route("post", "/versions/restore")
+@_route("post", "/versions/restore", op="restoreVersion",
+        summary="Restore a version onto the record; the current body is snapshotted first.",
+        body={"id": "str!", "index": "int!"},
+        returns={"prompt": "Prompt"})
 async def versions_restore(request):
     data = await _body(request)
     pid = _str(data.get("id"))
@@ -549,7 +644,10 @@ async def versions_restore(request):
     return _json({"prompt": await _offload(STORE.restore_version, pid, index)})
 
 
-@_route("post", "/dupes/ignore")
+@_route("post", "/dupes/ignore", op="ignoreDupePair",
+        summary="Record (or undo) a \"keep both\" decision so dedupe stops nagging.",
+        body={"a": "str", "b": "str", "id": "str", "other": "str", "unignore": "bool"},
+        returns={"changed": "bool", "ignored": "bool"})
 async def dupes_ignore(request):
     """Record (or undo) a "keep both" decision so dedupe stops nagging."""
     data = await _body(request)
@@ -562,7 +660,11 @@ async def dupes_ignore(request):
     return _json({"changed": bool(changed), "ignored": True})
 
 
-@_route("post", "/category")
+@_route("post", "/category", op="editCategory",
+        summary="Add, rename or delete a category; `count` is how many records moved.",
+        body={"op": "str=add|rename|delete", "name": "str!", "new": "str",
+              "reassign_to": "str"},
+        returns={"count": "int", "categories": "str[]"})
 async def category(request):
     data = await _body(request)
     op = _str(data.get("op") or "add").strip().lower()
@@ -583,7 +685,10 @@ async def category(request):
     return _json({"count": count, "categories": names})
 
 
-@_route("post", "/snippet")
+@_route("post", "/snippet", op="editSnippet",
+        summary="Set or delete one `[[snippet]]`; returns the whole snippet map.",
+        body={"op": "str=set|delete", "name": "str!", "body": "str"},
+        returns={"snippets": "{Snippet}"})
 async def snippet(request):
     data = await _body(request)
     op = _str(data.get("op") or "set").strip().lower()
@@ -601,7 +706,9 @@ async def snippet(request):
     return _json({"snippets": await _offload(_work)})
 
 
-@_route("post", "/settings")
+@_route("post", "/settings", op="updateSettings",
+        body={"dupe_threshold": "float", "version_cap": "int"},
+        returns={"settings": "Settings"})
 async def settings(request):
     """Persist the dupe threshold / version cap the panel exposes."""
     data = await _body(request)
@@ -612,7 +719,10 @@ async def settings(request):
     )})
 
 
-@_route("post", "/import")
+@_route("post", "/import", op="importLibrary",
+        summary="Import an envelope. `replace` swaps the library; false appends it.",
+        body={"library": "Library", "raw": "Library", "replace": "bool"},
+        returns={"count": "int"})
 async def import_route(request):
     data = await _body(request)
     raw = data.get("library", data.get("raw"))
@@ -626,4 +736,4 @@ async def import_route(request):
 
 def handlers():
     """``{(method, path): handler}`` without touching aiohttp or the store."""
-    return {(method, path): handler for method, path, handler in _ROUTES}
+    return {(route.method, route.path): route.handler for route in _ROUTES}

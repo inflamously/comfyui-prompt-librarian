@@ -1,9 +1,10 @@
 """Route-table plumbing and request coercion.
 
 Nothing in here knows what any single endpoint *does*. This is the machinery
-every handler in :mod:`.request` is built out of:
+every handler in :mod:`.api` is built out of:
 
-* :func:`_route` — register a ``(method, path)`` and wrap it in :func:`_guard`.
+* :func:`_route` — register a ``(method, path)``, record its :class:`Spec`, and
+  wrap the handler in :func:`_guard`.
 * :func:`_json` / :func:`_error` — the response envelope, ``rev`` always merged.
 * :func:`_offload` — the one way off the event loop.
 * ``_str`` / ``_bool`` / ``_int`` / ``_float`` / ``_list`` / ``_opt`` — query
@@ -13,14 +14,27 @@ every handler in :mod:`.request` is built out of:
   malformed query parameter is a client typo, not a 500.
 
 Names are underscore-prefixed because they are package-internal — they cross
-freely between the three modules here and are not part of what
-``api/__init__.py`` re-exports.
+freely between the modules here and are not part of what ``api/__init__.py``
+re-exports. ``Route``/``Spec`` are the exception: :mod:`.openapi` reads them.
+
+Field descriptors
+-----------------
+
+``query`` / ``body`` / ``returns`` on a :class:`Spec` are ``{name: descriptor}``
+maps, where a descriptor is a short string :mod:`.openapi` turns into JSON
+Schema — ``"str"``, ``"int!"`` (required), ``"str[]"``, ``"{int}"`` (a map),
+``"str=az|recent"`` (an enum), ``"int?"`` (nullable) or the name of a model in
+``openapi.MODELS``. ``returns`` may instead be a single descriptor, for the
+endpoints whose response *is* a model rather than a field wrapping one.
+Nothing at runtime reads any of it; it exists so the route table can describe
+itself.
 """
 
 import asyncio
 import functools
 import logging
 import traceback
+from collections import namedtuple
 
 from .. import dedupe
 from ..store import STORE
@@ -28,8 +42,16 @@ from .config import _ERROR_MAP, PREFIX
 
 log = logging.getLogger(__name__)
 
+#: What one endpoint accepts and returns. ``op`` is the OpenAPI operation id —
+#: stable, hand-written, and the name generated clients will use, so treat it
+#: as part of the public surface and rename it as deliberately as a URL.
+Spec = namedtuple("Spec", "op summary query body returns")
+
+#: One row of the route table.
+Route = namedtuple("Route", "method path handler spec")
+
 _web = None            # aiohttp.web, bound on first use
-_ROUTES = []           # [(method, path, handler)] — filled by @_route at import
+_ROUTES = []           # [Route] — filled by @_route at import
 
 
 # --------------------------------------------------------------------------- #
@@ -84,10 +106,24 @@ def _guard(fn):
     return _wrapped
 
 
-def _route(method, path):
+def _route(method, path, op, summary="", query=None, body=None, returns=None):
+    """Register a handler and describe it in the same breath.
+
+    ``op`` and the three field maps are inert at runtime — they are what
+    ``scripts/openapi.py`` reads to emit the spec, kept on the decorator so a
+    new endpoint cannot be added without saying what it takes and returns.
+    """
     def _deco(fn):
         handler = _guard(fn)
-        _ROUTES.append((method, PREFIX + path, handler))
+        _ROUTES.append(Route(method, PREFIX + path, handler, Spec(
+            op=op,
+            summary=summary or (fn.__doc__ or "").strip().split("\n")[0],
+            query=dict(query or {}),
+            body=dict(body or {}),
+            # A bare descriptor means "the response *is* this" — a handful of
+            # endpoints hand back a model rather than wrapping it in a field.
+            returns=returns if isinstance(returns, str) else dict(returns or {}),
+        )))
         return handler
     return _deco
 

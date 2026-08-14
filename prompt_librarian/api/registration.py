@@ -1,6 +1,6 @@
 """The single entry point: turning the route table into live aiohttp routes.
 
-Importing :mod:`.request` fills ``utils._ROUTES`` — that is all the decorators
+Importing :mod:`.api` fills ``utils._ROUTES`` — that is all the decorators
 do. This module is what the pack root calls to hand that table to a real
 ``RouteTableDef``, and the only place the store listener that keeps the search
 and dedupe caches honest is wired up. Keeping it apart from the handlers means
@@ -11,8 +11,8 @@ list of features with no bootstrap logic at the bottom of it.
 import logging
 
 from ..store import STORE
+from .api import _on_change, handlers
 from .config import PREFIX
-from .request import _on_change, handlers
 from .utils import _ROUTES, _get_web
 
 log = logging.getLogger(__name__)
@@ -28,8 +28,8 @@ def register(routes):
     """
     global _registered
     _get_web()
-    for method, path, handler in _ROUTES:
-        getattr(routes, method)(path)(handler)
+    for route in _ROUTES:
+        getattr(routes, route.method)(route.path)(route.handler)
     if not _registered:
         # Wired once: keeps the search and dedupe caches from growing without
         # bound as the library changes underneath them.

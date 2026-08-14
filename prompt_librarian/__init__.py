@@ -7,10 +7,12 @@ the ones above — enforced by the import-linter contract in ``pyproject.toml``)
     The ``PromptLibrarian`` ComfyUI node.
 ``api``
     The ``/prompt_librarian/*`` aiohttp routes — a package of its own:
-    ``config`` (constants), ``utils`` (route table and coercion), ``request``
-    (one function per feature) and ``registration`` (the startup wiring).
-    Registered by the pack root via :func:`prompt_librarian.api.register`;
-    importing this package does not touch aiohttp.
+    ``config`` (constants), ``utils`` (route table and coercion), ``api``
+    (one function per feature), ``registration`` (the startup wiring) and
+    ``openapi`` (the route table as a spec, loaded only by the script that
+    emits it). Registered by the pack root via
+    :func:`prompt_librarian.api.register`; importing this package does not
+    touch aiohttp.
 ``wildcards``
     ``{a|b}`` / ``__file__`` / ``[[snippet]]`` expansion.
 ``dedupe``

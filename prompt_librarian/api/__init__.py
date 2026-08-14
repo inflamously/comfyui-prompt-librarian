@@ -14,15 +14,18 @@ Module layout
     The route table and everything mechanical — the guard, the JSON envelope,
     the executor hop, and the coercion helpers that turn query strings and
     JSON bodies into the types the store expects.
-``request``
+``api``
     One function per feature: the handlers, plus the index maintenance and
     search plumbing they share.
 ``registration``
     :func:`register` alone — the startup wiring, kept out of the handler module
     so the two read as separate concerns.
+``openapi``
+    The route table rendered as an OpenAPI document. Imported by
+    ``scripts/openapi.py``, never at runtime — nothing else here depends on it.
 
 Only ``config`` may not import its siblings; ``utils`` imports ``config``,
-``request`` imports both, and ``registration`` sits on top of all three.
+``api`` imports both, and ``registration`` sits on top of all three.
 Underscore-prefixed names cross these modules freely — the underscore marks
 them package-internal, not module-private, and nothing underscored is
 re-exported here.
@@ -52,19 +55,19 @@ Conventions, all of them deliberate
 duplicates them.
 """
 
-from . import config, registration, request, utils
+from . import api, config, registration, utils
+from .api import handlers
 from .config import BULK_QUERY_LIMIT, CAPABILITIES, PREFIX
 from .registration import register
-from .request import handlers
 
 __all__ = [
     "BULK_QUERY_LIMIT",
     "CAPABILITIES",
     "PREFIX",
+    "api",
     "config",
     "handlers",
     "register",
     "registration",
-    "request",
     "utils",
 ]

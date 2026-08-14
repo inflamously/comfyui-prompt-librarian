@@ -216,7 +216,8 @@ prompt_librarian/             the Librarian domain
     utils.py                  route table, guard, JSON envelope, coercion
     api.py                    one function per feature — the handlers
     registration.py           register(): the route table -> aiohttp
-    openapi.py                the route table -> an OpenAPI 3.1 document
+    schemas.py                what each endpoint takes and returns, as types
+    openapi.py                those two -> an OpenAPI 3.1 document (pydantic)
   wildcards.py                {a|b} / __file__ / [[snippet]] resolution
   dedupe.py                   similarity cascade, dupe caches, word-level diff
   search.py                   inverted index, relevance scoring, filters, sorts
@@ -231,7 +232,7 @@ web/pl/*.js                   api, bind, dom, modal, list, inspector, dialogs, p
 web/pl/librarian.css          scoped dark theme
 web/prompt_library.js         the OLD node's frontend — untouched
 scripts/openapi.py            route table -> route listing or OpenAPI spec
-tests/*.py                    303 tests, stdlib + pytest only
+tests/*.py                    307 tests, stdlib + pytest only
 ```
 
 The modules inside `prompt_librarian/` are listed highest-layer first: each may import the ones
@@ -305,7 +306,7 @@ cache with its `FILES` singleton, `signature()` (folded into the node's cache ke
 option parsing with weights (`3::`) and pick-N (`2$$`, `1-3$$`), the seeded `random.Random` picks,
 and the public `resolve` / `resolve_verbose` / `has_wildcards` / `referenced_names`.
 
-**`prompt_librarian/api/`** (1 414 lines) — the 31 aiohttp routes under `/prompt_librarian`, split
+**`prompt_librarian/api/`** (1 276 lines, spec modules aside) — the 31 aiohttp routes under `/prompt_librarian`, split
 four ways: `config.py` (the prefix, `CAPABILITIES`, `_ERROR_MAP`), `utils.py` (the route table and
 everything mechanical), `api.py` (one function per feature — the handlers), `registration.py`
 (`register()` alone). `aiohttp` is imported on first use, never at module scope, so tests and
@@ -321,23 +322,39 @@ GET `ping`, `search`, `prompt`, `versions`, `version`, `taxonomy`, `dupes/all`, 
 `dupes/ignore`, `category`, `snippet`, `settings`, `import`. Also exposes a `CAPABILITIES` dict the
 frontend feature-detects against.
 
-**`prompt_librarian/api/openapi.py`** (293 lines) + **`scripts/openapi.py`** — the route table,
-described. Every `@_route` carries an OpenAPI operation id, a one-line summary and its
-`query` / `body` / `returns` fields in a short descriptor shorthand (`str!` required, `str[]`,
-`{Snippet}` a map, `str=add|rename|delete` an enum, `Prompt?` nullable, `Prompt` a model in
-`openapi.MODELS`), so a handler and its contract cannot drift apart. Nothing reads any of it at
-runtime; ComfyUI never imports `openapi.py`. The script runs from a plain checkout, with neither
-ComfyUI nor aiohttp installed:
+**`prompt_librarian/api/schemas.py`** (648 lines) + **`openapi.py`** (198) + **`scripts/openapi.py`**
+— the route table, described. Every `@_route` names an OpenAPI operation id, a one-line summary and
+three dataclasses: what the query takes, what the body takes, what comes back.
 
-```bash
-python3 scripts/openapi.py                  # every route, id and summary, as text
-python3 scripts/openapi.py -o openapi.json  # a validated OpenAPI 3.1 document
+```python
+@_route("get", "/versions", op="listVersions",
+        summary="Version history of one record as previews, never full bodies.",
+        query=schemas.ListVersionsQuery, returns=schemas.VersionsResponse)
 ```
 
-The capability list and the error-code enum are read from the live `CAPABILITIES` and `_ERROR_MAP`
-tables, so only `MODELS` — the response shapes, which the store builds and cannot be introspected —
-is hand-maintained. `tests/test_openapi.py` fails on the mechanical drift: a route with no spec, an
-unknown descriptor, a duplicate operation id, an unresolvable `$ref`.
+`schemas.py` is plain stdlib — dataclasses, `Literal`, `X | None` — and imports nothing, so the pack
+carries ~60 class definitions at startup and no third-party code ever. A field with no default is
+required; a default is the handler's own fallback (`_int(params.get("chars"), 160)` -> `chars: int =
+160`); an attribute docstring becomes the field's description in the spec. Every response inherits
+`Envelope`, which is where the `rev` merged into every payload comes from.
+
+`openapi.py` holds no schema-building code at all: pydantic's `TypeAdapter(T).json_schema()`
+generates every schema, `$ref`, enum, nullable and default, and what is left is assembly — hoisting
+`$defs` into `components/schemas` and splitting a query dataclass into `parameters[]`. pydantic is a
+`dev` extra; ComfyUI never imports this module, and the route listing does not need it either:
+
+```bash
+python3 scripts/openapi.py                  # every route, id and types, as text — stdlib only
+python3 scripts/openapi.py -o openapi.json  # OpenAPI 3.1, needs pip install -e ".[dev]"
+```
+
+The handlers take a bare `request` and read `data.get("name")`, so nothing can be introspected out
+of them — `schemas.py` is a parallel declaration, and keeping it true to the handlers is a review
+question. `tests/test_openapi.py` covers the mechanical half: a route with no types, a response that
+skips the `rev` envelope, a duplicate operation id, an unresolvable `$ref`, a query type that nests
+a model, and the two tables declared twice (`Capabilities`, the error-code enum) drifting from the
+live `CAPABILITIES` / `_ERROR_MAP`. Two more assert `Prompt` and `Settings` still match what the
+store actually builds.
 
 **`prompt_librarian/node.py`** (222 lines) — the node class. `INPUT_TYPES` is a pure dict literal (no
 disk, no store, no combos) because it is called on every `/object_info` request: `text` multiline
@@ -462,7 +479,7 @@ an inbound-defence block restating inherited properties so a stray ComfyUI rule 
 | `test_dedupe.py` | 39 | Also free-standing: ratio cascade vs raw `difflib`, length prefilter, blocking index correctness, clustering, cache invalidation, diff opcodes and summaries. |
 | `test_wildcards.py` | 63 | Determinism, nesting, weights, pick-N, escapes — and the three guards that matter for not hanging a render worker: path traversal, cycles, output size. |
 | `test_api.py` | 67 | Drives handlers directly with a stub request (`.rel_url.query` + async `.json()`), so no server is stood up; skips wholesale if aiohttp is absent. Route table, error-code mapping, `rev` propagation. |
-| `test_openapi.py` | 13 | The descriptor grammar, and the drift guards on the generated spec: every route described, every operation id unique, every `$ref` resolvable, `rev` on every response. Needs no aiohttp. |
+| `test_openapi.py` | 17 | Drift guards on the generated spec: every route typed, every response inheriting the `rev` envelope, every operation id unique, every `$ref` resolvable, and `Capabilities` / `Prompt` / `Settings` / the error codes still matching the live tables. Needs no aiohttp; skips wholesale without pydantic. |
 | `test_node.py` | 30 | The load-bearing node properties: `INPUT_TYPES` is pure (no disk, no combos), `run()` never fails a render, `IS_CHANGED` responds to the right inputs, and usage counts only a run of the *saved* body. |
 
 ### The old node — untouched
@@ -489,7 +506,7 @@ accept the call and silently drop it. `Open Librarian` exists either way.
 ## Tests
 
 ```
-python3 -m pytest tests/ -q      # 303 tests, no ComfyUI required
+python3 -m pytest tests/ -q      # 307 tests, no ComfyUI required
 ruff check .                     # style, imports, complexity
 lint-imports                     # the layer + independence contracts
 python3 scripts/openapi.py       # the route table, as a listing or a spec

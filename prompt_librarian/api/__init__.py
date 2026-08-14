@@ -20,12 +20,17 @@ Module layout
 ``registration``
     :func:`register` alone — the startup wiring, kept out of the handler module
     so the two read as separate concerns.
+``schemas``
+    What each endpoint takes and returns, as dataclasses. Declaration only —
+    plain stdlib, no validation, nothing imported at request time.
 ``openapi``
-    The route table rendered as an OpenAPI document. Imported by
-    ``scripts/openapi.py``, never at runtime — nothing else here depends on it.
+    ``schemas`` + the route table, rendered as an OpenAPI document by pydantic.
+    Imported by ``scripts/openapi.py``, never at runtime, and the only module
+    in the pack that needs a third-party package.
 
-Only ``config`` may not import its siblings; ``utils`` imports ``config``,
-``api`` imports both, and ``registration`` sits on top of all three.
+Only ``config`` and ``schemas`` may not import their siblings; ``utils``
+imports ``config``, ``api`` imports those three, and ``registration`` sits on
+top.
 Underscore-prefixed names cross these modules freely — the underscore marks
 them package-internal, not module-private, and nothing underscored is
 re-exported here.
@@ -55,7 +60,7 @@ Conventions, all of them deliberate
 duplicates them.
 """
 
-from . import api, config, registration, utils
+from . import api, config, registration, schemas, utils
 from .api import handlers
 from .config import BULK_QUERY_LIMIT, CAPABILITIES, PREFIX
 from .registration import register
@@ -69,5 +74,6 @@ __all__ = [
     "handlers",
     "register",
     "registration",
+    "schemas",
     "utils",
 ]

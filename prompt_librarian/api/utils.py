@@ -17,17 +17,13 @@ Names are underscore-prefixed because they are package-internal — they cross
 freely between the modules here and are not part of what ``api/__init__.py``
 re-exports. ``Route``/``Spec`` are the exception: :mod:`.openapi` reads them.
 
-Field descriptors
------------------
+Route types
+-----------
 
-``query`` / ``body`` / ``returns`` on a :class:`Spec` are ``{name: descriptor}``
-maps, where a descriptor is a short string :mod:`.openapi` turns into JSON
-Schema — ``"str"``, ``"int!"`` (required), ``"str[]"``, ``"{int}"`` (a map),
-``"str=az|recent"`` (an enum), ``"int?"`` (nullable) or the name of a model in
-``openapi.MODELS``. ``returns`` may instead be a single descriptor, for the
-endpoints whose response *is* a model rather than a field wrapping one.
-Nothing at runtime reads any of it; it exists so the route table can describe
-itself.
+``query`` / ``body`` / ``returns`` on a :class:`Spec` are the dataclasses in
+:mod:`.schemas` — what the endpoint accepts and what it hands back. Nothing at
+runtime reads them; they are what :mod:`.openapi` hands to pydantic to generate
+the spec, and what a reader of a handler can look up to see its contract.
 """
 
 import asyncio
@@ -106,10 +102,10 @@ def _guard(fn):
     return _wrapped
 
 
-def _route(method, path, op, summary="", query=None, body=None, returns=None):
+def _route(method, path, op, returns, summary="", query=None, body=None):
     """Register a handler and describe it in the same breath.
 
-    ``op`` and the three field maps are inert at runtime — they are what
+    ``op`` and the three types are inert at runtime — they are what
     ``scripts/openapi.py`` reads to emit the spec, kept on the decorator so a
     new endpoint cannot be added without saying what it takes and returns.
     """
@@ -118,11 +114,9 @@ def _route(method, path, op, summary="", query=None, body=None, returns=None):
         _ROUTES.append(Route(method, PREFIX + path, handler, Spec(
             op=op,
             summary=summary or (fn.__doc__ or "").strip().split("\n")[0],
-            query=dict(query or {}),
-            body=dict(body or {}),
-            # A bare descriptor means "the response *is* this" — a handful of
-            # endpoints hand back a model rather than wrapping it in a field.
-            returns=returns if isinstance(returns, str) else dict(returns or {}),
+            query=query,
+            body=body,
+            returns=returns,
         )))
         return handler
     return _deco

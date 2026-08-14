@@ -7,12 +7,12 @@ hands back. Read top to bottom it is index maintenance, the two shared search
 helpers, then GET, POST-reads and POST-writes in that order, with
 :func:`handlers` at the end.
 
-Every ``@_route`` carries its own description: an ``op`` (the OpenAPI operation
-id — stable, and what a generated client's method is called), a one-line
-summary, and the ``query`` / ``body`` / ``returns`` field maps in the shorthand
-:mod:`.utils` documents. None of it is read at runtime; it is what
-``scripts/openapi.py`` turns into a spec, and it lives here rather than in a
-table of its own so a handler and its contract cannot drift apart.
+Every ``@_route`` names its contract: an ``op`` (the OpenAPI operation id —
+stable, and what a generated client's method is called), a one-line summary,
+and the :mod:`.schemas` dataclasses for the query, the body and the response.
+None of it is read at runtime; ``scripts/openapi.py`` is what turns it into a
+spec. The types are one import away, so "what does this endpoint take?" is
+answerable from the handler without reading its body.
 
 ``_notify`` websocket events are emitted by the store itself; nothing here
 duplicates them.
@@ -23,6 +23,7 @@ import logging
 
 from .. import dedupe, search, wildcards
 from ..store import SCHEMA_VERSION, STORE, NotFoundError
+from . import schemas
 from .config import BULK_QUERY_LIMIT, CAPABILITIES
 from .utils import (
     _ROUTES,
@@ -135,10 +136,6 @@ def _run_search(params, limit=None):
     )
 
 
-#: The selector every `/bulk/*` body accepts, spread into their `body` maps.
-_BULK_TARGET = {"ids": "str[]", "query": "object"}
-
-
 def _resolve_ids(data):
     """Ids for a bulk op: explicit ``ids``, or every hit of a stored ``query``.
 
@@ -162,9 +159,7 @@ def _resolve_ids(data):
 
 @_route("get", "/ping", op="ping",
         summary="Store facts the panel boots from: schema, count, flags, capabilities.",
-        returns={"ok": "bool", "schema": "int", "count": "int", "path": "str",
-                 "corrupt": "bool", "readonly": "bool", "threshold": "float",
-                 "capabilities": "Capabilities"})
+        returns=schemas.PingResponse)
 async def ping(request):
     return _json({
         "ok": True,
@@ -179,12 +174,8 @@ async def ping(request):
 
 
 @_route("get", "/search", op="searchPrompts",
-        summary="Filter, sort, page and badge the library. `q` and `query` are aliases.",
-        query={"q": "str", "query": "str", "category": "str", "tags": "str[]",
-               "dupes_only": "bool", "sort": "str=relevance|recent|most_used|az",
-               "mode": "str=all|any", "offset": "int", "limit": "int",
-               "threshold": "float", "match_id": "str"},
-        returns="SearchResult")
+        summary="Filter, sort, page and badge the library.",
+        query=schemas.SearchQuery, returns=schemas.SearchResponse)
 async def search_route(request):
     params = _query(request)
     if _bool(params.get("dupes_only")):
@@ -196,8 +187,7 @@ async def search_route(request):
 
 @_route("get", "/prompt", op="getPrompt",
         summary="One full record, body included.",
-        query={"id": "str!"},
-        returns={"prompt": "Prompt"})
+        query=schemas.GetPromptQuery, returns=schemas.PromptResponse)
 async def prompt(request):
     pid = _str(_query(request).get("id"))
     rec = STORE.get(pid)
@@ -208,8 +198,7 @@ async def prompt(request):
 
 @_route("get", "/versions", op="listVersions",
         summary="Version history of one record as previews, never full bodies.",
-        query={"id": "str!", "chars": "int"},
-        returns={"id": "str", "versions": "VersionPreview[]"})
+        query=schemas.ListVersionsQuery, returns=schemas.VersionsResponse)
 async def versions(request):
     params = _query(request)
     pid = _str(params.get("id"))
@@ -221,8 +210,7 @@ async def versions(request):
 
 @_route("get", "/version", op="getVersion",
         summary="One full version entry by index.",
-        query={"id": "str!", "index": "int!"},
-        returns={"id": "str", "index": "int", "version": "Version"})
+        query=schemas.GetVersionQuery, returns=schemas.VersionResponse)
 async def version(request):
     params = _query(request)
     pid = _str(params.get("id"))
@@ -232,16 +220,14 @@ async def version(request):
 
 @_route("get", "/taxonomy", op="getTaxonomy",
         summary="Everything the filter rail needs: categories with counts, and tags.",
-        returns="Taxonomy")
+        returns=schemas.TaxonomyResponse)
 async def taxonomy(request):
     return _json(STORE.taxonomy())
 
 
 @_route("get", "/dupes/all", op="listAllDupes",
         summary="Library-wide near-duplicate scan: per-record counts, groups and pairs.",
-        query={"threshold": "float", "exhaustive": "bool"},
-        returns={"threshold": "float", "exhaustive": "bool", "counts": "{int}",
-                 "groups": "str[][]", "pairs": "{str[]}"})
+        query=schemas.DupesAllQuery, returns=schemas.DupesAllResponse)
 async def dupes_all(request):
     params = _query(request)
     result = await _dupes_all(_threshold(params.get("threshold")),
@@ -257,7 +243,7 @@ async def dupes_all(request):
 
 @_route("get", "/wildcards", op="listWildcards",
         summary="Names of the `__wildcard__` files, their directory and its signature.",
-        returns={"names": "str[]", "dir": "str", "signature": "str"})
+        returns=schemas.WildcardsResponse)
 async def wildcards_route(request):
     files = wildcards.FILES
     return _json({
@@ -269,14 +255,14 @@ async def wildcards_route(request):
 
 @_route("get", "/snippets", op="listSnippets",
         summary="Every `[[snippet]]` body, keyed by name.",
-        returns={"snippets": "{Snippet}"})
+        returns=schemas.SnippetsResponse)
 async def snippets(request):
     return _json({"snippets": STORE.snippets()})
 
 
 @_route("get", "/export", op="exportLibrary",
         summary="The whole library envelope, ready to write to a file.",
-        returns={"library": "Library"})
+        returns=schemas.ExportResponse)
 async def export(request):
     return _json({"library": await _offload(STORE.export_raw)})
 
@@ -333,8 +319,7 @@ async def _dupes_all(threshold, exhaustive):
 # --------------------------------------------------------------------------- #
 
 @_route("post", "/meta", op="getPromptMeta",
-        body={"ids": "str[]!", "threshold": "float"},
-        returns={"meta": "{PromptMeta}"})
+        body=schemas.MetaBody, returns=schemas.MetaResponse)
 async def meta(request):
     """Batch metadata for node faces. Ten Librarian nodes = one request."""
     data = await _body(request)
@@ -357,10 +342,8 @@ async def meta(request):
 
 
 @_route("post", "/dupes", op="findSimilar",
-        summary="One-vs-N near-duplicate check for a body given as `text` or as `id`.",
-        body={"text": "str", "id": "str", "exclude_id": "str", "threshold": "float",
-              "limit": "int", "summaries": "bool"},
-        returns={"matches": "DupeMatch[]", "threshold": "float"})
+        summary="One-vs-N near-duplicate check for one body against the library.",
+        body=schemas.DupesBody, returns=schemas.DupesResponse)
 async def dupes(request):
     """One-vs-N near-duplicate check — the hot path, fired on every edit.
 
@@ -388,10 +371,8 @@ async def dupes(request):
 
 
 @_route("post", "/compare", op="compareBodies",
-        summary="Word-level diff of two bodies; each side is `<k>_text`, `<k>_id` or `<k>`.",
-        body={"a": "str", "a_id": "str", "a_text": "str",
-              "b": "str", "b_id": "str", "b_text": "str"},
-        returns="DiffResult")
+        summary="Word-level diff of two bodies.",
+        body=schemas.CompareBody, returns=schemas.CompareResponse)
 async def compare(request):
     """Word-level diff of two bodies, each given as an id or as raw text."""
     data = await _body(request)
@@ -410,9 +391,7 @@ def _side(data, key):
 
 
 @_route("post", "/resolve", op="resolveWildcards",
-        body={"text": "str!", "seed": "int", "n": "int"},
-        returns={"text": "str", "samples": "str[]", "picks": "WildcardPick[]",
-                 "missing": "str[]", "warnings": "str[]"})
+        body=schemas.ResolveBody, returns=schemas.ResolveResponse)
 async def resolve(request):
     """Sample ``n`` wildcard resolutions in one call for the preview popover."""
     data = await _body(request)
@@ -439,9 +418,7 @@ async def resolve(request):
 
 @_route("post", "/create", op="createPrompt",
         summary="Create a record and return it.",
-        body={"name": "str", "body": "str", "category": "str", "tags": "str[]",
-              "rating": "int", "notes": "str", "pinned": "bool"},
-        returns={"prompt": "Prompt"})
+        body=schemas.CreateBody, returns=schemas.PromptResponse)
 async def create(request):
     data = await _body(request)
 
@@ -463,11 +440,8 @@ async def create(request):
 
 
 @_route("post", "/update", op="updatePrompt",
-        summary="Partial update; omitted fields are left alone. 409 on `expect_updated` mismatch.",
-        body={"id": "str!", "name": "str", "body": "str", "category": "str",
-              "tags": "str[]", "rating": "int", "notes": "str", "pinned": "bool",
-              "snapshot": "bool", "expect_updated": "str"},
-        returns={"prompt": "Prompt"})
+        summary="Partial update; omitted fields are left alone.",
+        body=schemas.UpdateBody, returns=schemas.PromptResponse)
 async def update(request):
     data = await _body(request)
     pid = _str(data.get("id"))
@@ -497,8 +471,7 @@ async def update(request):
 
 @_route("post", "/rate", op="ratePrompt",
         summary="Set a record's 0-5 rating.",
-        body={"id": "str!", "rating": "int!"},
-        returns={"prompt": "Prompt"})
+        body=schemas.RateBody, returns=schemas.PromptResponse)
 async def rate(request):
     data = await _body(request)
     pid = _str(data.get("id"))
@@ -508,8 +481,7 @@ async def rate(request):
 
 @_route("post", "/delete", op="deletePrompt",
         summary="Delete a record outright — there is no trash bin.",
-        body={"id": "str!"},
-        returns={"deleted": "bool", "id": "str"})
+        body=schemas.PromptIdBody, returns=schemas.DeleteResponse)
 async def delete(request):
     data = await _body(request)
     pid = _str(data.get("id"))
@@ -526,9 +498,8 @@ async def delete(request):
 
 
 @_route("post", "/usage", op="recordUsage",
-        summary="Count one run. Writes nothing when `body` does not match the stored body.",
-        body={"id": "str!", "body": "str"},
-        returns={"prompt": "Prompt?", "counted": "bool"})
+        summary="Count one run of a saved prompt.",
+        body=schemas.UsageBody, returns=schemas.UsageResponse)
 async def usage(request):
     data = await _body(request)
     pid = _str(data.get("id"))
@@ -539,9 +510,8 @@ async def usage(request):
 
 
 @_route("post", "/bulk/delete", op="bulkDeletePrompts",
-        summary="Delete every selected record. Selection is `ids` or a stored `query`.",
-        body=dict(_BULK_TARGET),
-        returns={"count": "int", "ids": "str[]"})
+        summary="Delete every selected record.",
+        body=schemas.BulkTarget, returns=schemas.BulkCountResponse)
 async def bulk_delete(request):
     data = await _body(request)
 
@@ -555,8 +525,7 @@ async def bulk_delete(request):
 
 @_route("post", "/bulk/retag", op="bulkRetagPrompts",
         summary="Add, remove or wholesale replace tags across the selection.",
-        body={**_BULK_TARGET, "add": "str[]", "remove": "str[]", "replace": "str[]"},
-        returns={"count": "int", "ids": "str[]"})
+        body=schemas.BulkRetagBody, returns=schemas.BulkCountResponse)
 async def bulk_retag(request):
     data = await _body(request)
 
@@ -576,8 +545,7 @@ async def bulk_retag(request):
 
 @_route("post", "/bulk/categorize", op="bulkCategorizePrompts",
         summary="Move the whole selection into one category.",
-        body={**_BULK_TARGET, "category": "str!"},
-        returns={"count": "int", "ids": "str[]"})
+        body=schemas.BulkCategorizeBody, returns=schemas.BulkCountResponse)
 async def bulk_categorize(request):
     data = await _body(request)
 
@@ -590,9 +558,8 @@ async def bulk_categorize(request):
 
 
 @_route("post", "/bulk/merge", op="bulkMergePrompts",
-        summary="Merge the selection into one record — `winner`, or the first id.",
-        body={**_BULK_TARGET, "winner": "str"},
-        returns={"prompt": "Prompt", "ids": "str[]"})
+        summary="Merge the selection into one record.",
+        body=schemas.BulkMergeBody, returns=schemas.BulkMergeResponse)
 async def bulk_merge(request):
     data = await _body(request)
 
@@ -606,9 +573,8 @@ async def bulk_merge(request):
 
 
 @_route("post", "/merge", op="mergePrompts",
-        summary="Merge `loser` into `winner` and delete the loser. `*_id` aliases accepted.",
-        body={"winner": "str", "winner_id": "str", "loser": "str", "loser_id": "str"},
-        returns={"prompt": "Prompt"})
+        summary="Merge `loser` into `winner` and delete the loser.",
+        body=schemas.MergeBody, returns=schemas.PromptResponse)
 async def merge(request):
     data = await _body(request)
     winner = _str(data.get("winner") or data.get("winner_id"))
@@ -618,9 +584,7 @@ async def merge(request):
 
 @_route("post", "/merge_new", op="mergeIntoNewPrompt",
         summary="Create a third record absorbing both inputs, then delete both.",
-        body={"a": "str", "a_id": "str", "b": "str", "b_id": "str",
-              "body": "str!", "name": "str!"},
-        returns={"prompt": "Prompt"})
+        body=schemas.MergeNewBody, returns=schemas.PromptResponse)
 async def merge_new(request):
     data = await _body(request)
     return _json({"prompt": await _offload(
@@ -634,8 +598,7 @@ async def merge_new(request):
 
 @_route("post", "/versions/restore", op="restoreVersion",
         summary="Restore a version onto the record; the current body is snapshotted first.",
-        body={"id": "str!", "index": "int!"},
-        returns={"prompt": "Prompt"})
+        body=schemas.RestoreVersionBody, returns=schemas.PromptResponse)
 async def versions_restore(request):
     data = await _body(request)
     pid = _str(data.get("id"))
@@ -646,8 +609,7 @@ async def versions_restore(request):
 
 @_route("post", "/dupes/ignore", op="ignoreDupePair",
         summary="Record (or undo) a \"keep both\" decision so dedupe stops nagging.",
-        body={"a": "str", "b": "str", "id": "str", "other": "str", "unignore": "bool"},
-        returns={"changed": "bool", "ignored": "bool"})
+        body=schemas.IgnoreDupeBody, returns=schemas.IgnoreDupeResponse)
 async def dupes_ignore(request):
     """Record (or undo) a "keep both" decision so dedupe stops nagging."""
     data = await _body(request)
@@ -661,10 +623,8 @@ async def dupes_ignore(request):
 
 
 @_route("post", "/category", op="editCategory",
-        summary="Add, rename or delete a category; `count` is how many records moved.",
-        body={"op": "str=add|rename|delete", "name": "str!", "new": "str",
-              "reassign_to": "str"},
-        returns={"count": "int", "categories": "str[]"})
+        summary="Add, rename or delete a category.",
+        body=schemas.CategoryBody, returns=schemas.CategoryResponse)
 async def category(request):
     data = await _body(request)
     op = _str(data.get("op") or "add").strip().lower()
@@ -687,8 +647,7 @@ async def category(request):
 
 @_route("post", "/snippet", op="editSnippet",
         summary="Set or delete one `[[snippet]]`; returns the whole snippet map.",
-        body={"op": "str=set|delete", "name": "str!", "body": "str"},
-        returns={"snippets": "{Snippet}"})
+        body=schemas.SnippetBody, returns=schemas.SnippetsResponse)
 async def snippet(request):
     data = await _body(request)
     op = _str(data.get("op") or "set").strip().lower()
@@ -707,8 +666,7 @@ async def snippet(request):
 
 
 @_route("post", "/settings", op="updateSettings",
-        body={"dupe_threshold": "float", "version_cap": "int"},
-        returns={"settings": "Settings"})
+        body=schemas.SettingsBody, returns=schemas.SettingsResponse)
 async def settings(request):
     """Persist the dupe threshold / version cap the panel exposes."""
     data = await _body(request)
@@ -720,9 +678,8 @@ async def settings(request):
 
 
 @_route("post", "/import", op="importLibrary",
-        summary="Import an envelope. `replace` swaps the library; false appends it.",
-        body={"library": "Library", "raw": "Library", "replace": "bool"},
-        returns={"count": "int"})
+        summary="Import an envelope.",
+        body=schemas.ImportBody, returns=schemas.ImportResponse)
 async def import_route(request):
     data = await _body(request)
     raw = data.get("library", data.get("raw"))

@@ -18,6 +18,10 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.6",
     "import-linter>=2.0",
+    # Generates the OpenAPI schemas from the dataclasses in api/schemas.py.
+    # Only `scripts/openapi.py` and `tests/test_openapi.py` import it; the pack
+    # itself must keep running without it, which is why it is not a dependency.
+    "pydantic>=2.0",
 ]
 
 # ComfyUI Registry metadata (https://docs.comfy.org/registry/overview).

@@ -1,69 +1,44 @@
-"""Tests for ``prompt_librarian.api.openapi``.
+"""Tests for ``prompt_librarian.api.openapi`` and the types it reads.
 
 The generator is only worth having if it cannot quietly lie, so most of what is
-here is drift protection: every route described, every descriptor understood,
-every operation id unique and every ``$ref`` resolvable. The document itself is
-built without aiohttp and without ComfyUI, which is the other property worth
-holding onto — ``scripts/openapi.py`` has to run from a plain checkout.
+here is drift protection: every route typed, every response carrying the ``rev``
+envelope, every operation id unique, every ``$ref`` resolvable, and the two
+tables that are declared twice — capabilities and error codes — still agreeing
+with the live ones.
+
+Schema generation itself is pydantic's job and is not retested here. The module
+skips wholesale without pydantic, which is a ``dev`` extra: the pack never
+imports it, and neither does the route listing.
 """
 
 import json
+from dataclasses import MISSING, fields, is_dataclass
 
 import pytest
 
-from prompt_librarian.api import openapi
-from prompt_librarian.api.utils import _ROUTES
+pytest.importorskip("pydantic")
 
-# --------------------------------------------------------------------------- #
-# Descriptors
-# --------------------------------------------------------------------------- #
-
-def test_primitives_and_required():
-    assert openapi.parse("str") == ({"type": "string"}, False)
-    assert openapi.parse("int!") == ({"type": "integer"}, True)
-    assert openapi.parse("any") == ({}, False)
+from prompt_librarian.api import openapi, schemas  # noqa: E402
+from prompt_librarian.api.config import _ERROR_MAP, CAPABILITIES  # noqa: E402
+from prompt_librarian.api.utils import _ROUTES  # noqa: E402
 
 
-def test_arrays_maps_enums_and_nullables():
-    assert openapi.schema("str[]") == {"type": "array", "items": {"type": "string"}}
-    assert openapi.schema("str[][]") == {
-        "type": "array", "items": {"type": "array", "items": {"type": "string"}}}
-    assert openapi.schema("{int}") == {
-        "type": "object", "additionalProperties": {"type": "integer"}}
-    assert openapi.schema("str=a|b") == {"type": "string", "enum": ["a", "b"]}
-    assert openapi.schema("int?") == {"type": ["integer", "null"]}
-
-
-def test_model_names_become_refs():
-    assert openapi.schema("Prompt") == {"$ref": "#/components/schemas/Prompt"}
-    assert openapi.schema("Prompt[]") == {
-        "type": "array", "items": {"$ref": "#/components/schemas/Prompt"}}
-    # A $ref cannot carry a sibling `type`, so a nullable model widens instead.
-    assert openapi.schema("Prompt?") == {
-        "anyOf": [{"$ref": "#/components/schemas/Prompt"}, {"type": "null"}]}
-
-
-def test_unknown_descriptor_raises():
-    with pytest.raises(ValueError, match="Widget"):
-        openapi.schema("Widget")
+@pytest.fixture(scope="module")
+def doc():
+    return openapi.document(version="1.2.3")
 
 
 # --------------------------------------------------------------------------- #
-# The document
+# The route table
 # --------------------------------------------------------------------------- #
 
-def test_every_route_is_described():
-    doc = openapi.document()
-    described = {(method, path)
-                 for path, item in doc["paths"].items() for method in item}
-    assert described == {(route.method, route.path) for route in _ROUTES}
-    assert len(described) == len(_ROUTES)
-
-
-def test_every_route_has_an_operation_id_and_a_summary():
+def test_every_route_is_typed():
     for route in _ROUTES:
         assert route.spec.op, route.path
         assert route.spec.summary, route.path
+        assert is_dataclass(route.spec.returns), route.path
+        for takes in (route.spec.query, route.spec.body):
+            assert takes is None or is_dataclass(takes), route.path
 
 
 def test_operation_ids_are_unique_and_camel_case():
@@ -73,19 +48,46 @@ def test_operation_ids_are_unique_and_camel_case():
         assert op[0].islower() and op.isalnum(), op
 
 
-def test_every_descriptor_on_every_route_parses():
-    # `document()` walks all of them; an unknown one raises rather than
-    # emitting a field the client cannot make sense of.
-    doc = openapi.document()
-    assert doc["openapi"].startswith("3.1")
+def test_reads_take_query_params_and_writes_take_bodies():
+    for route in _ROUTES:
+        if route.method == "get":
+            assert route.spec.body is None, route.path
+        else:
+            assert route.spec.query is None, route.path
 
 
-def test_every_ref_resolves():
-    doc = openapi.document()
-    schemas = doc["components"]["schemas"]
-    for ref in _refs(doc):
+def test_every_response_inherits_the_rev_envelope():
+    for route in _ROUTES:
+        assert issubclass(route.spec.returns, schemas.Envelope), route.path
+
+
+def test_query_types_are_flat():
+    # A query dataclass is split into `parameters[]`, so a nested model would
+    # have nowhere to go; `document()` raises rather than dropping it.
+    for route in _ROUTES:
+        if route.spec.query is None:
+            continue
+        for entry in fields(route.spec.query):
+            assert not is_dataclass(entry.type), (route.path, entry.name)
+
+
+# --------------------------------------------------------------------------- #
+# The document
+# --------------------------------------------------------------------------- #
+
+def test_every_route_is_described(doc):
+    described = {(method, path)
+                 for path, item in doc["paths"].items() for method in item}
+    assert described == {(route.method, route.path) for route in _ROUTES}
+
+
+def test_every_ref_resolves(doc):
+    schemas_by_name = doc["components"]["schemas"]
+    refs = list(_refs(doc))
+    assert refs
+    for ref in refs:
         assert ref.startswith("#/components/schemas/"), ref
-        assert ref.rsplit("/", 1)[-1] in schemas, ref
+        assert ref.rsplit("/", 1)[-1] in schemas_by_name, ref
 
 
 def _refs(node):
@@ -100,35 +102,74 @@ def _refs(node):
             yield from _refs(item)
 
 
-def test_capabilities_and_error_codes_track_the_live_tables():
-    from prompt_librarian.api.config import _ERROR_MAP, CAPABILITIES
+def test_required_query_params_are_the_ones_without_defaults(doc):
+    params = {p["name"]: p for p
+              in doc["paths"]["/prompt_librarian/versions"]["get"]["parameters"]}
+    assert params["id"]["required"] is True
+    assert params["chars"]["required"] is False
+    assert params["chars"]["schema"]["default"] == 160
 
-    schemas = openapi.document()["components"]["schemas"]
-    assert set(schemas["Capabilities"]["properties"]) == set(CAPABILITIES)
-    codes = set(schemas["Error"]["properties"]["code"]["enum"])
+
+def test_list_params_are_comma_separated(doc):
+    tags = next(p for p in doc["paths"]["/prompt_librarian/search"]["get"]["parameters"]
+                if p["name"] == "tags")
+    # `?tags=a,b`, which is what the handler's `_list` splits.
+    assert tags["style"] == "form" and tags["explode"] is False
+
+
+def test_attribute_docstrings_become_field_descriptions(doc):
+    hit = doc["components"]["schemas"]["SearchHit"]["properties"]["match_pct"]
+    assert "threshold" in hit["description"]
+
+
+def test_every_operation_documents_the_error_envelope(doc):
+    statuses = {str(status) for _, status, _ in _ERROR_MAP} | {"500"}
+    error = "#/components/schemas/Error"
+    for path, item in doc["paths"].items():
+        for method, operation in item.items():
+            assert statuses <= set(operation["responses"]), (method, path)
+            for status in statuses:
+                schema = operation["responses"][status]["content"]["application/json"]
+                assert schema["schema"]["$ref"] == error, (method, path, status)
+
+
+def test_document_is_json_serializable(doc):
+    assert json.loads(json.dumps(doc))["info"]["version"] == "1.2.3"
+
+
+# --------------------------------------------------------------------------- #
+# The two tables that are declared twice
+# --------------------------------------------------------------------------- #
+
+def test_capabilities_match_the_live_table():
+    assert {entry.name for entry in fields(schemas.Capabilities)} == set(CAPABILITIES)
+
+
+def test_error_codes_match_the_live_table(doc):
+    codes = set(doc["components"]["schemas"]["Error"]["properties"]["code"]["enum"])
     assert codes == {code for _, _, code in _ERROR_MAP} | {"internal"}
 
 
-def test_reads_take_query_params_and_writes_take_bodies():
-    for route in _ROUTES:
-        if route.method == "get":
-            assert not route.spec.body, route.path
-        else:
-            assert not route.spec.query, route.path
+def test_prompt_type_matches_a_real_record(store):
+    """The one model the store can be asked to prove: a created record."""
+    record = store.create(name="n", body="b", category="c", tags=["t"])
+    declared = {entry.name for entry in fields(schemas.Prompt)}
+    assert declared == set(record)
 
 
-def test_responses_always_carry_rev():
-    doc = openapi.document()
-    for path, item in doc["paths"].items():
-        for method, operation in item.items():
-            body = operation["responses"]["200"]["content"]["application/json"]["schema"]
-            props = body.get("properties")
-            if props is None:
-                # The response *is* a model; `rev` is merged on top of the ref.
-                props = body["allOf"][-1]["properties"]
-            assert "rev" in props, (method, path)
+def test_settings_type_matches_the_stored_block(store):
+    declared = {entry.name for entry in fields(schemas.Settings)}
+    assert declared == set(store.settings())
 
 
-def test_document_is_json_serializable():
-    assert json.loads(json.dumps(openapi.document(version="1.2.3")))["info"]["version"] \
-        == "1.2.3"
+def test_response_defaults_are_not_invented():
+    # A response field with a default would let the spec claim a value the
+    # handler never sends. Only `WildcardPick.count` is genuinely optional.
+    for name in dir(schemas):
+        kind = getattr(schemas, name)
+        if not (is_dataclass(kind) and isinstance(kind, type)
+                and issubclass(kind, schemas.Envelope)):
+            continue
+        for entry in fields(kind):
+            assert entry.default is MISSING and entry.default_factory is MISSING, \
+                (name, entry.name)

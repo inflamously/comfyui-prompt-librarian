@@ -8,9 +8,10 @@ the ones above — enforced by the import-linter contract in ``pyproject.toml``)
 ``api``
     The ``/prompt_librarian/*`` aiohttp routes — a package of its own:
     ``config`` (constants), ``utils`` (route table and coercion), ``api``
-    (one function per feature), ``registration`` (the startup wiring) and
-    ``openapi`` (the route table as a spec, loaded only by the script that
-    emits it). Registered by the pack root via
+    (one function per feature), ``registration`` (the startup wiring),
+    ``schemas`` (what each endpoint takes and returns, as dataclasses) and
+    ``openapi`` (those two as a spec, loaded only by the script that emits
+    it). Registered by the pack root via
     :func:`prompt_librarian.api.register`; importing this package does not
     touch aiohttp.
 ``wildcards``

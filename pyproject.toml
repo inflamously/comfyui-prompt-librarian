@@ -102,7 +102,7 @@ known-third-party = ["folder_paths", "server", "comfy", "nodes"]
 # import — inside the domain, which is exactly what the rule means to allow.
 # Absolute imports are not an option: ComfyUI loads the pack by file location,
 # so `prompt_librarian` is not importable by name at runtime.
-"prompt_librarian/api/*.py" = ["ARG001", "TID252"]
+"prompt_librarian/api/**/*.py" = ["ARG001", "TID252"]
 # Registration only; the import order in the pack root is load-bearing. (The
 # domain `__init__.py` facades need none of this — their re-exports are covered
 # by `__all__` — but ruff matches this pattern on the basename alone.)

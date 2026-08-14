@@ -1,18 +1,20 @@
 """The single entry point: turning the route table into live aiohttp routes.
 
-Importing :mod:`.api` fills ``utils._ROUTES`` — that is all the decorators
-do. This module is what the pack root calls to hand that table to a real
-``RouteTableDef``, and the only place the store listener that keeps the search
-and dedupe caches honest is wired up. Keeping it apart from the handlers means
-"what happens at startup?" is one short file, and the handler module stays a
-list of features with no bootstrap logic at the bottom of it.
+Importing :mod:`.api` (and through it every module in :mod:`.routes`) fills
+``utils._ROUTES`` — that is all the decorators do. This module is what the pack
+root calls to hand that table to a real ``RouteTableDef``, and the only place
+the store listener that keeps the search and dedupe caches honest is wired up.
+Keeping it apart from the handlers means "what happens at startup?" is one
+short file, and the route modules stay lists of features with no bootstrap
+logic at the bottom of them.
 """
 
 import logging
 
 from ..store import STORE
-from .api import _on_change, handlers
+from .api import handlers
 from .config import PREFIX
+from .indexing import _on_change
 from .utils import _ROUTES, _get_web
 
 log = logging.getLogger(__name__)

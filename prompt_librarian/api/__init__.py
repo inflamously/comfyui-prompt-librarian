@@ -14,9 +14,19 @@ Module layout
     The route table and everything mechanical — the guard, the JSON envelope,
     the executor hop, and the coercion helpers that turn query strings and
     JSON bodies into the types the store expects.
+``indexing``
+    What a write owes the caches: the store listener, and the incremental
+    re-key that saves a cold all-pairs rebuild after a single-record edit.
+``queries``
+    The read plumbing with more than one caller — running a search from a
+    params mapping, and resolving a bulk selection to ids.
+``routes``
+    One module per feature group (``bulk``, ``dupes``, ``library``,
+    ``prompts``, ``search``, ``snippets``, ``taxonomy``, ``versions``,
+    ``wildcards``), one function per endpoint. The grouping is the one the
+    OpenAPI document tags by. Importing the package registers every route.
 ``api``
-    One function per feature: the handlers, plus the index maintenance and
-    search plumbing they share.
+    ``routes`` imported and the table read back out as ``handlers()``.
 ``registration``
     :func:`register` alone — the startup wiring, kept out of the handler module
     so the two read as separate concerns.
@@ -29,8 +39,9 @@ Module layout
     in the pack that needs a third-party package.
 
 Only ``config`` and ``schemas`` may not import their siblings; ``utils``
-imports ``config``, ``api`` imports those three, and ``registration`` sits on
-top.
+imports ``config``, ``indexing`` and ``queries`` import ``utils``, the modules
+under ``routes`` import all of those and never each other, and ``api`` then
+``registration`` sit on top.
 Underscore-prefixed names cross these modules freely — the underscore marks
 them package-internal, not module-private, and nothing underscored is
 re-exported here.
@@ -60,7 +71,7 @@ Conventions, all of them deliberate
 duplicates them.
 """
 
-from . import api, config, registration, schemas, utils
+from . import api, config, indexing, queries, registration, routes, schemas, utils
 from .api import handlers
 from .config import BULK_QUERY_LIMIT, CAPABILITIES, PREFIX
 from .registration import register
@@ -72,8 +83,11 @@ __all__ = [
     "api",
     "config",
     "handlers",
+    "indexing",
+    "queries",
     "register",
     "registration",
+    "routes",
     "schemas",
     "utils",
 ]

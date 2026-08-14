@@ -8,6 +8,7 @@ installed in this sandbox.
 
 import asyncio
 import json
+import sys
 import types
 
 import pytest
@@ -60,16 +61,32 @@ def routes():
     return table
 
 
+def _modules_binding_store():
+    """Every api module that did ``from ...store import STORE``.
+
+    ``STORE`` is a module-level singleton each module imports *by name*, so
+    every binding has to be replaced independently — patching only some would
+    leave part of the route layer talking to the process-wide store. Discovered
+    rather than listed, so a new route module cannot silently opt out of the
+    swap and start writing to the real library.
+    """
+    return [
+        module for name, module in sorted(sys.modules.items())
+        if name.startswith("prompt_librarian.api")
+        and getattr(module, "STORE", None) is librarian_store.STORE
+    ]
+
+
 @pytest.fixture
 def store(tmp_path, monkeypatch, routes):
-    """A real store in a temp dir, swapped into every api module that binds it.
-
-    ``STORE`` is a module-level singleton each submodule imports by name, so
-    both bindings have to be replaced — patching only one would leave half the
-    handlers talking to the process-wide store.
-    """
+    """A real store in a temp dir, swapped into every api module that binds it."""
     target = librarian_store.LibrarianStore(path=str(tmp_path / "lib" / "library.json"))
-    for module in (api.utils, api.api):
+    modules = _modules_binding_store()
+    # A silent empty list here would point the handlers at the user's real
+    # library.json, so assert the two ends of the layering were found.
+    assert api.utils in modules
+    assert api.routes.prompts in modules
+    for module in modules:
         monkeypatch.setattr(module, "STORE", target)
     # id(store)-keyed caches must not survive between tests: CPython can hand a
     # new object the address of a collected one.
@@ -251,7 +268,7 @@ def test_dupes_all_coalesces_concurrent_callers(call, store, monkeypatch):
 
     async def _race():
         return await asyncio.gather(
-            *[api.api._dupes_all(0.9, False) for _ in range(5)])
+            *[api.routes.dupes._dupes_all(0.9, False) for _ in range(5)])
 
     results = asyncio.run(_race())
     assert len(results) == 5

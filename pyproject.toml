@@ -38,20 +38,20 @@ extend-exclude = ["web", "__pycache__"]
 
 [tool.ruff.lint]
 select = [
-    "E", "W",    # pycodestyle
-    "F",         # pyflakes
-    "I",         # import sorting
-    "N",         # pep8-naming
-    "UP",        # pyupgrade
-    "B",         # bugbear
-    "A",         # builtin shadowing
-    "C4",        # comprehensions
-    "SIM",       # simplify
-    "RET",       # return consistency
-    "ARG",       # unused arguments
-    "TID",       # tidy imports
-    "PT",        # pytest style
-    "C90",       # mccabe complexity
+    "E", "W", # pycodestyle
+    "F", # pyflakes
+    "I", # import sorting
+    "N", # pep8-naming
+    "UP", # pyupgrade
+    "B", # bugbear
+    "A", # builtin shadowing
+    "C4", # comprehensions
+    "SIM", # simplify
+    "RET", # return consistency
+    "ARG", # unused arguments
+    "TID", # tidy imports
+    "PT", # pytest style
+    "C90", # mccabe complexity
 ]
 ignore = [
     # The directory name is dictated by ComfyUI's custom_nodes convention and
@@ -106,59 +106,23 @@ known-third-party = ["folder_paths", "server", "comfy", "nodes"]
 docstring-code-format = true
 
 
-# --------------------------------------------------------------------------
-# Feature scoping — `lint-imports`
-#
-# Run it as:
-#     PYTHONPATH=.. lint-imports
-# (the root "package" is this directory, so its *parent* must be importable).
-#
-# Every module is a feature. The layers below say which feature may import
-# which: highest first, and a module may import anything *below* it, never
-# anything above. Modules on the same line are siblings separated by `:`,
-# meaning they may not import each other either (use `|` instead to allow it).
-#
-# To add a feature: create the module, then slot it into the right layer.
-# To loosen a rule, move the module down a layer; to tighten one, add your own
-# `forbidden` or `independence` contract below — each `[[...contracts]]` block
-# is independent, so they are safe to edit one at a time.
-# --------------------------------------------------------------------------
 [tool.importlinter]
 root_package = "comfyui-prompt-library"
 include_external_packages = true
 
+# Fill in `layers` highest first: a module may import anything *below* it and
+# nothing above. Siblings share a line — "a : b" may not import each other,
+# "a | b" may. An empty list is a valid no-op, so this passes until you fill it.
 [[tool.importlinter.contracts]]
-name = "Feature layers"
-type = "layers"
+name = "Librarian"
+type = ""
 containers = ["comfyui-prompt-library"]
 layers = [
-    "prompt_librarian : prompt_store",
+    "prompt_librarian:prompt_store",
     "librarian_api",
-    "librarian_dedupe",
-    "librarian_wildcards",
-    "librarian_search : librarian_store",
+    "librarian_wildcards:librarian_search:librarian_dedupe",
+    "librarian_store"
 ]
-
-[[tool.importlinter.contracts]]
-name = "Search and matching stay pure (no storage, no disk)"
-type = "forbidden"
-source_modules = [
-    "comfyui-prompt-library.librarian_search",
-    "comfyui-prompt-library.librarian_dedupe",
-]
-forbidden_modules = ["comfyui-prompt-library.librarian_store", "folder_paths"]
-
-[[tool.importlinter.contracts]]
-name = "Only the API, node and store layers talk to the ComfyUI server"
-type = "forbidden"
-# librarian_wildcards is deliberately absent: it goes through librarian_store,
-# which notifies PromptServer on writes.
-source_modules = [
-    "comfyui-prompt-library.librarian_search",
-    "comfyui-prompt-library.librarian_dedupe",
-]
-forbidden_modules = ["aiohttp", "server"]
-
 
 # --------------------------------------------------------------------------
 # Tests

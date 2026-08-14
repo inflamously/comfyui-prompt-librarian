@@ -1,4 +1,4 @@
-"""Tests for ``librarian_wildcards``.
+"""Tests for ``prompt_librarian.wildcards``.
 
 Determinism, nesting, weights, pick-N, escapes, and — the ones that matter for
 not hanging a render worker — the path-traversal guard, the cycle guard and
@@ -9,7 +9,7 @@ import os
 
 import pytest
 
-import librarian_wildcards as wc
+from prompt_librarian import wildcards as wc
 
 # --------------------------------------------------------------------------- #
 # Fixtures

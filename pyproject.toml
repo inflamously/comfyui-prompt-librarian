@@ -75,17 +75,12 @@ ignore = [
 max-complexity = 12
 
 [tool.ruff.lint.flake8-tidy-imports]
-# The nodes import both ways on purpose ("from . import x" inside ComfyUI,
-# "import x" for the flat test/tooling path), so relative imports stay legal.
+# Within a domain package modules import each other relatively ("from .store
+# import STORE"); reaching *up* out of a domain is what must stay banned.
 ban-relative-imports = "parents"
 
 [tool.ruff.lint.isort]
 known-first-party = [
-    "librarian_api",
-    "librarian_dedupe",
-    "librarian_search",
-    "librarian_store",
-    "librarian_wildcards",
     "prompt_librarian",
     "prompt_store",
 ]
@@ -95,11 +90,13 @@ known-third-party = ["folder_paths", "server", "comfy", "nodes"]
 [tool.ruff.lint.per-file-ignores]
 # Tests document themselves through their names, stub ComfyUI modules before
 # importing, pass fixtures they do not always use, and alias the module under
-# test to a single capital (`import librarian_search as S`).
+# test to a single capital (`from prompt_librarian import search as S`).
 "tests/**" = ["ARG001", "E402", "N812", "PT011", "PT018"]
 # aiohttp route handlers must accept `request` whether they use it or not.
-"librarian_api.py" = ["ARG001"]
-# Registration only; the import order there is load-bearing.
+"prompt_librarian/api.py" = ["ARG001"]
+# Registration only; the import order in the pack root is load-bearing. (The
+# domain `__init__.py` facades need none of this — their re-exports are covered
+# by `__all__` — but ruff matches this pattern on the basename alone.)
 "__init__.py" = ["ARG001", "E402", "F401", "I001"]
 
 [tool.ruff.format]
@@ -107,22 +104,35 @@ docstring-code-format = true
 
 
 [tool.importlinter]
-root_package = "comfyui-prompt-library"
+# One root package per domain. The pack root (`__init__.py`) is deliberately
+# NOT analysed: its directory name is not a valid Python identifier, so it is
+# unimportable outside ComfyUI — which is exactly why the domains have to be
+# packages of their own.
+root_packages = ["prompt_librarian", "prompt_store"]
 include_external_packages = true
 
-# Fill in `layers` highest first: a module may import anything *below* it and
-# nothing above. Siblings share a line — "a : b" may not import each other,
-# "a | b" may. An empty list is a valid no-op, so this passes until you fill it.
+# `layers` is highest first: a module may import anything *below* it and nothing
+# above. Siblings share a line — "a : b" may not import each other, "a | b" may.
 [[tool.importlinter.contracts]]
-name = "Librarian"
-type = ""
-containers = ["comfyui-prompt-library"]
+name = "Librarian layers"
+type = "layers"
+containers = ["prompt_librarian"]
 layers = [
-    "prompt_librarian:prompt_store",
-    "librarian_api",
-    "librarian_wildcards:librarian_search:librarian_dedupe",
-    "librarian_store"
+    "node",
+    "api",
+    "wildcards",
+    "dedupe",
+    "search",
+    "store",
 ]
+
+# The two nodes share nothing but the pack root: separate store files, separate
+# routes, separate web assets. A failure in one must not be able to reach the
+# other, and an import either way would be the first crack in that.
+[[tool.importlinter.contracts]]
+name = "Domains are independent"
+type = "independence"
+modules = ["prompt_librarian", "prompt_store"]
 
 # --------------------------------------------------------------------------
 # Tests

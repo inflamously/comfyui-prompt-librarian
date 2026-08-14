@@ -746,7 +746,7 @@ def search(  # noqa: C901 - the query pipeline reads better as one function
     any store exposing ``list_all()`` and ``rev()``.
 
     ``dupe_count_fn`` / ``match_fn`` are injected so this module never has to
-    import ``librarian_dedupe``.  Both are called **once**, with the list of
+    import ``dedupe``.  Both are called **once**, with the list of
     pids on the current page only, and return ``{pid: value}``:
     ``dupe_count_fn`` -> int counts, ``match_fn`` -> similarity in [0, 1]
     against whatever the caller selected (rendered as ``match_pct``).

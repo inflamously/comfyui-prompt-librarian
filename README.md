@@ -202,36 +202,55 @@ registration is isolated from the old node's, so a failure in one can't take dow
 
 ## Layout
 
-```
-__init__.py              node mappings, WEB_DIRECTORY, both route blocks
-librarian_store.py       schema, atomic I/O, CRUD, versions, merge, snippets
-librarian_search.py      inverted index, relevance scoring, filters, sorts
-librarian_dedupe.py      similarity cascade, dupe caches, word-level diff
-librarian_wildcards.py   {a|b} / __file__ / [[snippet]] resolution
-librarian_api.py         31 routes under /prompt_librarian
-prompt_librarian.py      the node class
-web/pl_librarian.js      extension entry (the only file with import-time side effects)
-web/pl/*.js              api, bind, dom, modal, list, inspector, dialogs, pickers
-web/pl/librarian.css     scoped dark theme
-tests/*.py               290 tests, stdlib + pytest only
+One folder per domain — `<root>/<domain>` — and the two domains import nothing from each other
+(enforced by the `Domains are independent` import-linter contract):
 
-prompt_store.py          the OLD node — untouched
-web/prompt_library.js    the OLD node's frontend — untouched
 ```
+__init__.py                   node mappings, WEB_DIRECTORY, both route blocks
+
+prompt_librarian/             the Librarian domain
+  __init__.py                 exports PromptLibrarian
+  node.py                     the node class
+  api.py                      31 routes under /prompt_librarian
+  wildcards.py                {a|b} / __file__ / [[snippet]] resolution
+  dedupe.py                   similarity cascade, dupe caches, word-level diff
+  search.py                   inverted index, relevance scoring, filters, sorts
+  store.py                    schema, atomic I/O, CRUD, versions, merge, snippets
+
+prompt_store/                 the OLD node's domain — untouched
+  __init__.py                 exports PromptLibrary and the prompts.json helpers
+  node.py                     the node class and its store
+
+web/pl_librarian.js           extension entry (the only file with import-time side effects)
+web/pl/*.js                   api, bind, dom, modal, list, inspector, dialogs, pickers
+web/pl/librarian.css          scoped dark theme
+web/prompt_library.js         the OLD node's frontend — untouched
+tests/*.py                    290 tests, stdlib + pytest only
+```
+
+The modules inside `prompt_librarian/` are listed highest-layer first: each may import the ones
+below it and none above, which is the `Librarian layers` contract in `pyproject.toml`. Inside a
+domain the imports are relative (`from .store import STORE`); nothing reaches up out of a domain.
 
 ### Python — package
 
-**`__init__.py`** (99 lines) — the only file both nodes touch. Exports
+**`__init__.py`** (107 lines) — the only file both nodes touch. Exports
 `NODE_CLASS_MAPPINGS` / `NODE_DISPLAY_NAME_MAPPINGS` for `PromptLibrary` and `PromptLibrarian`, and
 `WEB_DIRECTORY = "./web"`. Then two *separate* `try/except` blocks: the first defines the old node's
 four `/prompt_library/*` routes inline (`list`, `prompts`, `save`, `delete`); the second imports
-`librarian_api` and calls `register()`. Separate guards are the point — a syntax error anywhere in
-the librarian stack prints a skip line and leaves the old node's routes intact, and vice versa.
-Both are further guarded on `PromptServer.instance` existing, so a headless/CLI import never crashes.
+`prompt_librarian.api` and calls `register()`. Separate guards are the point — a syntax error
+anywhere in the librarian stack prints a skip line and leaves the old node's routes intact, and vice
+versa. Both are further guarded on `PromptServer.instance` existing, so a headless/CLI import never
+crashes.
+
+Each domain's `__init__.py` is a thin facade over its own modules: `prompt_store` re-exports the
+node plus the `prompts.json` helpers the routes above bind to, and `prompt_librarian` re-exports
+only the node — the pack root imports `prompt_librarian.api` explicitly, inside its own guard, so a
+failure in the route stack cannot take the node down with it.
 
 ### Python — the Librarian backend
 
-**`librarian_store.py`** (1503 lines) — the library file and every mutation of it. Defines
+**`prompt_librarian/store.py`** (1503 lines) — the library file and every mutation of it. Defines
 `SCHEMA_VERSION`, the limit constants (`MAX_BODY_CHARS = 100 000`, `MAX_TAGS = 32`,
 `VERSION_CAP = 50`, `VERSION_BYTES_CAP = 256 KB`, `DEFAULT_DUPE_THRESHOLD = 0.90`), the exception
 hierarchy the API maps to error codes (`NotFoundError`, `BodyTooLargeError`, `ReadOnlyError`,
@@ -248,7 +267,7 @@ versions (`versions`, `version_previews`, `restore_version`, `_trim_versions`), 
 pair list (`ignore_pair` / `is_ignored`), and `export_raw` / `import_raw`. Ends with the module-level
 singleton `STORE`.
 
-**`librarian_search.py`** (888 lines) — stdlib-only, knows nothing about aiohttp, ComfyUI or the
+**`prompt_librarian/search.py`** (888 lines) — stdlib-only, knows nothing about aiohttp, ComfyUI or the
 file format; it takes an iterable of record dicts or anything with `list_all()` + `rev()`. Holds the
 scoring weights as module constants so they stay patchable from tests (`W_NAME 3.0`, `W_TAG 2.0`,
 `W_CAT 1.5`, `W_BODY 1.0`, phrase bonuses, popularity/recency nudges, and the exact/prefix/infix
@@ -258,7 +277,7 @@ handling `tag:`, `cat:`, `-exclude` and `"quoted phrases"`), `score_doc`, the fi
 (`relevance | recent | most_used | az`), and the public `search()` returning a page dict.
 Timestamps are compared as plain ISO strings — nothing here parses a date.
 
-**`librarian_dedupe.py`** (759 lines) — near-duplicate detection and diffing, also stdlib-only.
+**`prompt_librarian/dedupe.py`** (758 lines) — near-duplicate detection and diffing, also stdlib-only.
 `sim_norm` produces the normalized comparison text (capped at `SIM_MAX_CHARS = 4000`), `length_ok`
 is the cheap length prefilter, `ratio` is the cascaded `difflib` real-quick/quick/full ladder.
 `DupeIndex` / `build_dupe_index` provide the rare-token blocking index (`RARE_TOKENS`, `DF_ABS`,
@@ -269,7 +288,7 @@ is the cheap length prefilter, `ratio` is the cascaded `difflib` real-quick/quic
 (word-level opcodes, capped), `diff_summary` (the readable `"toward" → "towards", + volumetric haze`
 line, using real curly quotes and arrows since the UI renders the payload verbatim) and `compare`.
 
-**`librarian_wildcards.py`** (666 lines) — the `{a|b}` / `__file__` / `[[snippet]]` resolver. No
+**`prompt_librarian/wildcards.py`** (662 lines) — the `{a|b}` / `__file__` / `[[snippet]]` resolver. No
 filesystem access at import time. Escapes (`\{`, `\|`, `\}`, `\_`, `\[`, `\]`) are swapped for
 private-use sentinels `U+E000..U+E005` first, so the rest of the pass can treat every remaining
 metacharacter as syntax without a hand-written parser; the innermost-brace regex is then applied
@@ -280,7 +299,7 @@ cache with its `FILES` singleton, `signature()` (folded into the node's cache ke
 option parsing with weights (`3::`) and pick-N (`2$$`, `1-3$$`), the seeded `random.Random` picks,
 and the public `resolve` / `resolve_verbose` / `has_wildcards` / `referenced_names`.
 
-**`librarian_api.py`** (866 lines) — the 31 aiohttp routes under `/prompt_librarian`. `aiohttp` is
+**`prompt_librarian/api.py`** (849 lines) — the 31 aiohttp routes under `/prompt_librarian`. `aiohttp` is
 imported inside `register()`, never at module scope, so tests can import the module without it.
 Every read is GET, every write is POST (no PATCH/DELETE, no path params — that survives ComfyUI's
 `/api` prefix rewriting). `_route` collects handlers into `_ROUTES`; `_guard` wraps each one so a
@@ -293,7 +312,7 @@ to a thread; dict/index lookups run inline. Routes: GET `ping`, `search`, `promp
 merge}`, `merge`, `merge_new`, `versions/restore`, `dupes/ignore`, `category`, `snippet`,
 `settings`, `import`. Also exposes a `CAPABILITIES` dict the frontend feature-detects against.
 
-**`prompt_librarian.py`** (228 lines) — the node class. `INPUT_TYPES` is a pure dict literal (no
+**`prompt_librarian/node.py`** (222 lines) — the node class. `INPUT_TYPES` is a pure dict literal (no
 disk, no store, no combos) because it is called on every `/object_info` request: `text` multiline
 STRING, `prompt_id` STRING, `seed` INT with `control_after_generate`, `resolve_wildcards` and
 `track_usage` BOOLEANs, each with a tooltip. `run()` resolves wildcards inside a try/except that
@@ -410,7 +429,7 @@ an inbound-defence block restating inherited properties so a stray ComfyUI rule 
 
 | File | Tests | Covers |
 |---|---|---|
-| `conftest.py` | — | Injects a stub `folder_paths` into `sys.modules` **before** `librarian_store` imports, and an autouse fixture repoints it at each test's `tmp_path`. Also puts the pack root on `sys.path` so the flat `import librarian_search` form works. No test can reach a real user directory or the old node's `prompts.json`. |
+| `conftest.py` | — | Injects a stub `folder_paths` into `sys.modules` **before** `prompt_librarian.store` imports, and an autouse fixture repoints it at each test's `tmp_path`. Also puts the pack root on `sys.path` so the `from prompt_librarian import search` form works. No test can reach a real user directory or the old node's `prompts.json`. |
 | `test_store.py` | 47 | Schema coercion, atomic write and backup, corrupt/newer-schema handling, CRUD, conflicts, bulk ops, version trimming, merge semantics, taxonomy, snippets, ignored pairs. |
 | `test_search.py` | 44 | Free-standing (plain dict fixtures, no store): tokenizing, index building, query operators, scoring, filters, all four sorts, paging. |
 | `test_dedupe.py` | 39 | Also free-standing: ratio cascade vs raw `difflib`, length prefilter, blocking index correctness, clustering, cache invalidation, diff opcodes and summaries. |
@@ -420,7 +439,7 @@ an inbound-defence block restating inherited properties so a stray ComfyUI rule 
 
 ### The old node — untouched
 
-**`prompt_store.py`** (146 lines) — the original `PromptLibrary` node and its
+**`prompt_store/node.py`** (146 lines) — the original `PromptLibrary` node and its
 `{category: [text, ...]}` store at `<user>/default/prompt-library/prompts.json`. Holds
 `_load_prompts` / `_save_prompts` (tolerating the older flat `{name: text}` format), `_category_names`
 (which returns `["<empty>"]` because an empty combo list breaks the frontend), `_save_target`,
@@ -443,7 +462,11 @@ accept the call and silently drop it. `Open Librarian` exists either way.
 
 ```
 python3 -m pytest tests/ -q      # 290 tests, no ComfyUI required
+ruff check .                     # style, imports, complexity
+lint-imports                     # the layer + independence contracts
 ```
 
 `tests/conftest.py` stubs `folder_paths` at a temp directory, so the suite never touches a real user
-directory.
+directory. `lint-imports` reads its contracts from `pyproject.toml` and analyses the two domain
+packages, which is why they are packages rather than loose modules — the pack root's directory name
+is not a valid Python identifier and cannot be imported outside ComfyUI.

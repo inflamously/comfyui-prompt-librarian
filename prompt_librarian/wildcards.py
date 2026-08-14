@@ -62,13 +62,9 @@ import re
 
 # The store is optional: this module must stay importable (and testable) with
 # no ComfyUI and no `folder_paths` anywhere in sight.
-try:  # package import inside ComfyUI, flat import in tests / tooling
-    try:
-        from .librarian_store import STORE as _STORE
-        from .librarian_store import wildcards_dir as _store_wildcards_dir
-    except ImportError:  # pragma: no cover - exercised by the flat-import path
-        from librarian_store import STORE as _STORE
-        from librarian_store import wildcards_dir as _store_wildcards_dir
+try:
+    from .store import STORE as _STORE
+    from .store import wildcards_dir as _store_wildcards_dir
 except Exception:  # pragma: no cover - no store at all (bare unit use)
     _STORE = None
     _store_wildcards_dir = None

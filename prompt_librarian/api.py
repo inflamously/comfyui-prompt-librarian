@@ -34,34 +34,17 @@ import functools
 import logging
 import traceback
 
-try:  # package import inside ComfyUI, flat import in tests / tooling
-    from . import librarian_dedupe as dedupe
-    from . import librarian_search as search
-    from . import librarian_wildcards as wildcards
-    from .librarian_store import (
-        SCHEMA_VERSION,
-        STORE,
-        BodyTooLargeError,
-        ConflictError,
-        NotFoundError,
-        ReadOnlyError,
-        SameRecordError,
-        StoreWriteError,
-    )
-except ImportError:  # pragma: no cover - exercised by the flat-import path
-    import librarian_dedupe as dedupe
-    import librarian_search as search
-    import librarian_wildcards as wildcards
-    from librarian_store import (
-        SCHEMA_VERSION,
-        STORE,
-        BodyTooLargeError,
-        ConflictError,
-        NotFoundError,
-        ReadOnlyError,
-        SameRecordError,
-        StoreWriteError,
-    )
+from . import dedupe, search, wildcards
+from .store import (
+    SCHEMA_VERSION,
+    STORE,
+    BodyTooLargeError,
+    ConflictError,
+    NotFoundError,
+    ReadOnlyError,
+    SameRecordError,
+    StoreWriteError,
+)
 
 log = logging.getLogger(__name__)
 

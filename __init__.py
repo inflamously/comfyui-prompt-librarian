@@ -1,7 +1,15 @@
-"""Prompt Library — single node to store and load CLIP Text Encode prompts.
+"""Pack root — registers both nodes, the JS web extension and the API routes.
 
-Registers the PromptLibrary node, the JS web extension, and the API routes the
-frontend uses to save/load/delete prompts without re-running the graph.
+One package per domain, each self-contained:
+
+``prompt_store``
+    The ``PromptLibrary`` node and its ``prompts.json`` store, plus the
+    ``/prompt_library/*`` routes bound below.
+``prompt_librarian``
+    The ``PromptLibrarian`` node and its ``library.json`` stack; the
+    ``/prompt_librarian/*`` routes live in ``prompt_librarian.api``.
+
+The two domains share nothing but this file.
 """
 
 from .prompt_store import (
@@ -84,15 +92,15 @@ except Exception as exc:  # pragma: no cover - defensive, mirrors KJNodes patter
 
 
 # --- Prompt Librarian API routes --------------------------------------------
-# A SECOND, INDEPENDENT guard. `librarian_api` is imported inside it, so a
-# failure anywhere in the new stack (a syntax error, a missing module, a bad
+# A SECOND, INDEPENDENT guard. `prompt_librarian.api` is imported inside it, so
+# a failure anywhere in the new stack (a syntax error, a missing module, a bad
 # route table) leaves the block above — and the old node's routes — completely
 # untouched, and vice versa. The two stacks share nothing but this file.
 try:
     from server import PromptServer as _PromptServer
 
     if getattr(_PromptServer, "instance", None) is not None:
-        from . import librarian_api as _librarian_api
+        from .prompt_librarian import api as _librarian_api
 
         _librarian_api.register(_PromptServer.instance.routes)
 except Exception as exc:  # pragma: no cover - defensive

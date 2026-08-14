@@ -1,4 +1,4 @@
-"""Unit tests for ``librarian_store``.
+"""Unit tests for ``prompt_librarian.store``.
 
 Everything here runs against a store pointed at a pytest ``tmp_path``; the real
 ComfyUI user directory (and the old node's ``prompts.json``) is never touched.

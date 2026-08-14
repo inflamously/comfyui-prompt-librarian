@@ -1,4 +1,4 @@
-"""Tests for librarian_search.
+"""Tests for prompt_librarian.search.
 
 Deliberately free-standing: plain dict fixtures, no store, no conftest, no
 ``folder_paths``.  ``sys.path`` is fixed up here so the suite runs whether or
@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest  # noqa: E402
 
-import librarian_search as S  # noqa: E402
+from prompt_librarian import search as S  # noqa: E402
 
 # --------------------------------------------------------------------------
 # Fixtures (plain dicts matching the record schema)

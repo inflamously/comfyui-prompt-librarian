@@ -94,10 +94,11 @@ function isAbort(err) {
  *    aiohttp/proxy stacks treat a content-type on an empty GET as a malformed
  *    request, and it is meaningless anyway.
  * 2. The response's content-type is CHECKED before parsing. If the backend
- *    routes were never registered (an import error in `librarian_api.py`, a
- *    ComfyUI version whose route table differs) the server answers with an
- *    HTML 404 page. `res.json()` on that throws a SyntaxError with a message
- *    about "<" — an unreadable error for the most likely real-world failure.
+ *    routes were never registered (an import error in
+ *    `prompt_librarian/api.py`, a ComfyUI version whose route table differs)
+ *    the server answers with an HTML 404 page. `res.json()` on that throws a
+ *    SyntaxError with a message about "<" — an unreadable error for the most
+ *    likely real-world failure.
  *    A non-JSON response therefore becomes a clean ApiError with code
  *    `not_json`, which the modal renders as "the librarian backend is not
  *    responding".
@@ -155,8 +156,9 @@ async function req(path, opts = {}) {
   if (!res.ok) {
     throw new ApiError(res.status, payload, (payload && payload.code) || codeForStatus(res.status));
   }
-  // The guard in librarian_api.py answers errors with a non-2xx status, but a
-  // handler that returns 200 with {error, code} must not be mistaken for data.
+  // The guard in prompt_librarian/api.py answers errors with a non-2xx status,
+  // but a handler that returns 200 with {error, code} must not be mistaken for
+  // data.
   if (payload && typeof payload === "object" && payload.code && payload.error) {
     throw new ApiError(res.status, payload, payload.code);
   }
@@ -316,8 +318,8 @@ function applyCaps(payload) {
    API surface
    --------------------------------------------------------------------------
    Every read is GET, every write is POST — no PATCH/DELETE verbs and no path
-   parameters, matching librarian_api.py and staying compatible with ComfyUI's
-   /api prefix rewriting.
+   parameters, matching prompt_librarian/api.py and staying compatible with
+   ComfyUI's /api prefix rewriting.
 
    `sel` for the bulk operations is `{ids: [...]}` OR `{query: {...}}` and is
    spread through VERBATIM. The backend accepts both, and `{query}` is the only
@@ -431,7 +433,7 @@ export const API = {
     const probe = text !== undefined ? text : body;
     return req("dupes", {
       method: "POST",
-      // `text` is what librarian_api.py reads; `body` is the name in the
+      // `text` is what prompt_librarian/api.py reads; `body` is the name in the
       // frozen frontend contract. Both are sent — an unknown key is ignored by
       // the handler, and a rename on either side cannot break the hot path.
       body: { text: probe, body: probe, id, exclude_id, threshold, limit, summaries },

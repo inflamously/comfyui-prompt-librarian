@@ -1,4 +1,4 @@
-"""Tests for ``librarian_api``.
+"""Tests for ``prompt_librarian.api``.
 
 The handlers are driven directly with a stub request (``.rel_url.query`` plus
 an async ``.json()``), so no aiohttp server is stood up — only
@@ -14,10 +14,8 @@ import pytest
 
 pytest.importorskip("aiohttp")
 
-import librarian_api as api  # noqa: E402
-import librarian_dedupe as dedupe  # noqa: E402
-import librarian_search as search  # noqa: E402
-import librarian_store  # noqa: E402
+from prompt_librarian import api, dedupe, search  # noqa: E402
+from prompt_librarian import store as librarian_store  # noqa: E402
 
 # --------------------------------------------------------------------------- #
 # Harness
@@ -254,7 +252,7 @@ def test_dupes_all_coalesces_concurrent_callers(call, store, monkeypatch):
 
 
 def test_wildcards(call, store, tmp_path, monkeypatch):
-    import librarian_wildcards as wc
+    from prompt_librarian import wildcards as wc
     root = tmp_path / "wc"
     root.mkdir()
     (root / "mood.txt").write_text("calm\ntense\n", encoding="utf-8")

@@ -10,7 +10,7 @@ Design notes that matter
 
 **There are no combo widgets at all.** That single decision deletes the whole
 class of LiteGraph/Vue reactivity pain the old node lives with. Compare
-``prompt_store.py`` + ``web/prompt_library.js``, where a JS-populated combo
+``prompt_store/node.py`` + ``web/prompt_library.js``, where a JS-populated combo
 forces *all* of:
 
 * ``_category_names()`` returning ``["<empty>"]`` — a sentinel that exists only
@@ -44,19 +44,13 @@ log = logging.getLogger(__name__)
 
 # Both imports are optional at runtime: the node must still load (and still
 # pass `text` through) on a machine where the store cannot be reached.
-try:  # package import inside ComfyUI, flat import in tests / tooling
-    try:
-        from . import librarian_wildcards as wildcards
-    except ImportError:  # pragma: no cover - exercised by the flat-import path
-        import librarian_wildcards as wildcards
+try:
+    from . import wildcards
 except Exception:  # pragma: no cover - defensive
     wildcards = None
 
 try:
-    try:
-        from .librarian_store import STORE
-    except ImportError:  # pragma: no cover
-        from librarian_store import STORE
+    from .store import STORE
 except Exception:  # pragma: no cover - defensive
     STORE = None
 

@@ -743,7 +743,7 @@ class LibrarianStore:
         with self._lock:
             return copy.deepcopy(self._data.get("prompts", []))
 
-    # ``librarian_search`` and ``librarian_dedupe`` duck-type a store as
+    # ``search`` and ``dedupe`` duck-type a store as
     # ``rev()`` + ``list_all()``. Keeping the alias here (rather than renaming
     # ``all()``) means either name works from any call site.
     list_all = all  # noqa: A003 - `all` is the collection API name, not the builtin

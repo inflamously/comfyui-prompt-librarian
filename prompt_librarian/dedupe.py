@@ -1,6 +1,6 @@
 """Near-duplicate detection and word-level diffing for the Prompt Librarian.
 
-Pure, stdlib-only.  Like ``librarian_search`` this module is driven by a plain
+Pure, stdlib-only.  Like ``search`` this module is driven by a plain
 iterable of record dicts, a prebuilt :class:`DupeIndex`, or any store exposing
 ``list_all()`` and ``rev()``.
 
@@ -31,12 +31,8 @@ from collections import OrderedDict
 from collections.abc import Iterable, Sequence
 from typing import Any
 
-try:  # package import inside ComfyUI, flat import in tests / tooling
-    from .librarian_search import normalize
-    from .librarian_search import preview as _preview
-except ImportError:  # pragma: no cover - exercised by the flat-import path
-    from librarian_search import normalize
-    from librarian_search import preview as _preview
+from .search import normalize
+from .search import preview as _preview
 
 # --------------------------------------------------------------------------
 # Tuning constants
@@ -458,7 +454,7 @@ def page_dupe_counts(source: Any, pids: Sequence[str],
                      rev: int | None = None) -> dict[str, int]:
     """Near-duplicate counts for a handful of ids only (one search page).
 
-    This is what ``librarian_search.search(dupe_count_fn=...)`` should be
+    This is what ``search.search(dupe_count_fn=...)`` should be
     handed: it never pays the all-pairs cost.
     """
     idx = _resolve(source, rev)

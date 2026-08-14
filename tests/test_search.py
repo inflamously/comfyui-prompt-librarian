@@ -1,4 +1,4 @@
-"""Tests for librarian_search.
+"""Tests for prompt_librarian.search.
 
 Deliberately free-standing: plain dict fixtures, no store, no conftest, no
 ``folder_paths``.  ``sys.path`` is fixed up here so the suite runs whether or
@@ -12,8 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest  # noqa: E402
 
-import librarian_search as S  # noqa: E402
-
+from prompt_librarian import search as S  # noqa: E402
 
 # --------------------------------------------------------------------------
 # Fixtures (plain dicts matching the record schema)
@@ -21,7 +20,7 @@ import librarian_search as S  # noqa: E402
 
 
 def mk(pid, name, body, **kw):
-    rec = {
+    return {
         "id": pid,
         "name": name,
         "body": body,
@@ -36,7 +35,6 @@ def mk(pid, name, body, **kw):
         "pinned": kw.get("pinned", False),
         "versions": kw.get("versions", []),
     }
-    return rec
 
 
 @pytest.fixture
@@ -136,7 +134,7 @@ def test_prefix_search_finds_longer_term(records):
 
 
 def test_prefix_expansion_is_capped():
-    recs = [mk("p%d" % i, "n%d" % i, "prefixaaa%04d" % i) for i in range(300)]
+    recs = [mk(f"p{i}", f"n{i}", f"prefixaaa{i:04d}") for i in range(300)]
     idx = S.build_index(recs)
     assert len(idx.expand_prefix("prefixaaa")) == S.PREFIX_EXPAND_CAP
 

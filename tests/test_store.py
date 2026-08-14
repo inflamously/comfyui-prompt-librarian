@@ -1,4 +1,4 @@
-"""Unit tests for ``librarian_store``.
+"""Unit tests for ``prompt_librarian.store``.
 
 Everything here runs against a store pointed at a pytest ``tmp_path``; the real
 ComfyUI user directory (and the old node's ``prompts.json``) is never touched.
@@ -9,14 +9,18 @@ import os
 
 import pytest
 
-
 # --------------------------------------------------------------------------- #
 # helpers
 # --------------------------------------------------------------------------- #
 
 def read_raw(store):
-    with open(store.store_path(), "r", encoding="utf-8") as handle:
+    with open(store.store_path(), encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def read_text(path):
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
 
 
 def write_raw(path, payload):
@@ -118,7 +122,7 @@ def test_save_writes_a_backup_of_the_previous_file(store):
     store.create(name="two", body="two")
     backup = store.backup_path()
     assert os.path.isfile(backup)
-    with open(backup, "r", encoding="utf-8") as handle:
+    with open(backup, encoding="utf-8") as handle:
         previous = json.load(handle)
     assert len(previous["prompts"]) == 1       # the state before the second save
 
@@ -168,7 +172,10 @@ def test_write_failure_raises_and_leaves_the_file_intact(store, mod, monkeypatch
 def test_serialization_failure_never_touches_the_disk(store, mod, monkeypatch):
     store.create(name="one", body="one")
     before = read_raw(store)
-    monkeypatch.setattr(mod.json, "dumps", lambda *a, **k: (_ for _ in ()).throw(TypeError("nope")))
+    def boom(*_a, **_k):
+        raise TypeError("nope")
+
+    monkeypatch.setattr(mod.json, "dumps", boom)
     with pytest.raises(mod.StoreWriteError):
         store.create(name="two", body="two")
     monkeypatch.undo()
@@ -181,18 +188,18 @@ def test_serialization_failure_never_touches_the_disk(store, mod, monkeypatch):
 
 def test_corrupt_file_loads_empty_and_is_preserved_then_quarantined(store, lib_path, mod):
     write_raw(lib_path, '{"prompts": [ this is not json')
-    original = open(lib_path, "r", encoding="utf-8").read()
+    original = read_text(lib_path)
 
     assert store.count() == 0
     assert store.is_corrupt() is True
-    assert open(lib_path, "r", encoding="utf-8").read() == original   # untouched so far
+    assert read_text(lib_path) == original                       # untouched so far
 
     store.create(name="rescue", body="rescue")
     assert store.is_corrupt() is False
 
     quarantined = [n for n in os.listdir(store.store_dir()) if ".corrupt-" in n]
     assert len(quarantined) == 1
-    with open(os.path.join(store.store_dir(), quarantined[0]), "r", encoding="utf-8") as handle:
+    with open(os.path.join(store.store_dir(), quarantined[0]), encoding="utf-8") as handle:
         assert handle.read() == original                             # never overwritten
     assert len(read_raw(store)["prompts"]) == 1
 
@@ -285,7 +292,7 @@ def test_tag_normalization_and_the_tag_cap(store, mod):
     ])
     assert rec["tags"] == ["camera-move", "strasse", "x" * mod.MAX_TAG_CHARS, "12"]
 
-    many = store.create(name="m", body="m", tags=["tag%02d" % i for i in range(40)])
+    many = store.create(name="m", body="m", tags=[f"tag{i:02d}" for i in range(40)])
     assert len(many["tags"]) == mod.MAX_TAGS
     assert many["tags"][0] == "tag00"
     assert many["tags"][-1] == "tag31"
@@ -303,7 +310,7 @@ def test_name_and_rating_normalization(store, mod):
 def test_unicode_round_trip_is_written_unescaped(store, fresh):
     body = "cinematic 🎬 ballet, 東京の夜, שלום עולם, café"
     rec = store.create(name="unicode 🎬 東京", body=body, tags=["東京", "🎬"])
-    with open(store.store_path(), "r", encoding="utf-8") as handle:
+    with open(store.store_path(), encoding="utf-8") as handle:
         text = handle.read()
     assert "🎬" in text and "東京" in text and "שלום" in text     # ensure_ascii=False
     reloaded = fresh().get(rec["id"])
@@ -357,11 +364,11 @@ def test_snapshot_false_bypasses_history(store):
 def test_version_cap_by_count(store, mod):
     rec = store.create(name="v", body="body-000")
     for i in range(1, mod.VERSION_CAP + 6):
-        store.update(rec["id"], body="body-%03d" % i)
+        store.update(rec["id"], body=f"body-{i:03d}")
     versions = store.versions(rec["id"])
     assert len(versions) == mod.VERSION_CAP
     assert versions[0]["body"] == "body-005"     # the oldest were dropped
-    assert versions[-1]["body"] == "body-%03d" % (mod.VERSION_CAP + 4)
+    assert versions[-1]["body"] == f"body-{mod.VERSION_CAP + 4:03d}"
 
 
 def test_version_cap_by_bytes(store, mod):
@@ -470,8 +477,8 @@ def build_merge_pair(store):
                tags=["shared", "camera"], rating=5, used=7,
                created="2026-01-01T00:00:00Z", updated="2026-02-20T00:00:00Z",
                last_run="2026-02-15T00:00:00Z", notes="theirs", pinned=True,
-               versions=[{"body": "l-%d" % i, "name": "l%d" % i,
-                          "ts": "2026-01-0%dT00:00:00Z" % (i + 1), "src": None}
+               versions=[{"body": f"l-{i}", "name": f"l{i}",
+                          "ts": f"2026-01-0{i + 1}T00:00:00Z", "src": None}
                          for i in range(7)]),
     ]))
 
@@ -677,7 +684,7 @@ def test_version_cap_setting_is_honoured(store):
     store.set_settings(version_cap=2)
     rec = store.create(name="v", body="b0")
     for i in range(1, 6):
-        store.update(rec["id"], body="b%d" % i)
+        store.update(rec["id"], body=f"b{i}")
     assert [v["body"] for v in store.versions(rec["id"])] == ["b3", "b4"]
 
 
@@ -723,7 +730,7 @@ def test_concurrent_writers_do_not_lose_records(store):
     def worker(index):
         try:
             for i in range(5):
-                store.create(name="t%d-%d" % (index, i), body="body %d %d" % (index, i))
+                store.create(name=f"t{index}-{i}", body=f"body {index} {i}")
         except Exception as exc:  # pragma: no cover - only fires on a real bug
             errors.append(exc)
 

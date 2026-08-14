@@ -1,0 +1,147 @@
+[project]
+name = "comfyui-prompt-library"
+version = "0.1.0"
+description = "Two ComfyUI nodes for keeping prompts out of your workflow presets: Prompt Library and Prompt Librarian."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "inflamously" }]
+# Runtime deps come from ComfyUI itself (aiohttp, server, folder_paths).
+# Anything listed here would be installed into the user's ComfyUI env, so keep it empty.
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/inflamously/comfyui-prompt-librarian"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "import-linter>=2.0",
+]
+
+# ComfyUI Registry metadata (https://docs.comfy.org/registry/overview).
+[tool.comfy]
+PublisherId = "inflamously"
+DisplayName = "Prompt Library"
+Icon = ""
+
+
+# --------------------------------------------------------------------------
+# Source code rules — `ruff check .` / `ruff format .`
+# --------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = [".", "tests"]
+extend-exclude = ["web", "__pycache__"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", # pycodestyle
+    "F", # pyflakes
+    "I", # import sorting
+    "N", # pep8-naming
+    "UP", # pyupgrade
+    "B", # bugbear
+    "A", # builtin shadowing
+    "C4", # comprehensions
+    "SIM", # simplify
+    "RET", # return consistency
+    "ARG", # unused arguments
+    "TID", # tidy imports
+    "PT", # pytest style
+    "C90", # mccabe complexity
+]
+ignore = [
+    # The directory name is dictated by ComfyUI's custom_nodes convention and
+    # cannot be a valid Python identifier.
+    "N999",
+    # ComfyUI's own node API is camelCase (INPUT_TYPES, IS_CHANGED, ...).
+    "N802",
+    # Node/route signatures are fixed by ComfyUI and aiohttp, so unused
+    # parameters there are not the author's choice.
+    "ARG002", "ARG003",
+]
+
+# Not enforced repo-wide yet, because the existing modules predate them:
+#   ANN  type annotations
+#   D    docstrings
+#   PTH  pathlib instead of os.path  (ComfyUI's folder_paths returns str)
+# Add them to `select` above once a module has been brought up to date, or
+# preview the work with:  ruff check --extend-select ANN,D,PTH <module>.py
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+[tool.ruff.lint.flake8-tidy-imports]
+# Within a domain package modules import each other relatively ("from .store
+# import STORE"); reaching *up* out of a domain is what must stay banned.
+ban-relative-imports = "parents"
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "prompt_librarian",
+    "prompt_store",
+]
+# ComfyUI injects these into sys.path at runtime; they are not stdlib.
+known-third-party = ["folder_paths", "server", "comfy", "nodes"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests document themselves through their names, stub ComfyUI modules before
+# importing, pass fixtures they do not always use, and alias the module under
+# test to a single capital (`from prompt_librarian import search as S`).
+"tests/**" = ["ARG001", "E402", "N812", "PT011", "PT018"]
+# aiohttp route handlers must accept `request` whether they use it or not.
+"prompt_librarian/api.py" = ["ARG001"]
+# Registration only; the import order in the pack root is load-bearing. (The
+# domain `__init__.py` facades need none of this — their re-exports are covered
+# by `__all__` — but ruff matches this pattern on the basename alone.)
+"__init__.py" = ["ARG001", "E402", "F401", "I001"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+
+[tool.importlinter]
+# One root package per domain. The pack root (`__init__.py`) is deliberately
+# NOT analysed: its directory name is not a valid Python identifier, so it is
+# unimportable outside ComfyUI — which is exactly why the domains have to be
+# packages of their own.
+root_packages = ["prompt_librarian", "prompt_store"]
+include_external_packages = true
+
+# `layers` is highest first: a module may import anything *below* it and nothing
+# above. Siblings share a line — "a : b" may not import each other, "a | b" may.
+[[tool.importlinter.contracts]]
+name = "Librarian layers"
+type = "layers"
+containers = ["prompt_librarian"]
+layers = [
+    "node",
+    "api",
+    "wildcards",
+    "dedupe",
+    "search",
+    "store",
+]
+
+# The two nodes share nothing but the pack root: separate store files, separate
+# routes, separate web assets. A failure in one must not be able to reach the
+# other, and an import either way would be the first crack in that.
+[[tool.importlinter.contracts]]
+name = "Domains are independent"
+type = "independence"
+modules = ["prompt_librarian", "prompt_store"]
+
+# --------------------------------------------------------------------------
+# Tests
+# --------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+]

@@ -50,7 +50,7 @@ const MIRROR_DEBOUNCE_MS = 60;
 const MIRROR_SLOP_PX = 4; // self-check tolerance; beyond it the mirror dies
 const VALIDATE_DEBOUNCE_MS = 300;
 
-const MAX_TAG_CHARS = 40; // librarian_store.MAX_TAG_CHARS
+const MAX_TAG_CHARS = 40; // prompt_librarian/store.py MAX_TAG_CHARS
 const SAMPLE_CHARS = 260; // wildcard preview truncation
 const MAX_TOKENS = 4000; // tokenizer safety cap
 
@@ -69,8 +69,8 @@ const PLUS = "+";
  *   __file__       wildcard file, `__sub/dir/name__` allowed
  *   [[snippet]]    stored snippet reference
  *
- * Deliberately aligned with librarian_wildcards.py, because a highlight that
- * disagrees with the resolver is worse than no highlight:
+ * Deliberately aligned with prompt_librarian/wildcards.py, because a highlight
+ * that disagrees with the resolver is worse than no highlight:
  *
  *   _FILE_RE    = re.compile(r"__([\w\-./\\]+?)__", re.UNICODE)
  *   _SNIPPET_RE = re.compile(r"\[\[([^\[\]]*)\]\]")
@@ -732,7 +732,7 @@ export function openCategoryPicker(ctx, { anchor, value, onPick } = {}) {
    ========================================================================== */
 
 /**
- * Mirror of `librarian_store.clean_tag`:
+ * Mirror of `prompt_librarian/store.py clean_tag`:
  *
  *     text = _WS_RE.sub("-", _as_str(tag).strip()).casefold()
  *     return text[:MAX_TAG_CHARS]

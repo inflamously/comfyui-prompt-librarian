@@ -34,6 +34,30 @@ Open it on a machine with no library and it still renders and still runs; it jus
 or show a name. That is also why there are no combo widgets: it sidesteps the entire class of
 LiteGraph/Vue combo-reactivity problems the older node has to work around.
 
+### The node and the panel are one field
+
+The panel's prompt box and the node's `text` widget are **two views of the same value**.
+Type in either and the other follows; the node's card preview follows too. Picking a prompt in
+the rail loads it straight into the node — body *and* `prompt_id`, which is what keeps usage
+counting honest.
+
+The header carries a **⇅ linked** chip. Turn it off to browse, edit and save library records
+without touching the node at all; `Load into node` still pushes on demand. The setting is
+remembered across reloads.
+
+Three rules decide who wins when both sides move at once:
+
+- **On connect the node wins.** Opening the panel, or re-pointing it at another node, pulls that
+  node's text in — it is what will actually render. With nothing selected it lands in the box as an
+  unsaved buffer, ready for `Save as new`.
+- **The caret wins.** Text arriving from the node is not applied while you are typing in the panel's
+  box.
+- **Selection is a commit, deselection is not.** Picking a row writes the node; clearing the
+  selection, a background refresh, or merely opening the panel never does.
+
+Binding to the node changes nothing about saving: text arriving from the node is an ordinary edit,
+so it marks the record `edited` and still goes through the full dupe-and-staleness gate below.
+
 ### The librarian panel
 
 Click **Open Librarian** on the node. The panel is a full-screen overlay:
@@ -178,36 +202,55 @@ registration is isolated from the old node's, so a failure in one can't take dow
 
 ## Layout
 
-```
-__init__.py              node mappings, WEB_DIRECTORY, both route blocks
-librarian_store.py       schema, atomic I/O, CRUD, versions, merge, snippets
-librarian_search.py      inverted index, relevance scoring, filters, sorts
-librarian_dedupe.py      similarity cascade, dupe caches, word-level diff
-librarian_wildcards.py   {a|b} / __file__ / [[snippet]] resolution
-librarian_api.py         31 routes under /prompt_librarian
-prompt_librarian.py      the node class
-web/pl_librarian.js      extension entry (the only file with import-time side effects)
-web/pl/*.js              api, dom, modal, list, inspector, dialogs, pickers
-web/pl/librarian.css     scoped dark theme
-tests/*.py               290 tests, stdlib + pytest only
+One folder per domain — `<root>/<domain>` — and the two domains import nothing from each other
+(enforced by the `Domains are independent` import-linter contract):
 
-prompt_store.py          the OLD node — untouched
-web/prompt_library.js    the OLD node's frontend — untouched
 ```
+__init__.py                   node mappings, WEB_DIRECTORY, both route blocks
+
+prompt_librarian/             the Librarian domain
+  __init__.py                 exports PromptLibrarian
+  node.py                     the node class
+  api.py                      31 routes under /prompt_librarian
+  wildcards.py                {a|b} / __file__ / [[snippet]] resolution
+  dedupe.py                   similarity cascade, dupe caches, word-level diff
+  search.py                   inverted index, relevance scoring, filters, sorts
+  store.py                    schema, atomic I/O, CRUD, versions, merge, snippets
+
+prompt_store/                 the OLD node's domain — untouched
+  __init__.py                 exports PromptLibrary and the prompts.json helpers
+  node.py                     the node class and its store
+
+web/pl_librarian.js           extension entry (the only file with import-time side effects)
+web/pl/*.js                   api, bind, dom, modal, list, inspector, dialogs, pickers
+web/pl/librarian.css          scoped dark theme
+web/prompt_library.js         the OLD node's frontend — untouched
+tests/*.py                    290 tests, stdlib + pytest only
+```
+
+The modules inside `prompt_librarian/` are listed highest-layer first: each may import the ones
+below it and none above, which is the `Librarian layers` contract in `pyproject.toml`. Inside a
+domain the imports are relative (`from .store import STORE`); nothing reaches up out of a domain.
 
 ### Python — package
 
-**`__init__.py`** (99 lines) — the only file both nodes touch. Exports
+**`__init__.py`** (107 lines) — the only file both nodes touch. Exports
 `NODE_CLASS_MAPPINGS` / `NODE_DISPLAY_NAME_MAPPINGS` for `PromptLibrary` and `PromptLibrarian`, and
 `WEB_DIRECTORY = "./web"`. Then two *separate* `try/except` blocks: the first defines the old node's
 four `/prompt_library/*` routes inline (`list`, `prompts`, `save`, `delete`); the second imports
-`librarian_api` and calls `register()`. Separate guards are the point — a syntax error anywhere in
-the librarian stack prints a skip line and leaves the old node's routes intact, and vice versa.
-Both are further guarded on `PromptServer.instance` existing, so a headless/CLI import never crashes.
+`prompt_librarian.api` and calls `register()`. Separate guards are the point — a syntax error
+anywhere in the librarian stack prints a skip line and leaves the old node's routes intact, and vice
+versa. Both are further guarded on `PromptServer.instance` existing, so a headless/CLI import never
+crashes.
+
+Each domain's `__init__.py` is a thin facade over its own modules: `prompt_store` re-exports the
+node plus the `prompts.json` helpers the routes above bind to, and `prompt_librarian` re-exports
+only the node — the pack root imports `prompt_librarian.api` explicitly, inside its own guard, so a
+failure in the route stack cannot take the node down with it.
 
 ### Python — the Librarian backend
 
-**`librarian_store.py`** (1503 lines) — the library file and every mutation of it. Defines
+**`prompt_librarian/store.py`** (1503 lines) — the library file and every mutation of it. Defines
 `SCHEMA_VERSION`, the limit constants (`MAX_BODY_CHARS = 100 000`, `MAX_TAGS = 32`,
 `VERSION_CAP = 50`, `VERSION_BYTES_CAP = 256 KB`, `DEFAULT_DUPE_THRESHOLD = 0.90`), the exception
 hierarchy the API maps to error codes (`NotFoundError`, `BodyTooLargeError`, `ReadOnlyError`,
@@ -224,7 +267,7 @@ versions (`versions`, `version_previews`, `restore_version`, `_trim_versions`), 
 pair list (`ignore_pair` / `is_ignored`), and `export_raw` / `import_raw`. Ends with the module-level
 singleton `STORE`.
 
-**`librarian_search.py`** (888 lines) — stdlib-only, knows nothing about aiohttp, ComfyUI or the
+**`prompt_librarian/search.py`** (888 lines) — stdlib-only, knows nothing about aiohttp, ComfyUI or the
 file format; it takes an iterable of record dicts or anything with `list_all()` + `rev()`. Holds the
 scoring weights as module constants so they stay patchable from tests (`W_NAME 3.0`, `W_TAG 2.0`,
 `W_CAT 1.5`, `W_BODY 1.0`, phrase bonuses, popularity/recency nudges, and the exact/prefix/infix
@@ -234,7 +277,7 @@ handling `tag:`, `cat:`, `-exclude` and `"quoted phrases"`), `score_doc`, the fi
 (`relevance | recent | most_used | az`), and the public `search()` returning a page dict.
 Timestamps are compared as plain ISO strings — nothing here parses a date.
 
-**`librarian_dedupe.py`** (759 lines) — near-duplicate detection and diffing, also stdlib-only.
+**`prompt_librarian/dedupe.py`** (758 lines) — near-duplicate detection and diffing, also stdlib-only.
 `sim_norm` produces the normalized comparison text (capped at `SIM_MAX_CHARS = 4000`), `length_ok`
 is the cheap length prefilter, `ratio` is the cascaded `difflib` real-quick/quick/full ladder.
 `DupeIndex` / `build_dupe_index` provide the rare-token blocking index (`RARE_TOKENS`, `DF_ABS`,
@@ -245,7 +288,7 @@ is the cheap length prefilter, `ratio` is the cascaded `difflib` real-quick/quic
 (word-level opcodes, capped), `diff_summary` (the readable `"toward" → "towards", + volumetric haze`
 line, using real curly quotes and arrows since the UI renders the payload verbatim) and `compare`.
 
-**`librarian_wildcards.py`** (666 lines) — the `{a|b}` / `__file__` / `[[snippet]]` resolver. No
+**`prompt_librarian/wildcards.py`** (662 lines) — the `{a|b}` / `__file__` / `[[snippet]]` resolver. No
 filesystem access at import time. Escapes (`\{`, `\|`, `\}`, `\_`, `\[`, `\]`) are swapped for
 private-use sentinels `U+E000..U+E005` first, so the rest of the pass can treat every remaining
 metacharacter as syntax without a hand-written parser; the innermost-brace regex is then applied
@@ -256,7 +299,7 @@ cache with its `FILES` singleton, `signature()` (folded into the node's cache ke
 option parsing with weights (`3::`) and pick-N (`2$$`, `1-3$$`), the seeded `random.Random` picks,
 and the public `resolve` / `resolve_verbose` / `has_wildcards` / `referenced_names`.
 
-**`librarian_api.py`** (866 lines) — the 31 aiohttp routes under `/prompt_librarian`. `aiohttp` is
+**`prompt_librarian/api.py`** (849 lines) — the 31 aiohttp routes under `/prompt_librarian`. `aiohttp` is
 imported inside `register()`, never at module scope, so tests can import the module without it.
 Every read is GET, every write is POST (no PATCH/DELETE, no path params — that survives ComfyUI's
 `/api` prefix rewriting). `_route` collects handlers into `_ROUTES`; `_guard` wraps each one so a
@@ -269,7 +312,7 @@ to a thread; dict/index lookups run inline. Routes: GET `ping`, `search`, `promp
 merge}`, `merge`, `merge_new`, `versions/restore`, `dupes/ignore`, `category`, `snippet`,
 `settings`, `import`. Also exposes a `CAPABILITIES` dict the frontend feature-detects against.
 
-**`prompt_librarian.py`** (228 lines) — the node class. `INPUT_TYPES` is a pure dict literal (no
+**`prompt_librarian/node.py`** (222 lines) — the node class. `INPUT_TYPES` is a pure dict literal (no
 disk, no store, no combos) because it is called on every `/object_info` request: `text` multiline
 STRING, `prompt_id` STRING, `seed` INT with `control_after_generate`, `resolve_wildcards` and
 `track_usage` BOOLEANs, each with a tooltip. `run()` resolves wildcards inside a try/except that
@@ -290,6 +333,8 @@ via `addDOMWidget` (`buildDomFace` / `buildNodeCard`, with name, preview, star r
 falling back to plain button widgets (`buildButtonFace`) when the installed frontend doesn't mount
 it — hydrates metadata from the backend (`ensureHydrated`, `refreshMeta`), paints it (`paintFace`,
 `paintStars`), supports rating straight from the node, and opens the panel via `openLibrarian`.
+`bindFace` subscribes the card to bind.js so the preview line tracks edits made in the node's own
+text widget; it is independent of the panel and unsubscribes from a chained `onRemoved`.
 
 **`web/pl/api.js`** (627 lines) — the transport layer, and the only module under `web/pl/` that
 imports from ComfyUI. Uses `api.fetchApi` rather than bare `fetch` so the base URL / reverse-proxy
@@ -298,6 +343,20 @@ call site needs an AbortError try/catch), `ApiError`, `createLane` / `lanes` / `
 per-concern request coalescing, `caps` / `capable` for feature detection against the backend's
 `CAPABILITIES`, the `API` object with one method per route, and the metadata cache
 (`getPromptMeta`, `invalidateMeta`).
+
+**`web/pl/bind.js`** — the node ⇄ panel binding, and the only module that touches a LiteGraph
+widget's internals. `writeNodeText(node, {body, id})` is the single write path (used by both the live
+binding and `Load into node`): value first then callback, and it also sets the widget's backing
+`<textarea>` and dispatches a synthetic `input`, because assigning `.value` from JS fires no event and
+the on-canvas widget would otherwise keep painting stale text. `bindNode(node, onChange)` observes in
+three independent, individually optional layers — an `input`/`change` listener on that element, a
+chained `Object.defineProperty` over `widget.value`, and `poll()` driven by modal.js's existing 1 s
+heartbeat — because which of them exists depends on a frontend generation we cannot detect. The
+interception **chains onto the original descriptor** rather than replacing it: on the legacy frontend
+`value` is already an accessor over `inputEl`, and a plain data property on top silently disconnects
+the widget from its own element. Echoes are killed in one place for all three layers by `lastSeen`,
+the last value written or observed. `bindNode` reference-counts its subscribers, so the node card and
+the panel can both observe one node, and `unbind` restores exactly the descriptor it found.
 
 **`web/pl/dom.js`** (629 lines) — dependency-free DOM and formatting helpers, no ComfyUI import.
 `h()` hyperscript (with a `DIRECT_PROPS` set for props that must be assigned rather than
@@ -312,7 +371,11 @@ grapheme-aware `charCount` / `truncate` / `firstLine`, `estimateTokens`, `stars`
 inspector / footer DOM, the state store (`getState`, `setState`, `subscribe`), the layer stack
 (`pushLayer`, `popLayer`, `topLayer`), `toast()` and `confirmDialog()`, target-node resolution
 (`getTargetNodeId`, `loadIntoNode`), `refreshAll`, the shared `ctx()` handed to every submodule, and
-`openModal` / `closeModal`. It also installs the **key isolation** guard — a window-capture listener
+`openModal` / `closeModal`. It also owns the **node binding**: the `⇅ linked` toggle and its
+`localStorage` preference, `attachBinding` / `detachBinding` / `syncBinding` (reconciled on the same
+1 s heartbeat that re-resolves the target, so a re-pointed or re-created node is picked up without a
+hook of its own), and the `pushToNode` / `isLinked` / `setLinked` trio on `ctx`. The seed direction on
+attach is node → panel, deliberately: the node holds what will actually render. It also installs the **key isolation** guard — a window-capture listener
 that calls `stopImmediatePropagation()` on every key event originating inside `.pl-root` so ComfyUI's
 global shortcuts can't fire while you type — and re-delivers those events on its own key bus, which
 is why plain `addEventListener("keydown", …)` is dead code anywhere else in the panel. `list.js` and
@@ -328,7 +391,14 @@ the current page and a locally-filtered list would show rows whose badges disagr
 
 **`web/pl/inspector.js`** (1861 lines) — the right pane: name, category, tags, the prompt textarea
 with char/token counts and the `edited` marker, the duplicate-check panel, the four stat tiles and
-the action row. Single export, `mountInspector(el, ctx)`. Its reason for existing is the save flow:
+the action row. Single export, `mountInspector(el, ctx)`. Its half of the node binding is three
+hooks and no restructuring: `afterEdit()` pushes the buffer through an rAF-coalesced `pushBody` (so a
+fast typist costs one canvas repaint per frame, not per keystroke), `setBody(text, {fromNode})` marks
+the inbound direction and yields to whichever textarea holds the caret, and `adoptRecord(rec, {push})`
+writes body **and** `prompt_id` — opt-in, and set only on a user selection or a save, never on
+deselect, a background refresh, or the initial paint. The echo guard is `lastInbound`, a value rather
+than a flag, because the push is coalesced to the next frame and any "currently applying" marker would
+already be clear by the time it runs. Its reason for existing is the save flow:
 not-dirty check → staleness check → dupe gate (always re-run on save) → commit (`create`, or
 `update` with `expect_updated`, with a 409 re-entering the staleness step) → adopt the server's
 record as both `current` and `baseline`. The staleness and dupe dialogs are built inline via
@@ -359,7 +429,7 @@ an inbound-defence block restating inherited properties so a stray ComfyUI rule 
 
 | File | Tests | Covers |
 |---|---|---|
-| `conftest.py` | — | Injects a stub `folder_paths` into `sys.modules` **before** `librarian_store` imports, and an autouse fixture repoints it at each test's `tmp_path`. Also puts the pack root on `sys.path` so the flat `import librarian_search` form works. No test can reach a real user directory or the old node's `prompts.json`. |
+| `conftest.py` | — | Injects a stub `folder_paths` into `sys.modules` **before** `prompt_librarian.store` imports, and an autouse fixture repoints it at each test's `tmp_path`. Also puts the pack root on `sys.path` so the `from prompt_librarian import search` form works. No test can reach a real user directory or the old node's `prompts.json`. |
 | `test_store.py` | 47 | Schema coercion, atomic write and backup, corrupt/newer-schema handling, CRUD, conflicts, bulk ops, version trimming, merge semantics, taxonomy, snippets, ignored pairs. |
 | `test_search.py` | 44 | Free-standing (plain dict fixtures, no store): tokenizing, index building, query operators, scoring, filters, all four sorts, paging. |
 | `test_dedupe.py` | 39 | Also free-standing: ratio cascade vs raw `difflib`, length prefilter, blocking index correctness, clustering, cache invalidation, diff opcodes and summaries. |
@@ -369,7 +439,7 @@ an inbound-defence block restating inherited properties so a stray ComfyUI rule 
 
 ### The old node — untouched
 
-**`prompt_store.py`** (146 lines) — the original `PromptLibrary` node and its
+**`prompt_store/node.py`** (146 lines) — the original `PromptLibrary` node and its
 `{category: [text, ...]}` store at `<user>/default/prompt-library/prompts.json`. Holds
 `_load_prompts` / `_save_prompts` (tolerating the older flat `{name: text}` format), `_category_names`
 (which returns `["<empty>"]` because an empty combo list breaks the frontend), `_save_target`,
@@ -392,7 +462,11 @@ accept the call and silently drop it. `Open Librarian` exists either way.
 
 ```
 python3 -m pytest tests/ -q      # 290 tests, no ComfyUI required
+ruff check .                     # style, imports, complexity
+lint-imports                     # the layer + independence contracts
 ```
 
 `tests/conftest.py` stubs `folder_paths` at a temp directory, so the suite never touches a real user
-directory.
+directory. `lint-imports` reads its contracts from `pyproject.toml` and analyses the two domain
+packages, which is why they are packages rather than loose modules — the pack root's directory name
+is not a valid Python identifier and cannot be imported outside ComfyUI.

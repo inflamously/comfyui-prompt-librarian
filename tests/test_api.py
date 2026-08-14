@@ -1,4 +1,4 @@
-"""Tests for ``librarian_api``.
+"""Tests for ``prompt_librarian.api``.
 
 The handlers are driven directly with a stub request (``.rel_url.query`` plus
 an async ``.json()``), so no aiohttp server is stood up — only
@@ -14,11 +14,8 @@ import pytest
 
 pytest.importorskip("aiohttp")
 
-import librarian_api as api  # noqa: E402
-import librarian_dedupe as dedupe  # noqa: E402
-import librarian_search as search  # noqa: E402
-import librarian_store  # noqa: E402
-
+from prompt_librarian import api, dedupe, search  # noqa: E402
+from prompt_librarian import store as librarian_store  # noqa: E402
 
 # --------------------------------------------------------------------------- #
 # Harness
@@ -156,7 +153,7 @@ def test_search_finds_and_shapes_hits(call, store):
 
 def test_search_filters_and_paginates(call, store):
     for index in range(5):
-        store.create(name="rec%d" % index, body="body %d" % index, category="c")
+        store.create(name=f"rec{index}", body=f"body {index}", category="c")
     payload = ok(call("get", "/search", {"category": "c", "limit": "2",
                                          "offset": "1", "sort": "az"}))
     assert payload["total"] == 5
@@ -255,7 +252,7 @@ def test_dupes_all_coalesces_concurrent_callers(call, store, monkeypatch):
 
 
 def test_wildcards(call, store, tmp_path, monkeypatch):
-    import librarian_wildcards as wc
+    from prompt_librarian import wildcards as wc
     root = tmp_path / "wc"
     root.mkdir()
     (root / "mood.txt").write_text("calm\ntense\n", encoding="utf-8")
@@ -387,7 +384,7 @@ def test_malformed_body_is_not_a_500(call, store):
 
 @pytest.fixture
 def five(store):
-    return [store.create(name="rec%d" % i, body="body %d" % i, category="c")
+    return [store.create(name=f"rec{i}", body=f"body {i}", category="c")
             for i in range(5)]
 
 
@@ -654,7 +651,7 @@ def test_import_and_export_round_trip(call, store):
 # Error mapping
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.parametrize("exc,status,code", [
+@pytest.mark.parametrize(("exc", "status", "code"), [
     (librarian_store.NotFoundError("x"), 404, "not_found"),
     (librarian_store.BodyTooLargeError("x"), 413, "too_large"),
     (librarian_store.ReadOnlyError("x"), 409, "readonly"),

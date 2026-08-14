@@ -9,10 +9,10 @@ import os
 
 import pytest
 
-import librarian_store
-import librarian_wildcards as wc
-import prompt_librarian
-from prompt_librarian import PromptLibrarian
+from prompt_librarian import node as node_mod
+from prompt_librarian import store as librarian_store
+from prompt_librarian import wildcards as wc
+from prompt_librarian.node import PromptLibrarian
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def node():
 def store(tmp_path, monkeypatch):
     """A real store in a temp dir, wired into the node module."""
     target = librarian_store.LibrarianStore(path=str(tmp_path / "lib" / "library.json"))
-    monkeypatch.setattr(prompt_librarian, "STORE", target)
+    monkeypatch.setattr(node_mod, "STORE", target)
     return target
 
 
@@ -132,7 +132,7 @@ def test_run_falls_back_to_raw_when_resolution_explodes(node, store, monkeypatch
 
 
 def test_run_never_raises_without_a_store(node, monkeypatch):
-    monkeypatch.setattr(prompt_librarian, "STORE", None)
+    monkeypatch.setattr(node_mod, "STORE", None)
     assert node.run("hi", "some-id", 0, False, True)["result"] == ("hi",)
 
 
@@ -141,7 +141,7 @@ def test_run_never_raises_when_the_store_errors(node, monkeypatch):
         def record_usage(self, pid, body=None):
             raise OSError("disk gone")
 
-    monkeypatch.setattr(prompt_librarian, "STORE", Broken())
+    monkeypatch.setattr(node_mod, "STORE", Broken())
     out = node.run("hi", "some-id", 0, False, True)
     assert out["result"] == ("hi",)
     assert out["ui"]["counted"] == [False]
@@ -224,7 +224,7 @@ def test_is_changed_is_not_nan(wcdir):
     assert isinstance(value, str) and value == value
 
 
-@pytest.mark.parametrize("field,value", [
+@pytest.mark.parametrize(("field", "value"), [
     ("text", "different"),
     ("seed", 1),
     ("resolve_wildcards", False),

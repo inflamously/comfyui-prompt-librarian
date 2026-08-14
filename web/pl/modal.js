@@ -32,15 +32,20 @@ import {
   warnOnce,
 } from "./dom.js";
 import { API, ABORTED, ApiError, caps, cancelAllLanes, invalidateMeta, lanes } from "./api.js";
+import { bindNode, poll as pollNode, readNodeText, writeNodeText } from "./bind.js";
 
 const NODE_CLASS = "PromptLibrarian";
 const NARROW_AT = 900;
 const HEARTBEAT_MS = 1000;
 const DRAFT_PREFIX = "pl:draft:";
+/** localStorage key for the link toggle. Survives a reload; not per-workflow. */
+const LINK_KEY = "pl:link";
 const ARROW = String.fromCharCode(0x2192); // "→"
 const MIDDOT = String.fromCharCode(0x00b7); // "·"
 const CARET = String.fromCharCode(0x25be); // "▾"
 const TIMES = String.fromCharCode(0x00d7); // "×"
+const LINKED = String.fromCharCode(0x21c5); // "⇅"
+const BROKEN = String.fromCharCode(0x2260); // "≠"
 
 /* --------------------------------------------------------------------------
    Host
@@ -91,7 +96,32 @@ function freshState() {
     caps: {},
     targetNodeId: null,
     targetOk: true,
+    link: readLinkPref(), // two-way binding between the textarea and the node
   };
+}
+
+/**
+ * The link toggle, persisted. Defaults to ON: a panel that silently disagrees
+ * with the node it is pointing at is the bug this whole binding exists to fix,
+ * so the safe state is "mirrored" and unlinking is the deliberate act.
+ */
+function readLinkPref() {
+  try {
+    if (typeof localStorage === "undefined") return true;
+    const raw = localStorage.getItem(LINK_KEY);
+    return raw == null ? true : raw !== "0";
+  } catch (_) {
+    return true; // private mode / blocked storage — the default still applies
+  }
+}
+
+function writeLinkPref(on) {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(LINK_KEY, on ? "1" : "0");
+  } catch (_) {
+    /* best effort — the toggle still works for this session */
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -123,6 +153,7 @@ function inst() {
     mounted: { list: false, inspector: false },
     backdropDown: false,
     dirtyBar: null,
+    binding: null, // {nodeId, node, unbind} — see attachBinding()
   }));
 }
 
@@ -704,6 +735,10 @@ function openTargetPicker() {
           onclick: () => {
             setState({ targetNodeId: node.id });
             refreshTarget();
+            // Re-point the binding at the node the user just chose, and seed
+            // the panel from it — same rule as on open: the node wins on
+            // connect, because it is what will actually render.
+            syncBinding();
             popLayer(handle);
           },
         },
@@ -723,11 +758,13 @@ function openTargetPicker() {
 /**
  * Push a record into the target node's widgets.
  *
- * Order matters: assign `.value` FIRST, then call the widget callback. The old
- * node (web/prompt_library.js) documents that ComfyUI's own combo callback
- * "resets widget state and fights our async update" — callbacks are not
- * trustworthy, so the value is set before one can run and every call is
- * wrapped.
+ * The widget poking itself lives in bind.js `writeNodeText` — the live binding
+ * and this explicit button must take the same path, because two code paths
+ * writing the same widget is exactly how they drift apart. The ordering rule
+ * (value first, then callback) and its rationale moved there with it.
+ *
+ * What stays here is everything that is specific to *loading a record*: target
+ * resolution, selecting the node on the canvas, and the usage ping.
  *
  * @param {object} record needs at least {body}; {id} enables usage tracking
  * @returns {{ok: boolean, reason?: string}}
@@ -739,34 +776,13 @@ export function loadIntoNode(record) {
     refreshTarget();
     return { ok: false, reason: "stale_target" };
   }
-  const widgets = Array.isArray(node.widgets) ? node.widgets : [];
-  const textW = widgets.find((w) => w && w.name === "text");
-  const idW = widgets.find((w) => w && w.name === "prompt_id");
-  if (!textW) return { ok: false, reason: "no_text_widget" };
 
   const body = record.body == null ? "" : String(record.body);
   const id = record.id == null ? "" : String(record.id);
 
-  textW.value = body;
-  if (idW) idW.value = id;
+  const res = writeNodeText(node, { body, id }, { canvas: hostApp() && hostApp().canvas });
+  if (!res.ok) return res;
 
-  for (const [w, val] of [
-    [textW, body],
-    [idW, id],
-  ]) {
-    if (!w || typeof w.callback !== "function") continue;
-    try {
-      w.callback(val, hostApp() && hostApp().canvas, node);
-    } catch (err) {
-      warnOnce("widget-callback", "a widget callback threw while loading a prompt", err);
-    }
-  }
-
-  try {
-    if (typeof node.setDirtyCanvas === "function") node.setDirtyCanvas(true, true);
-  } catch (_) {
-    /* ignore */
-  }
   try {
     const canvas = hostApp() && hostApp().canvas;
     if (canvas && typeof canvas.selectNode === "function") canvas.selectNode(node, false);
@@ -782,6 +798,169 @@ export function loadIntoNode(record) {
     invalidateMeta([id]);
   }
   return { ok: true };
+}
+
+/* ==========================================================================
+   NODE BINDING — the textarea and the node's `text` widget as one model
+   --------------------------------------------------------------------------
+   Direction              Trigger                        Path
+   ---------------------  -----------------------------  ---------------------
+   node  -> textarea      bind.js layers A/B/C           onNodeText() below
+   textarea -> node       inspector afterEdit()          ctx.pushToNode()
+   record   -> node       inspector adoptRecord({push})  ctx.pushToNode()
+
+   Two rules keep this from becoming a mess:
+
+   1. ONE echo guard, and it lives in bind.js (`lastSeen`). Nothing here tracks
+      "did I just write that" — every layer already agrees on one answer.
+
+   2. The binding is attached to a NODE OBJECT but keyed by ID. `resolveTarget`
+      re-resolves by id on every call precisely because holding a reference
+      survives the node being deleted; the binding must not reintroduce the
+      bug that guards against. Hence `syncBinding()` runs on the heartbeat and
+      re-attaches whenever the resolved node is no longer the bound one.
+   ========================================================================== */
+
+export function isLinked() {
+  return inst().state.link !== false;
+}
+
+/**
+ * Toggle the binding. Turning it ON immediately pulls the node's text into the
+ * panel (the node is the thing that will actually render, so it wins on
+ * connect); turning it OFF leaves both sides exactly as they are.
+ */
+export function setLinked(on) {
+  const next = !!on;
+  if (inst().state.link === next) return next;
+  setState({ link: next });
+  writeLinkPref(next);
+  syncBinding();
+  paintLink();
+  return next;
+}
+
+/** Inbound: the node's text changed under us. */
+function onNodeText(body) {
+  const insp = inst().ctx && inst().ctx.inspector;
+  if (!insp || typeof insp.setBody !== "function") return;
+  try {
+    insp.setBody(body, { fromNode: true });
+  } catch (err) {
+    warnOnce("bind-inbound", "could not apply the node's text to the panel", err);
+  }
+}
+
+/**
+ * Outbound: push the panel's text (and optionally a record link) to the node.
+ * A no-op when unlinked — every caller may call it unconditionally.
+ *
+ * @param {string} body
+ * @param {string} [id] only written when passed; omitting it leaves the link
+ *   alone, which is what a plain keystroke should do.
+ */
+export function pushToNode(body, id) {
+  if (!isLinked()) return { ok: false, reason: "unlinked" };
+  const node = resolveTarget();
+  if (!node) return { ok: false, reason: "stale_target" };
+  const values = { body: body == null ? "" : String(body) };
+  if (id !== undefined) values.id = id == null ? "" : String(id);
+  try {
+    return writeNodeText(node, values, { canvas: hostApp() && hostApp().canvas });
+  } catch (err) {
+    warnOnce("bind-outbound", "could not push the panel's text to the node", err);
+    return { ok: false, reason: "write_failed" };
+  }
+}
+
+function detachBinding() {
+  const it = inst();
+  if (!it.binding) return;
+  try {
+    it.binding.unbind();
+  } catch (err) {
+    warnOnce("bind-detach", "could not detach the node binding", err);
+  }
+  it.binding = null;
+}
+
+/**
+ * Attach to the current target and seed the panel FROM THE NODE.
+ *
+ * The seeding direction is deliberate and is the specific fix for "the panel
+ * shows something else than the node". On connect the node wins: it holds what
+ * will actually render, and it is what the user was just looking at. With no
+ * record selected this leaves the node's prompt in the textarea as an unsaved
+ * buffer, which is the right affordance — `Save as new` is right there.
+ */
+function attachBinding() {
+  const it = inst();
+  const node = resolveTarget();
+  if (!node) {
+    detachBinding();
+    return;
+  }
+  if (it.binding && it.binding.node === node) return;
+  detachBinding();
+
+  let unbind;
+  try {
+    unbind = bindNode(node, onNodeText);
+  } catch (err) {
+    warnOnce("bind-attach", "could not observe the node's text widget", err);
+    return;
+  }
+  it.binding = { nodeId: node.id, node, unbind };
+
+  // Seed: node -> panel, but only when they actually disagree.
+  try {
+    const cur = readNodeText(node);
+    const buf = it.state.buffer || {};
+    if (cur && String(cur.body) !== String(buf.body == null ? "" : buf.body)) onNodeText(cur.body);
+  } catch (err) {
+    warnOnce("bind-seed", "could not seed the panel from the node", err);
+  }
+}
+
+/**
+ * Reconcile the binding with the current link setting and target. Cheap and
+ * idempotent — safe to call from the heartbeat, which is exactly what makes
+ * a re-targeted or re-created node get picked up without its own hook.
+ */
+function syncBinding() {
+  const it = inst();
+  if (!it.open || !isLinked()) {
+    detachBinding();
+    return;
+  }
+  attachBinding();
+  // Layer C: the polling backstop, for frontends where neither the element
+  // listener nor the value interception could be installed.
+  if (it.binding) {
+    try {
+      pollNode(it.binding.node);
+    } catch (err) {
+      warnOnce("bind-poll", "the node-binding poll threw", err);
+    }
+  }
+}
+
+/** Repaint the link chip from state. */
+function paintLink() {
+  const it = inst();
+  const chip = it.els && it.els.link;
+  if (!chip) return;
+  const on = isLinked();
+  cls(chip, "is-on", on);
+  chip.setAttribute("aria-pressed", on ? "true" : "false");
+  const span = chip.firstChild;
+  if (span) span.textContent = on ? `${LINKED} linked` : `${BROKEN} unlinked`;
+  chip.title = on
+    ? "The editor and the node's text mirror each other, and picking a prompt " +
+      "loads it straight into the node. Click to work on the library without " +
+      "touching the node."
+    : "The editor and the node are independent. Use `Load into node` to push. " +
+      "Click to mirror them again.";
 }
 
 /* --------------------------------------------------------------------------
@@ -842,6 +1021,20 @@ function buildShell() {
     h("span", null, `${ARROW} ${CARET}`)
   );
 
+  // The link toggle sits immediately left of the target chip: the two read as
+  // one statement — "mirroring ⇅ node #12".
+  const link = h(
+    "button",
+    {
+      className: "pl-link",
+      type: "button",
+      "aria-pressed": "true",
+      "aria-label": "Mirror the editor and the node",
+      onclick: () => setLinked(!isLinked()),
+    },
+    h("span", null, `${LINKED} linked`)
+  );
+
   const seg = h(
     "div",
     { className: "pl-seg", role: "tablist", "aria-label": "Pane", style: { flex: "1 1 100%", order: "6" } },
@@ -878,6 +1071,7 @@ function buildShell() {
     h("div", { className: "pl-title" }, "Prompt Library"),
     sub,
     h("div", { className: "pl-spacer" }),
+    link,
     target,
     h(
       "button",
@@ -923,7 +1117,7 @@ function buildShell() {
     toasts
   );
 
-  Object.assign(els, { backdrop, card, head, sub, target, seg, body, rail, inspect, foot, layers, toasts });
+  Object.assign(els, { backdrop, card, head, sub, link, target, seg, body, rail, inspect, foot, layers, toasts });
   it.root = root;
   it.built = true;
 
@@ -1283,6 +1477,11 @@ export function ctx() {
     librarianNodes,
     refreshTarget,
 
+    // node binding — see the NODE BINDING block above
+    pushToNode,
+    isLinked,
+    setLinked,
+
     // drafts
     saveDraft,
     loadDraft,
@@ -1359,15 +1558,24 @@ export async function openModal(opts = {}) {
     it.open = true;
     installKeyGuards();
     installResponsive();
-    it.heartbeat = setInterval(refreshTarget, HEARTBEAT_MS);
+    // One timer, two jobs: re-resolve the target node and reconcile the
+    // binding with it. syncBinding() also carries bind.js's polling backstop,
+    // so this is the only thing standing between a frontend we cannot hook and
+    // a panel that never updates.
+    it.heartbeat = setInterval(() => {
+      refreshTarget();
+      syncBinding();
+    }, HEARTBEAT_MS);
     it.teardown.push(() => {
       clearInterval(it.heartbeat);
       it.heartbeat = 0;
     });
+    it.teardown.push(detachBinding);
   }
 
   refreshTarget();
   paintHeader();
+  paintLink();
 
   // Capabilities first — panes read ctx.caps while mounting.
   try {
@@ -1379,6 +1587,10 @@ export async function openModal(opts = {}) {
 
   await loadTaxonomy().catch((err) => reportError(err, "taxonomy"));
   await mountPanes();
+
+  // After mountPanes, never before: the seed direction is node -> panel, and
+  // there is no panel to seed until the inspector has registered on ctx.
+  syncBinding();
 
   // First paint of the list happens after mount so the source exists.
   try {

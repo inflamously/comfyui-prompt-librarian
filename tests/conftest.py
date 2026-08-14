@@ -1,15 +1,15 @@
 """Test bootstrap for the Prompt Librarian modules.
 
 ComfyUI is not importable here, so a stub ``folder_paths`` module is injected
-into ``sys.modules`` *before* ``librarian_store`` is imported. The stub points
-``get_user_directory()`` at a throwaway temp directory, and the autouse
+into ``sys.modules`` *before* ``prompt_librarian.store`` is imported. The stub
+points ``get_user_directory()`` at a throwaway temp directory, and the autouse
 ``user_dir`` fixture repoints it at each test's ``tmp_path``. Between that and
 the explicit ``path=`` override every store fixture uses, no test can reach a
 real ComfyUI user directory — and in particular nothing here ever reads the old
 node's ``prompts.json``.
 
 This conftest also puts the pack root on ``sys.path``, so any other test module
-here can simply ``import librarian_search`` / ``librarian_dedupe`` / ... at
+here can simply ``from prompt_librarian import search`` / ``dedupe`` / ... at
 module level and get the same stubbed environment.
 """
 
@@ -43,7 +43,7 @@ _STUB.get_user_directory = lambda: _STUB_USER_DIR
 _STUB.__pl_test_stub__ = True
 sys.modules["folder_paths"] = _STUB
 
-import librarian_store  # noqa: E402  (must follow the stub injection)
+from prompt_librarian import store as librarian_store  # noqa: E402  (follows the stub)
 
 
 @pytest.fixture

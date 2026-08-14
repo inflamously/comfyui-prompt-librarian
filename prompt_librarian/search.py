@@ -29,8 +29,9 @@ import re
 import threading
 import time
 import unicodedata
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any
 
 # --------------------------------------------------------------------------
 # Tuning constants (module level on purpose -- the scoring formula is a
@@ -90,7 +91,7 @@ def normalize(text: Any) -> str:
     return " ".join(s.split())
 
 
-def tokenize(text: Any) -> List[str]:
+def tokenize(text: Any) -> list[str]:
     """Normalized whitespace-separated tokens."""
     n = normalize(text)
     return n.split() if n else []
@@ -120,7 +121,7 @@ def _within_edit_1(a: str, b: str) -> bool:
         return True
     if la == lb:
         diff = 0
-        for x, y in zip(a, b):
+        for x, y in zip(a, b, strict=False):
             if x != y:
                 diff += 1
                 if diff > 1:
@@ -155,10 +156,10 @@ class Doc:
     body_norm: str
     cat_norm: str
     tags_norm: str
-    name_toks: Tuple[str, ...]
-    body_toks: Tuple[str, ...]
-    cat_toks: Tuple[str, ...]
-    tags_toks: Tuple[str, ...]
+    name_toks: tuple[str, ...]
+    body_toks: tuple[str, ...]
+    cat_toks: tuple[str, ...]
+    tags_toks: tuple[str, ...]
     name_set: frozenset
     body_set: frozenset
     cat_set: frozenset
@@ -173,7 +174,7 @@ class Doc:
     body_len: int
 
 
-def make_doc(rec: Dict[str, Any]) -> Doc:
+def make_doc(rec: dict[str, Any]) -> Doc:
     """Build a :class:`Doc` from a raw record dict."""
     pid = str(rec.get("id") or "")
     name = rec.get("name") or ""
@@ -244,25 +245,25 @@ class SearchIndex:
     __slots__ = ("docs", "records", "postings", "vocab", "rev", "_stats_dirty",
                  "_max_used", "_updated_sorted")
 
-    def __init__(self, records: Optional[Iterable[Dict[str, Any]]] = None, rev: int = 0):
-        self.docs: Dict[str, Doc] = {}
-        self.records: Dict[str, Dict[str, Any]] = {}
-        self.postings: Dict[str, Set[str]] = {}
-        self.vocab: List[str] = []
+    def __init__(self, records: Iterable[dict[str, Any]] | None = None, rev: int = 0):
+        self.docs: dict[str, Doc] = {}
+        self.records: dict[str, dict[str, Any]] = {}
+        self.postings: dict[str, set[str]] = {}
+        self.vocab: list[str] = []
         self.rev = rev
         self._stats_dirty = True
         self._max_used = 0
-        self._updated_sorted: List[str] = []
+        self._updated_sorted: list[str] = []
         if records is not None:
             self.build(records, rev=rev)
 
     # -- construction ------------------------------------------------------
 
-    def build(self, records: Iterable[Dict[str, Any]], rev: Optional[int] = None) -> "SearchIndex":
+    def build(self, records: Iterable[dict[str, Any]], rev: int | None = None) -> SearchIndex:
         """Full rebuild from ``records``."""
         self.docs = {}
         self.records = {}
-        postings: Dict[str, Set[str]] = {}
+        postings: dict[str, set[str]] = {}
         for rec in records or ():
             if not isinstance(rec, dict):
                 continue
@@ -284,7 +285,7 @@ class SearchIndex:
         self._stats_dirty = True
         return self
 
-    def add(self, rec: Dict[str, Any]) -> Optional[Doc]:
+    def add(self, rec: dict[str, Any]) -> Doc | None:
         """Incrementally index one record (replaces it if already present)."""
         if not isinstance(rec, dict):
             return None
@@ -328,7 +329,7 @@ class SearchIndex:
         self._stats_dirty = True
         return True
 
-    def replace(self, rec: Dict[str, Any]) -> Optional[Doc]:
+    def replace(self, rec: dict[str, Any]) -> Doc | None:
         """Re-index one record in place."""
         return self.add(rec)
 
@@ -371,10 +372,10 @@ class SearchIndex:
 
     # -- candidate generation ---------------------------------------------
 
-    def expand_prefix(self, prefix: str, cap: int = PREFIX_EXPAND_CAP) -> List[str]:
+    def expand_prefix(self, prefix: str, cap: int = PREFIX_EXPAND_CAP) -> list[str]:
         """Vocabulary terms starting with ``prefix`` (``bisect`` walk, capped)."""
         vocab = self.vocab
-        out: List[str] = []
+        out: list[str] = []
         i = bisect.bisect_left(vocab, prefix)
         n = len(vocab)
         while i < n and len(out) < cap:
@@ -385,14 +386,14 @@ class SearchIndex:
             i += 1
         return out
 
-    def fallback_terms(self, token: str, cap: int = FALLBACK_TERM_CAP) -> List[str]:
+    def fallback_terms(self, token: str, cap: int = FALLBACK_TERM_CAP) -> list[str]:
         """Zero-result fallback only: linear vocab scan for infix / edit-1.
 
         Never runs on the happy path -- callers must have produced no hits
         first.  ~3 ms on a 5k-record vocabulary, which is acceptable exactly
         because it is the miss path.
         """
-        out: List[str] = []
+        out: list[str] = []
         allow_edit = len(token) >= EDIT1_MIN_LEN
         for term in self.vocab:
             if token in term or (allow_edit and _within_edit_1(token, term)):
@@ -401,9 +402,9 @@ class SearchIndex:
                     break
         return out
 
-    def candidates_for(self, token: str) -> Set[str]:
+    def candidates_for(self, token: str) -> set[str]:
         """Exact posting plus prefix expansion for one query token."""
-        out: Set[str] = set()
+        out: set[str] = set()
         bucket = self.postings.get(token)
         if bucket:
             out |= bucket
@@ -419,7 +420,7 @@ class SearchIndex:
         return pid in self.docs
 
 
-def build_index(records: Iterable[Dict[str, Any]], rev: int = 0) -> SearchIndex:
+def build_index(records: Iterable[dict[str, Any]], rev: int = 0) -> SearchIndex:
     """Convenience constructor."""
     return SearchIndex(records, rev=rev)
 
@@ -427,8 +428,8 @@ def build_index(records: Iterable[Dict[str, Any]], rev: int = 0) -> SearchIndex:
 # -- module-level index cache for a live store ------------------------------
 
 _index_lock = threading.RLock()
-_index_cache: Dict[int, SearchIndex] = {}
-_index_owner: Optional[int] = None
+_index_cache: dict[int, SearchIndex] = {}
+_index_owner: int | None = None
 
 
 def get_index(store: Any) -> SearchIndex:
@@ -451,7 +452,7 @@ def get_index(store: Any) -> SearchIndex:
         return idx
 
 
-def invalidate_index(rev: Optional[int] = None) -> None:
+def invalidate_index(rev: int | None = None) -> None:
     """Drop the cached store index (all of it, or one rev)."""
     with _index_lock:
         if rev is None:
@@ -470,11 +471,11 @@ class ParsedQuery:
     raw: str = ""
     text: str = ""                                   # residual free text
     qnorm: str = ""                                  # normalized residual
-    tokens: Tuple[str, ...] = ()
-    phrases: Tuple[str, ...] = ()                    # normalized, substring-required
-    excludes: Tuple[str, ...] = ()                   # normalized tokens
-    tags: Tuple[str, ...] = ()                       # from tag:x
-    cats: Tuple[str, ...] = ()                       # from cat:x
+    tokens: tuple[str, ...] = ()
+    phrases: tuple[str, ...] = ()                    # normalized, substring-required
+    excludes: tuple[str, ...] = ()                   # normalized tokens
+    tags: tuple[str, ...] = ()                       # from tag:x
+    cats: tuple[str, ...] = ()                       # from cat:x
 
     def is_empty(self) -> bool:
         return not (self.tokens or self.phrases or self.excludes
@@ -492,12 +493,12 @@ _PHRASE_RE = re.compile(r'"([^"]*)"')
 def parse_query(q: Any) -> ParsedQuery:
     """Strip ``tag:``/``cat:``/``-word``/``"phrase"`` before tokenization."""
     raw = q if isinstance(q, str) else ("" if q is None else str(q))
-    tags: List[str] = []
-    cats: List[str] = []
-    excludes: List[str] = []
-    phrases: List[str] = []
+    tags: list[str] = []
+    cats: list[str] = []
+    excludes: list[str] = []
+    phrases: list[str] = []
 
-    def _take_field(m: "re.Match") -> str:
+    def _take_field(m: re.Match) -> str:
         val = m.group("quoted")
         if val is None:
             val = m.group("bare") or ""
@@ -515,7 +516,7 @@ def parse_query(q: Any) -> ParsedQuery:
 
     rest = _FIELD_OP_RE.sub(_take_field, raw)
 
-    def _take_phrase(m: "re.Match") -> str:
+    def _take_phrase(m: re.Match) -> str:
         norm = normalize(m.group(1))
         if norm:
             phrases.append(norm)
@@ -524,7 +525,7 @@ def parse_query(q: Any) -> ParsedQuery:
 
     rest = _PHRASE_RE.sub(_take_phrase, rest)
 
-    keep: List[str] = []
+    keep: list[str] = []
     for word in rest.split():
         if word.startswith("-") and len(word) > 1:
             excludes.extend(tokenize(word[1:]))
@@ -575,7 +576,7 @@ def tok(qt: str, fset: frozenset) -> float:
     return 0.0
 
 
-def score_doc(doc: Doc, pq: ParsedQuery, index: SearchIndex) -> Tuple[float, int]:
+def score_doc(doc: Doc, pq: ParsedQuery, index: SearchIndex) -> tuple[float, int]:
     """Return ``(score, matched_bitmask)`` for one doc.
 
     The bitmask records which query tokens scored > 0 in at least one field,
@@ -635,13 +636,13 @@ def _doc_has_token(doc: Doc, token: str) -> bool:
             or token in doc.tags_set or token in doc.cat_set)
 
 
-def _passes_filters(
+def _passes_filters(  # noqa: C901 - a flat chain of independent filters
     doc: Doc,
     pq: ParsedQuery,
-    cat_norm: Optional[str],
+    cat_norm: str | None,
     tag_norms: Sequence[str],
     dupes_only: bool,
-    dupe_ids: Optional[Set[str]],
+    dupe_ids: set[str] | None,
 ) -> bool:
     if cat_norm is not None and doc.cat_norm != cat_norm:
         return False
@@ -670,9 +671,7 @@ def _passes_filters(
     for ex in pq.excludes:
         if _doc_has_token(doc, ex):
             return False
-    if dupes_only and dupe_ids is not None and doc.pid not in dupe_ids:
-        return False
-    return True
+    return not (dupes_only and dupe_ids is not None and doc.pid not in dupe_ids)
 
 
 # --------------------------------------------------------------------------
@@ -680,7 +679,7 @@ def _passes_filters(
 # --------------------------------------------------------------------------
 
 
-def _sort_scored(scored: List[Tuple[Doc, float]], sort: str) -> List[Tuple[Doc, float]]:
+def _sort_scored(scored: list[tuple[Doc, float]], sort: str) -> list[tuple[Doc, float]]:
     """Stable multi-pass sort -- the last pass is the primary key.
 
     Multi-pass keeps descending-string keys (ISO timestamps) and ascending
@@ -707,7 +706,7 @@ def _sort_scored(scored: List[Tuple[Doc, float]], sort: str) -> List[Tuple[Doc, 
 # --------------------------------------------------------------------------
 
 
-def _as_index(source: Any, rev: Optional[int] = None) -> SearchIndex:
+def _as_index(source: Any, rev: int | None = None) -> SearchIndex:
     if isinstance(source, SearchIndex):
         return source
     if source is None:
@@ -724,11 +723,11 @@ def _as_index(source: Any, rev: Optional[int] = None) -> SearchIndex:
 # --------------------------------------------------------------------------
 
 
-def search(
+def search(  # noqa: C901 - the query pipeline reads better as one function
     source: Any,
     query: str = "",
     *,
-    category: Optional[str] = None,
+    category: str | None = None,
     tags: Iterable[str] = (),
     dupes_only: bool = False,
     sort: str = "relevance",
@@ -736,18 +735,18 @@ def search(
     offset: int = 0,
     limit: int = 50,
     threshold: float = 0.90,
-    rev: Optional[int] = None,
-    dupe_ids: Optional[Iterable[str]] = None,
-    dupe_count_fn: Optional[Callable[[List[str]], Dict[str, int]]] = None,
-    match_fn: Optional[Callable[[List[str]], Dict[str, float]]] = None,
-) -> Dict[str, Any]:
+    rev: int | None = None,
+    dupe_ids: Iterable[str] | None = None,
+    dupe_count_fn: Callable[[list[str]], dict[str, int]] | None = None,
+    match_fn: Callable[[list[str]], dict[str, float]] | None = None,
+) -> dict[str, Any]:
     """Run a search.
 
     ``source`` may be a :class:`SearchIndex`, an iterable of record dicts, or
     any store exposing ``list_all()`` and ``rev()``.
 
     ``dupe_count_fn`` / ``match_fn`` are injected so this module never has to
-    import ``librarian_dedupe``.  Both are called **once**, with the list of
+    import ``dedupe``.  Both are called **once**, with the list of
     pids on the current page only, and return ``{pid: value}``:
     ``dupe_count_fn`` -> int counts, ``match_fn`` -> similarity in [0, 1]
     against whatever the caller selected (rendered as ``match_pct``).
@@ -778,7 +777,7 @@ def search(
         tags = [tags]
     tag_norms = [t for t in (normalize(x) for x in (tags or ())) if t]
 
-    dupe_id_set: Optional[Set[str]] = None
+    dupe_id_set: set[str] | None = None
     if dupe_ids is not None:
         dupe_id_set = set(dupe_ids)
     dupes_partial = bool(dupes_only and dupe_id_set is None)
@@ -792,7 +791,7 @@ def search(
     else:
         per_token = [index.candidates_for(qt) for qt in pq.tokens]
         if mode == "all":
-            cand: Set[str] = set(per_token[0])
+            cand: set[str] = set(per_token[0])
             for s in per_token[1:]:
                 cand &= s
                 if not cand:
@@ -812,7 +811,7 @@ def search(
 
     full_mask = (1 << len(pq.tokens)) - 1
 
-    scored: List[Tuple[Doc, float]] = []
+    scored: list[tuple[Doc, float]] = []
     for pid in candidates:
         doc = docs.get(pid)
         if doc is None:
@@ -837,8 +836,8 @@ def search(
     page = scored[offset:offset + limit] if limit else []
 
     pids = [d.pid for d, _ in page]
-    counts: Dict[str, int] = {}
-    matches: Dict[str, float] = {}
+    counts: dict[str, int] = {}
+    matches: dict[str, float] = {}
     if pids:
         if dupe_count_fn is not None:
             try:
@@ -854,7 +853,7 @@ def search(
             except Exception:
                 matches = {}
 
-    hits: List[Dict[str, Any]] = []
+    hits: list[dict[str, Any]] = []
     for doc, sc in page:
         rec = index.records.get(doc.pid, {})
         m = matches.get(doc.pid)

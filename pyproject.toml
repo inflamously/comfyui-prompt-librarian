@@ -93,7 +93,12 @@ known-third-party = ["folder_paths", "server", "comfy", "nodes"]
 # test to a single capital (`from prompt_librarian import search as S`).
 "tests/**" = ["ARG001", "E402", "N812", "PT011", "PT018"]
 # aiohttp route handlers must accept `request` whether they use it or not.
-"prompt_librarian/api.py" = ["ARG001"]
+# TID252: `api` is a package one level deeper than its siblings, so reaching
+# its own domain root (`from ..store import STORE`) is a parent-relative
+# import — inside the domain, which is exactly what the rule means to allow.
+# Absolute imports are not an option: ComfyUI loads the pack by file location,
+# so `prompt_librarian` is not importable by name at runtime.
+"prompt_librarian/api/*.py" = ["ARG001", "TID252"]
 # Registration only; the import order in the pack root is load-bearing. (The
 # domain `__init__.py` facades need none of this — their re-exports are covered
 # by `__all__` — but ruff matches this pattern on the basename alone.)

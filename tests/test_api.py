@@ -62,9 +62,15 @@ def routes():
 
 @pytest.fixture
 def store(tmp_path, monkeypatch, routes):
-    """A real store in a temp dir, swapped into the api module."""
+    """A real store in a temp dir, swapped into every api module that binds it.
+
+    ``STORE`` is a module-level singleton each submodule imports by name, so
+    both bindings have to be replaced — patching only one would leave half the
+    handlers talking to the process-wide store.
+    """
     target = librarian_store.LibrarianStore(path=str(tmp_path / "lib" / "library.json"))
-    monkeypatch.setattr(api, "STORE", target)
+    for module in (api.utils, api.request):
+        monkeypatch.setattr(module, "STORE", target)
     # id(store)-keyed caches must not survive between tests: CPython can hand a
     # new object the address of a collected one.
     search.invalidate_index()
@@ -244,7 +250,8 @@ def test_dupes_all_coalesces_concurrent_callers(call, store, monkeypatch):
     monkeypatch.setattr(dedupe, "dupe_counts", _counted)
 
     async def _race():
-        return await asyncio.gather(*[api._dupes_all(0.9, False) for _ in range(5)])
+        return await asyncio.gather(
+            *[api.request._dupes_all(0.9, False) for _ in range(5)])
 
     results = asyncio.run(_race())
     assert len(results) == 5

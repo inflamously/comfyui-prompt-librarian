@@ -1,238 +1,40 @@
-"""aiohttp routes for the Prompt Librarian — ``/prompt_librarian/*``.
+"""One function per feature — the ``/prompt_librarian/*`` handlers themselves.
 
-:func:`register` is the single entry point; ``__init__.py`` calls it from its
-own isolated ``try/except`` so a failure here can never take down the old
-node's routes.
-
-Conventions, all of them deliberate
------------------------------------
-
-* **Every read is GET, every write is POST.** No PATCH/DELETE verbs and no path
-  parameters — that matches the existing pack's style and stays compatible with
-  ComfyUI's ``/api`` prefix rewriting, which only reliably preserves the path
-  when there is nothing to rewrite.
-* **Every handler is wrapped in** :func:`_guard`, which catches ``Exception``,
-  logs the traceback and returns ``500 {"error", "code"}``. A backend bug must
-  degrade the panel, never take down the ComfyUI server.
-* **Store exceptions map to codes** (see :data:`_ERROR_MAP`) so the frontend can
-  branch on ``code`` instead of parsing prose.
-* **Every response merges** ``{"rev": STORE.rev()}``, including errors, so a
-  client that hits one can still tell whether its view is stale.
-* **Event-loop discipline.** Anything that serializes JSON or scans every record
-  goes through :func:`_offload`; dict/index lookups run inline. Concretely:
-  all mutations and ``/dupes/all`` are offloaded; ``prompt``, ``search``,
-  ``taxonomy``, ``versions`` and the one-vs-N ``/dupes`` run inline.
-* **aiohttp is imported inside** :func:`register`, never at module import time,
-  so the tests can import this module in an environment without it.
+Everything mechanical lives in :mod:`.utils`; everything constant lives in
+:mod:`.config`; startup wiring lives in :mod:`.registration`. What is left here
+is the use-case layer: what each endpoint reads, what it writes, and what it
+hands back. Read top to bottom it is index maintenance, the two shared search
+helpers, then GET, POST-reads and POST-writes in that order, with
+:func:`handlers` at the end.
 
 ``_notify`` websocket events are emitted by the store itself; nothing here
 duplicates them.
 """
 
 import asyncio
-import functools
 import logging
-import traceback
 
-from . import dedupe, search, wildcards
-from .store import (
-    SCHEMA_VERSION,
-    STORE,
-    BodyTooLargeError,
-    ConflictError,
-    NotFoundError,
-    ReadOnlyError,
-    SameRecordError,
-    StoreWriteError,
+from .. import dedupe, search, wildcards
+from ..store import SCHEMA_VERSION, STORE, NotFoundError
+from .config import BULK_QUERY_LIMIT, CAPABILITIES
+from .utils import (
+    _ROUTES,
+    _body,
+    _bool,
+    _ignored,
+    _int,
+    _json,
+    _list,
+    _offload,
+    _opt,
+    _query,
+    _rev,
+    _route,
+    _str,
+    _threshold,
 )
 
 log = logging.getLogger(__name__)
-
-PREFIX = "/prompt_librarian"
-
-#: "select all filtered" resolves a stored query to ids; this caps that.
-BULK_QUERY_LIMIT = 100000
-
-#: What the frontend probes on startup to decide which panels to build.
-CAPABILITIES = {
-    "search": True,
-    "versions": True,
-    "diff": True,
-    "wildcards": True,
-    "snippets": True,
-    "bulk": True,
-    "dupes": True,
-    # No soft delete: `delete` removes the record. Versions are the undo story,
-    # and a trash bin nobody empties is a second source of near-duplicates.
-    "soft_delete": False,
-}
-
-# Ordered most-specific first; the first isinstance() match wins. ValueError is
-# last because several store errors would otherwise be shadowed by it.
-_ERROR_MAP = (
-    (NotFoundError, 404, "not_found"),
-    (BodyTooLargeError, 413, "too_large"),
-    (ReadOnlyError, 409, "readonly"),
-    (ConflictError, 409, "conflict"),
-    (SameRecordError, 400, "same_record"),
-    (StoreWriteError, 500, "write_failed"),
-    (ValueError, 400, "bad_request"),
-)
-
-_web = None            # aiohttp.web, bound by register()
-_registered = False    # register() is idempotent
-_ROUTES = []           # [(method, path, handler)]
-
-
-# --------------------------------------------------------------------------- #
-# Plumbing
-# --------------------------------------------------------------------------- #
-
-def _get_web():
-    """aiohttp's ``web`` module, imported on first use and cached."""
-    global _web
-    if _web is None:
-        from aiohttp import web  # noqa: WPS433 - deliberately lazy
-        _web = web
-    return _web
-
-
-def _rev():
-    try:
-        return STORE.rev()
-    except Exception:
-        return 0
-
-
-def _json(payload, status=200):
-    """JSON response with ``rev`` merged in."""
-    body = dict(payload or {})
-    body.setdefault("rev", _rev())
-    return _get_web().json_response(body, status=status)
-
-
-def _error(exc):
-    """Map a store exception onto ``(status, code)`` and render it."""
-    for kind, status, code in _ERROR_MAP:
-        if isinstance(exc, kind):
-            return _json({"error": str(exc), "code": code}, status=status)
-    return None
-
-
-def _guard(fn):
-    """Catch everything, log the traceback, never 500 the ComfyUI server."""
-    @functools.wraps(fn)
-    async def _wrapped(request):
-        try:
-            return await fn(request)
-        except Exception as exc:  # noqa: BLE001 - the whole point of the guard
-            mapped = _error(exc)
-            if mapped is not None:
-                return mapped
-            log.error("[prompt-librarian] %s failed:\n%s",
-                      getattr(fn, "__name__", "handler"), traceback.format_exc())
-            return _json({"error": str(exc) or exc.__class__.__name__,
-                          "code": "internal"}, status=500)
-    return _wrapped
-
-
-def _route(method, path):
-    def _deco(fn):
-        handler = _guard(fn)
-        _ROUTES.append((method, PREFIX + path, handler))
-        return handler
-    return _deco
-
-
-async def _offload(fn, *args, **kwargs):
-    """Run ``fn`` on the default executor. Every mutation goes through here."""
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, functools.partial(fn, *args, **kwargs))
-
-
-# --------------------------------------------------------------------------- #
-# Request coercion — query strings give strings, JSON bodies give real types
-# --------------------------------------------------------------------------- #
-
-async def _body(request):
-    """The POST body as a dict; a malformed body is an empty one, not a 500."""
-    try:
-        data = await request.json()
-    except Exception:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _query(request):
-    try:
-        return dict(request.rel_url.query)
-    except Exception:
-        return {}
-
-
-def _str(value, default=""):
-    if value is None:
-        return default
-    return value if isinstance(value, str) else str(value)
-
-
-def _bool(value, default=False):
-    if value is None or value == "":
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    return _str(value).strip().lower() in ("1", "true", "yes", "on")
-
-
-def _int(value, default=0):
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _float(value, default=0.0):
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _list(value):
-    """A list of non-empty strings from a JSON list or a comma-separated string."""
-    if value is None:
-        return []
-    if isinstance(value, str):
-        return [part.strip() for part in value.split(",") if part.strip()]
-    try:
-        return [_str(item).strip() for item in value if _str(item).strip()]
-    except TypeError:
-        return []
-
-
-def _opt(data, key):
-    """``data[key]`` when present, else ``None`` — for partial updates."""
-    return data.get(key, None)
-
-
-def _threshold(value=None):
-    """The similarity threshold: explicit, else the persisted setting, else 0.90."""
-    if value is None or value == "":
-        try:
-            value = STORE.settings().get("dupe_threshold", dedupe.DEFAULT_THRESHOLD)
-        except Exception:
-            value = dedupe.DEFAULT_THRESHOLD
-    out = _float(value, dedupe.DEFAULT_THRESHOLD)
-    return min(1.0, max(0.0, out))
-
-
-def _ignored():
-    try:
-        return STORE.ignored_pairs()
-    except Exception:
-        return ()
 
 
 # --------------------------------------------------------------------------- #
@@ -819,30 +621,8 @@ async def import_route(request):
 
 
 # --------------------------------------------------------------------------- #
-# Registration
+# The route table
 # --------------------------------------------------------------------------- #
-
-def register(routes):
-    """Attach every route to an aiohttp ``RouteTableDef``.
-
-    Idempotent, and returns ``{(method, path): handler}`` so the handlers can
-    be driven directly in tests without standing up a server.
-    """
-    global _registered
-    _get_web()
-    for method, path, handler in _ROUTES:
-        getattr(routes, method)(path)(handler)
-    if not _registered:
-        # Wired once: keeps the search and dedupe caches from growing without
-        # bound as the library changes underneath them.
-        try:
-            STORE.on_change(_on_change)
-        except Exception:  # pragma: no cover
-            log.debug("[prompt-librarian] on_change wiring failed", exc_info=True)
-        _registered = True
-    log.info("[prompt-librarian] registered %d routes under %s", len(_ROUTES), PREFIX)
-    return {(method, path): handler for method, path, handler in _ROUTES}
-
 
 def handlers():
     """``{(method, path): handler}`` without touching aiohttp or the store."""

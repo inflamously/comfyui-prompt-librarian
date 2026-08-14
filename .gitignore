@@ -1,3 +1,7 @@
 .idea
 .pytest_cache
 __pycache__
+**/*.pyc
+
+# Generated on demand by scripts/openapi.py; the route table is the source.
+/openapi.json

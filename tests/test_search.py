@@ -14,14 +14,13 @@ import pytest  # noqa: E402
 
 import librarian_search as S  # noqa: E402
 
-
 # --------------------------------------------------------------------------
 # Fixtures (plain dicts matching the record schema)
 # --------------------------------------------------------------------------
 
 
 def mk(pid, name, body, **kw):
-    rec = {
+    return {
         "id": pid,
         "name": name,
         "body": body,
@@ -36,7 +35,6 @@ def mk(pid, name, body, **kw):
         "pinned": kw.get("pinned", False),
         "versions": kw.get("versions", []),
     }
-    return rec
 
 
 @pytest.fixture
@@ -136,7 +134,7 @@ def test_prefix_search_finds_longer_term(records):
 
 
 def test_prefix_expansion_is_capped():
-    recs = [mk("p%d" % i, "n%d" % i, "prefixaaa%04d" % i) for i in range(300)]
+    recs = [mk(f"p{i}", f"n{i}", f"prefixaaa{i:04d}") for i in range(300)]
     idx = S.build_index(recs)
     assert len(idx.expand_prefix("prefixaaa")) == S.PREFIX_EXPAND_CAP
 

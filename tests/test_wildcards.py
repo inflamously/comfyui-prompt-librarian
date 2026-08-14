@@ -11,7 +11,6 @@ import pytest
 
 import librarian_wildcards as wc
 
-
 # --------------------------------------------------------------------------- #
 # Fixtures
 # --------------------------------------------------------------------------- #
@@ -43,7 +42,7 @@ def resolve(text, seed=0, files=None, snippets=None):
 # Determinism
 # --------------------------------------------------------------------------- #
 
-BIG = "{" + "|".join("opt%02d" % i for i in range(40)) + "}"
+BIG = "{" + "|".join(f"opt{i:02d}" for i in range(40)) + "}"
 BIG5 = " ".join([BIG] * 5)
 
 
@@ -336,7 +335,7 @@ def test_signature_of_a_missing_directory_is_stable(tmp_path):
     assert files.names() == []
 
 
-@pytest.mark.parametrize("text,expected", [
+@pytest.mark.parametrize(("text", "expected"), [
     ("plain text", False),
     ("{a|b}", True),
     ("__mood__", True),

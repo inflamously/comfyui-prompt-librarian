@@ -13,7 +13,6 @@ import pytest  # noqa: E402
 
 import librarian_dedupe as D  # noqa: E402
 
-
 # The plan's canonical near-duplicate pair.
 CANON_A = "make him dance ballet slowly drifting toward the camera, dusk light"
 CANON_B = ("make him dance ballet slowly drifting towards the camera, "
@@ -258,7 +257,7 @@ def test_with_summary_false_skips_the_diff(records):
 
 def test_limit_and_sort_order():
     body = "soft warm light on the floor, gentle motion, warm tones"
-    recs = [mk("p%d" % i, "p%d" % i, body + ("!" * i)) for i in range(6)]
+    recs = [mk(f"p{i}", f"p{i}", body + ("!" * i)) for i in range(6)]
     idx = D.build_dupe_index(recs, rev=1)
     hits = D.find_similar(idx, pid="p0", exclude_id="p0", threshold=0.90, limit=3)
     assert len(hits) == 3
@@ -436,8 +435,8 @@ def test_diff_tokens_indices_are_consistent():
 
 
 def test_diff_tokens_is_capped():
-    a = " ".join("w%d" % i for i in range(6000))
-    b = " ".join("x%d" % i for i in range(6000))
+    a = " ".join(f"w{i}" for i in range(6000))
+    b = " ".join(f"x{i}" for i in range(6000))
     assert len(D.diff_tokens(a, b)) <= D.DIFF_OPCODE_CAP
 
 

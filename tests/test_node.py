@@ -224,7 +224,7 @@ def test_is_changed_is_not_nan(wcdir):
     assert isinstance(value, str) and value == value
 
 
-@pytest.mark.parametrize("field,value", [
+@pytest.mark.parametrize(("field", "value"), [
     ("text", "different"),
     ("seed", 1),
     ("resolve_wildcards", False),

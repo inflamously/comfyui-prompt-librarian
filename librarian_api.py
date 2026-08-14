@@ -231,7 +231,7 @@ def _list(value):
 
 def _opt(data, key):
     """``data[key]`` when present, else ``None`` — for partial updates."""
-    return data[key] if key in data else None
+    return data.get(key, None)
 
 
 def _threshold(value=None):
@@ -393,7 +393,7 @@ async def prompt(request):
     pid = _str(_query(request).get("id"))
     rec = STORE.get(pid)
     if rec is None:
-        raise NotFoundError("no prompt with id %r" % (pid,))
+        raise NotFoundError(f"no prompt with id {pid!r}")
     return _json({"prompt": rec})
 
 
@@ -568,7 +568,7 @@ def _side(data, key):
     pid = _str(data.get(key + "_id") or data.get(key))
     rec = STORE.get(pid)
     if rec is None:
-        raise NotFoundError("no prompt with id %r" % (pid,))
+        raise NotFoundError(f"no prompt with id {pid!r}")
     return rec.get("body", "")
 
 
@@ -792,7 +792,7 @@ async def category(request):
         if op == "delete":
             count = STORE.delete_category(name, _str(data.get("reassign_to")))
             return count, STORE.categories()
-        raise ValueError("unknown category op %r" % (op,))
+        raise ValueError(f"unknown category op {op!r}")
 
     count, names = await _offload(_work)
     return _json({"count": count, "categories": names})
@@ -810,7 +810,7 @@ async def snippet(request):
         elif op == "delete":
             STORE.delete_snippet(name)
         else:
-            raise ValueError("unknown snippet op %r" % (op,))
+            raise ValueError(f"unknown snippet op {op!r}")
         return STORE.snippets()
 
     return _json({"snippets": await _offload(_work)})

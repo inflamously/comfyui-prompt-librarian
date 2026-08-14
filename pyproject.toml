@@ -1,0 +1,173 @@
+[project]
+name = "comfyui-prompt-library"
+version = "0.1.0"
+description = "Two ComfyUI nodes for keeping prompts out of your workflow presets: Prompt Library and Prompt Librarian."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "inflamously" }]
+# Runtime deps come from ComfyUI itself (aiohttp, server, folder_paths).
+# Anything listed here would be installed into the user's ComfyUI env, so keep it empty.
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/inflamously/comfyui-prompt-librarian"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "import-linter>=2.0",
+]
+
+# ComfyUI Registry metadata (https://docs.comfy.org/registry/overview).
+[tool.comfy]
+PublisherId = "inflamously"
+DisplayName = "Prompt Library"
+Icon = ""
+
+
+# --------------------------------------------------------------------------
+# Source code rules — `ruff check .` / `ruff format .`
+# --------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = [".", "tests"]
+extend-exclude = ["web", "__pycache__"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # import sorting
+    "N",         # pep8-naming
+    "UP",        # pyupgrade
+    "B",         # bugbear
+    "A",         # builtin shadowing
+    "C4",        # comprehensions
+    "SIM",       # simplify
+    "RET",       # return consistency
+    "ARG",       # unused arguments
+    "TID",       # tidy imports
+    "PT",        # pytest style
+    "C90",       # mccabe complexity
+]
+ignore = [
+    # The directory name is dictated by ComfyUI's custom_nodes convention and
+    # cannot be a valid Python identifier.
+    "N999",
+    # ComfyUI's own node API is camelCase (INPUT_TYPES, IS_CHANGED, ...).
+    "N802",
+    # Node/route signatures are fixed by ComfyUI and aiohttp, so unused
+    # parameters there are not the author's choice.
+    "ARG002", "ARG003",
+]
+
+# Not enforced repo-wide yet, because the existing modules predate them:
+#   ANN  type annotations
+#   D    docstrings
+#   PTH  pathlib instead of os.path  (ComfyUI's folder_paths returns str)
+# Add them to `select` above once a module has been brought up to date, or
+# preview the work with:  ruff check --extend-select ANN,D,PTH <module>.py
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+[tool.ruff.lint.flake8-tidy-imports]
+# The nodes import both ways on purpose ("from . import x" inside ComfyUI,
+# "import x" for the flat test/tooling path), so relative imports stay legal.
+ban-relative-imports = "parents"
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "librarian_api",
+    "librarian_dedupe",
+    "librarian_search",
+    "librarian_store",
+    "librarian_wildcards",
+    "prompt_librarian",
+    "prompt_store",
+]
+# ComfyUI injects these into sys.path at runtime; they are not stdlib.
+known-third-party = ["folder_paths", "server", "comfy", "nodes"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests document themselves through their names, stub ComfyUI modules before
+# importing, pass fixtures they do not always use, and alias the module under
+# test to a single capital (`import librarian_search as S`).
+"tests/**" = ["ARG001", "E402", "N812", "PT011", "PT018"]
+# aiohttp route handlers must accept `request` whether they use it or not.
+"librarian_api.py" = ["ARG001"]
+# Registration only; the import order there is load-bearing.
+"__init__.py" = ["ARG001", "E402", "F401", "I001"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+
+# --------------------------------------------------------------------------
+# Feature scoping — `lint-imports`
+#
+# Run it as:
+#     PYTHONPATH=.. lint-imports
+# (the root "package" is this directory, so its *parent* must be importable).
+#
+# Every module is a feature. The layers below say which feature may import
+# which: highest first, and a module may import anything *below* it, never
+# anything above. Modules on the same line are siblings separated by `:`,
+# meaning they may not import each other either (use `|` instead to allow it).
+#
+# To add a feature: create the module, then slot it into the right layer.
+# To loosen a rule, move the module down a layer; to tighten one, add your own
+# `forbidden` or `independence` contract below — each `[[...contracts]]` block
+# is independent, so they are safe to edit one at a time.
+# --------------------------------------------------------------------------
+[tool.importlinter]
+root_package = "comfyui-prompt-library"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Feature layers"
+type = "layers"
+containers = ["comfyui-prompt-library"]
+layers = [
+    "prompt_librarian : prompt_store",
+    "librarian_api",
+    "librarian_dedupe",
+    "librarian_wildcards",
+    "librarian_search : librarian_store",
+]
+
+[[tool.importlinter.contracts]]
+name = "Search and matching stay pure (no storage, no disk)"
+type = "forbidden"
+source_modules = [
+    "comfyui-prompt-library.librarian_search",
+    "comfyui-prompt-library.librarian_dedupe",
+]
+forbidden_modules = ["comfyui-prompt-library.librarian_store", "folder_paths"]
+
+[[tool.importlinter.contracts]]
+name = "Only the API, node and store layers talk to the ComfyUI server"
+type = "forbidden"
+# librarian_wildcards is deliberately absent: it goes through librarian_store,
+# which notifies PromptServer on writes.
+source_modules = [
+    "comfyui-prompt-library.librarian_search",
+    "comfyui-prompt-library.librarian_dedupe",
+]
+forbidden_modules = ["aiohttp", "server"]
+
+
+# --------------------------------------------------------------------------
+# Tests
+# --------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+]

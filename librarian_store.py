@@ -60,6 +60,7 @@ imports ComfyUI: ``folder_paths`` is optional so the module (and its tests) run
 headless.
 """
 
+import contextlib
 import copy
 import itertools
 import json
@@ -237,7 +238,7 @@ def clean_tag(tag):
 def clean_tags(tags):
     """Normalize a tag list: cleaned, empties dropped, deduped in order, ≤32 kept."""
     if isinstance(tags, str):
-        tags = [t for t in re.split(r"[,\n]", tags)]
+        tags = list(re.split(r"[,\n]", tags))
     if not isinstance(tags, (list, tuple, set, frozenset)):
         return []
     out = []
@@ -276,7 +277,7 @@ def clean_body(body):
     text = _as_str(body)
     if len(text) > MAX_BODY_CHARS:
         raise BodyTooLargeError(
-            "body is %d characters, the limit is %d" % (len(text), MAX_BODY_CHARS)
+            f"body is {len(text)} characters, the limit is {MAX_BODY_CHARS}"
         )
     return text
 
@@ -365,7 +366,7 @@ def empty_envelope():
     }
 
 
-def _coerce(raw):
+def _coerce(raw):  # noqa: C901 - one field-by-field migration of a raw record
     """Coerce anything at all into a valid envelope. **Never raises.**
 
     Total tolerance is the point: this runs on whatever json happened to be on
@@ -391,7 +392,9 @@ def _coerce(raw):
     except (TypeError, ValueError):
         threshold = DEFAULT_DUPE_THRESHOLD
     merged["dupe_threshold"] = _clamp(threshold, 0.0, 1.0)
-    merged["version_cap"] = _clamp(_as_int(merged.get("version_cap", VERSION_CAP), VERSION_CAP), 1, 1000)
+    merged["version_cap"] = _clamp(
+        _as_int(merged.get("version_cap", VERSION_CAP), VERSION_CAP), 1, 1000
+    )
     out["settings"] = merged
 
     cats = []
@@ -500,7 +503,7 @@ class LibrarianStore:
     def corrupt_path(self):
         """Quarantine path for an unreadable library file (epoch-stamped)."""
         base, _ = os.path.splitext(os.path.basename(self.store_path()))
-        return os.path.join(self.store_dir(), "%s.corrupt-%d.json" % (base, int(time.time())))
+        return os.path.join(self.store_dir(), f"{base}.corrupt-{int(time.time())}.json")
 
     def wildcards_dir(self):
         """Directory holding ``__wildcard__`` text files for this store."""
@@ -572,7 +575,7 @@ class LibrarianStore:
         corrupt = False
         if sig is not None:
             try:
-                with open(path, "r", encoding="utf-8") as handle:
+                with open(path, encoding="utf-8") as handle:
                     raw = json.load(handle)
             except (OSError, ValueError) as exc:
                 log.warning("[prompt-librarian] unreadable library at %s: %s", path, exc)
@@ -603,12 +606,12 @@ class LibrarianStore:
         self.ensure_loaded()
         if self._readonly:
             raise ReadOnlyError(
-                "library.json declares schema %s, this build understands %s"
-                % (self._data.get("schema"), SCHEMA_VERSION)
+                f"library.json declares schema {self._data.get('schema')}, "
+                f"this build understands {SCHEMA_VERSION}"
             )
         return copy.deepcopy(self._data)
 
-    def _save_locked(self, data):
+    def _save_locked(self, data):  # noqa: C901 - the write path, error branch by error branch
         """Atomically write ``data``, then adopt it as the in-memory library."""
         if self._readonly:
             raise ReadOnlyError("library is read-only (newer schema on disk)")
@@ -618,14 +621,14 @@ class LibrarianStore:
         try:
             text = json.dumps(data, ensure_ascii=False, indent=2)
         except (TypeError, ValueError) as exc:
-            raise StoreWriteError("library could not be serialized: %s" % exc) from exc
+            raise StoreWriteError(f"library could not be serialized: {exc}") from exc
 
         path = self.store_path()
         directory = self.store_dir()
         try:
             os.makedirs(directory, exist_ok=True)
         except OSError as exc:
-            raise StoreWriteError("cannot create %s: %s" % (directory, exc)) from exc
+            raise StoreWriteError(f"cannot create {directory}: {exc}") from exc
 
         if self._corrupt and os.path.exists(path):
             # Never overwrite a file we failed to parse — the user's data may be
@@ -645,7 +648,7 @@ class LibrarianStore:
 
         tmp = os.path.join(
             directory,
-            "%s.tmp-%d-%d" % (os.path.basename(path), os.getpid(), next(_tmp_counter)),
+            f"{os.path.basename(path)}.tmp-{os.getpid()}-{next(_tmp_counter)}",
         )
         try:
             with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
@@ -654,7 +657,7 @@ class LibrarianStore:
                 os.fsync(handle.fileno())
         except OSError as exc:
             _silent_unlink(tmp)
-            raise StoreWriteError("cannot write %s: %s" % (tmp, exc)) from exc
+            raise StoreWriteError(f"cannot write {tmp}: {exc}") from exc
 
         last = None
         for attempt in range(REPLACE_RETRIES):
@@ -672,7 +675,7 @@ class LibrarianStore:
                 break
         if last is not None:
             _silent_unlink(tmp)
-            raise StoreWriteError("cannot replace %s: %s" % (path, last)) from last
+            raise StoreWriteError(f"cannot replace {path}: {last}") from last
 
         self._data = data
         try:
@@ -713,7 +716,7 @@ class LibrarianStore:
     def _require(self, data, pid):
         rec = self._find(data, pid)
         if rec is None:
-            raise NotFoundError("no prompt with id %r" % (pid,))
+            raise NotFoundError(f"no prompt with id {pid!r}")
         return rec
 
     def get(self, pid):
@@ -743,7 +746,7 @@ class LibrarianStore:
     # ``librarian_search`` and ``librarian_dedupe`` duck-type a store as
     # ``rev()`` + ``list_all()``. Keeping the alias here (rather than renaming
     # ``all()``) means either name works from any call site.
-    list_all = all
+    list_all = all  # noqa: A003 - `all` is the collection API name, not the builtin
 
     def count(self):
         """Number of records in the library."""
@@ -765,8 +768,8 @@ class LibrarianStore:
             if dupe_threshold is not None:
                 try:
                     settings["dupe_threshold"] = _clamp(float(dupe_threshold), 0.0, 1.0)
-                except (TypeError, ValueError):
-                    raise ValueError("dupe_threshold must be a number in 0..1")
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("dupe_threshold must be a number in 0..1") from exc
             if version_cap is not None:
                 settings["version_cap"] = _clamp(_as_int(version_cap, VERSION_CAP), 1, 1000)
             self._save_locked(data)
@@ -774,7 +777,8 @@ class LibrarianStore:
             return dict(self._data.get("settings", {}))
 
     def _version_cap(self, data):
-        return _clamp(_as_int(data.get("settings", {}).get("version_cap", VERSION_CAP), VERSION_CAP), 1, 1000)
+        settings = data.get("settings", {})
+        return _clamp(_as_int(settings.get("version_cap", VERSION_CAP), VERSION_CAP), 1, 1000)
 
     # -- create / update / delete ------------------------------------------ #
 
@@ -833,8 +837,8 @@ class LibrarianStore:
 
             if expect_updated is not None and _as_str(expect_updated) != rec.get("updated", ""):
                 raise ConflictError(
-                    "record %s changed since it was loaded (%s != %s)"
-                    % (pid, expect_updated, rec.get("updated", ""))
+                    f"record {pid} changed since it was loaded "
+                    f"({expect_updated} != {rec.get('updated', '')})"
                 )
 
             merged = dict(rec)
@@ -903,7 +907,7 @@ class LibrarianStore:
 
     def bulk_delete(self, ids):
         """Delete many records in one save. Returns the number actually removed."""
-        wanted = [pid for pid in dict.fromkeys(ids)]
+        wanted = list(dict.fromkeys(ids))
         with self._lock:
             data = self._begin_write()
             present = {r["id"] for r in data["prompts"]} & set(wanted)
@@ -913,7 +917,7 @@ class LibrarianStore:
             _drop_pairs(data, present)
             self._save_locked(data)
             removed = [pid for pid in wanted if pid in present]
-            self._emit("bulk_delete", removed, {pid: None for pid in removed})
+            self._emit("bulk_delete", removed, dict.fromkeys(removed))
             return len(removed)
 
     def bulk_retag(self, ids, add=None, remove=None, replace=None):
@@ -947,7 +951,9 @@ class LibrarianStore:
             if not touched:
                 return 0
             self._save_locked(data)
-            self._emit("bulk_retag", touched, {pid: copy.deepcopy(self._by_id[pid]) for pid in touched})
+            self._emit(
+                "bulk_retag", touched, {pid: copy.deepcopy(self._by_id[pid]) for pid in touched}
+            )
             return len(touched)
 
     def bulk_categorize(self, ids, category):
@@ -978,7 +984,7 @@ class LibrarianStore:
         single place at the cost of n writes for an operation the user performs
         on a handful of records at a time.
         """
-        order = [pid for pid in dict.fromkeys(ids)]
+        order = list(dict.fromkeys(ids))
         if len(order) < 2:
             raise SameRecordError("a merge needs at least two distinct records")
         keeper = winner if winner in order else order[0]
@@ -1028,7 +1034,7 @@ class LibrarianStore:
         with self._lock:
             rec = self._by_id.get(pid)
             if rec is None:
-                raise NotFoundError("no prompt with id %r" % (pid,))
+                raise NotFoundError(f"no prompt with id {pid!r}")
             return copy.deepcopy(rec.get("versions", []))
 
     def version_previews(self, pid, chars=160):
@@ -1054,10 +1060,10 @@ class LibrarianStore:
         entries = self.versions(pid)
         try:
             index = int(index)
-        except (TypeError, ValueError):
-            raise NotFoundError("bad version index %r" % (index,))
+        except (TypeError, ValueError) as exc:
+            raise NotFoundError(f"bad version index {index!r}") from exc
         if index < 0 or index >= len(entries):
-            raise NotFoundError("no version %s on prompt %s" % (index, pid))
+            raise NotFoundError(f"no version {index} on prompt {pid}")
         return entries[index]
 
     def restore_version(self, pid, index):
@@ -1320,7 +1326,7 @@ class LibrarianStore:
         with self._lock:
             data = self._begin_write()
             if key not in data.get("snippets", {}):
-                raise NotFoundError("no snippet named %r" % (key,))
+                raise NotFoundError(f"no snippet named {key!r}")
             del data["snippets"][key]
             self._save_locked(data)
             self._emit("snippet", [], {})
@@ -1365,10 +1371,7 @@ class LibrarianStore:
         key = sorted((_as_str(a), _as_str(b)))
         self.ensure_loaded()
         with self._lock:
-            for pair in self._data.get("ignored", []):
-                if list(pair) == key:
-                    return True
-            return False
+            return any(list(pair) == key for pair in self._data.get("ignored", []))
 
     def ignored_pairs(self):
         """All ignored pairs as a set of ``(lo, hi)`` tuples (O(1) membership)."""
@@ -1429,10 +1432,8 @@ class LibrarianStore:
 # --------------------------------------------------------------------------- #
 
 def _silent_unlink(path):
-    try:
+    with contextlib.suppress(OSError):
         os.unlink(path)
-    except OSError:
-        pass
 
 
 def _drop_pairs(data, ids):

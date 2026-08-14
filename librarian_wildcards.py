@@ -101,7 +101,7 @@ _SENTINEL_OF = {"{": S_LB, "|": S_PIPE, "}": S_RB, "_": S_US, "[": S_LSB, "]": S
 _LITERAL_OF = {v: k for k, v in _SENTINEL_OF.items()}
 
 _ESCAPE_RE = re.compile(r"\\([{}|_\[\]])")
-_UNESCAPE_RE = re.compile("[%s]" % "".join(_LITERAL_OF))
+_UNESCAPE_RE = re.compile("[{}]".format("".join(_LITERAL_OF)))
 
 
 def escape(text):
@@ -263,7 +263,7 @@ class WildcardFiles:
         if hit is not None and hit[0] == sig[0] and hit[1] == sig[1]:
             return hit[2]
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+            with open(path, encoding="utf-8", errors="replace") as handle:
                 raw = handle.read()
         except OSError:
             self._cache.pop(name, None)
@@ -304,9 +304,9 @@ class WildcardFiles:
             path = os.path.join(root, *name.split("/")) + WILDCARD_EXT
             try:
                 st = os.stat(path)
-                stamp = "%s|%d|%d" % (name, st.st_mtime_ns, st.st_size)
+                stamp = f"{name}|{st.st_mtime_ns}|{st.st_size}"
             except OSError:
-                stamp = "%s|missing" % (name,)
+                stamp = f"{name}|missing"
             digest.update(stamp.encode("utf-8", "replace"))
             digest.update(b"\x00")
         return digest.hexdigest()
@@ -446,7 +446,7 @@ def _resolve_brace(inner, rng):
 # The resolver
 # --------------------------------------------------------------------------- #
 
-class _Context(object):
+class _Context:
     """Per-``resolve()`` mutable state. One instance, never shared."""
 
     __slots__ = ("rng", "files", "snippets", "picks", "missing", "warnings",
@@ -502,11 +502,11 @@ def _expand_snippets(text, ctx):
         uses = ctx.snippet_uses.get(name, 0)
         if uses >= MAX_DEPTH:
             # Cycle guard: neutralize to sentinels so it can never re-match.
-            ctx.warn("snippet [[%s]] expanded too many times; left literal" % name)
+            ctx.warn(f"snippet [[{name}]] expanded too many times; left literal")
             return S_LSB + S_LSB + name + S_RSB + S_RSB
         body = _snippet_body(ctx.snippets, name)
         if body is None:
-            ctx.miss("[[%s]]" % name)
+            ctx.miss(f"[[{name}]]")
             return match.group(0)          # literal, and no change recorded
         replacement = escape(body)         # escapes inside a snippet still work
         if not ctx.afford(match.group(0), replacement):
@@ -528,11 +528,11 @@ def _expand_files(text, ctx):
         if uses >= MAX_DEPTH:
             # A self-referencing wildcard file lands here and degrades to
             # literal text rather than looping forever.
-            ctx.warn("wildcard __%s__ expanded too many times; left literal" % name)
+            ctx.warn(f"wildcard __{name}__ expanded too many times; left literal")
             return S_US + S_US + name + S_US + S_US
         options = ctx.files.options(name) if ctx.files is not None else None
         if not options:
-            ctx.miss("__%s__" % name)
+            ctx.miss(f"__{name}__")
             return match.group(0)          # literal, never an exception
         value = options[ctx.rng.randrange(len(options))]
         replacement = escape(value)
@@ -569,7 +569,7 @@ def _expand_braces(text, ctx):
         if text == snapshot or ctx.overflow:
             return text
     if _BRACE_RE.search(text):
-        ctx.warn("brace nesting deeper than %d; left unresolved" % MAX_DEPTH)
+        ctx.warn(f"brace nesting deeper than {MAX_DEPTH}; left unresolved")
     return text
 
 
@@ -613,13 +613,13 @@ def resolve(text, seed=0, *, files=None, snippets=None, collect=None):
             if ctx.overflow:
                 break
         if ctx.overflow:
-            ctx.warn("expansion exceeded %d characters; stopped early" % MAX_OUTPUT)
+            ctx.warn(f"expansion exceeded {MAX_OUTPUT} characters; stopped early")
             break
         if not ctx.changed and working == before:
             break
     else:
         if ctx.changed:
-            ctx.warn("stopped after %d passes; output may be incomplete" % MAX_PASSES)
+            ctx.warn(f"stopped after {MAX_PASSES} passes; output may be incomplete")
 
     out = unescape(working)
     if isinstance(collect, dict):

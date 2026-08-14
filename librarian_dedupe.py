@@ -28,12 +28,15 @@ import re
 import threading
 import unicodedata
 from collections import OrderedDict
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 try:  # package import inside ComfyUI, flat import in tests / tooling
-    from .librarian_search import normalize, preview as _preview
+    from .librarian_search import normalize
+    from .librarian_search import preview as _preview
 except ImportError:  # pragma: no cover - exercised by the flat-import path
-    from librarian_search import normalize, preview as _preview
+    from librarian_search import normalize
+    from librarian_search import preview as _preview
 
 # --------------------------------------------------------------------------
 # Tuning constants
@@ -126,21 +129,21 @@ class DupeIndex:
 
     __slots__ = ("records", "norms", "toks", "postings", "length_buckets", "rev")
 
-    def __init__(self, records: Optional[Iterable[Dict[str, Any]]] = None,
-                 rev: Optional[int] = None):
-        self.records: Dict[str, Dict[str, Any]] = {}
-        self.norms: Dict[str, str] = {}
-        self.toks: Dict[str, frozenset] = {}
-        self.postings: Dict[str, Set[str]] = {}
-        self.length_buckets: Dict[int, Set[str]] = {}
+    def __init__(self, records: Iterable[dict[str, Any]] | None = None,
+                 rev: int | None = None):
+        self.records: dict[str, dict[str, Any]] = {}
+        self.norms: dict[str, str] = {}
+        self.toks: dict[str, frozenset] = {}
+        self.postings: dict[str, set[str]] = {}
+        self.length_buckets: dict[int, set[str]] = {}
         self.rev = rev
         if records is not None:
             self.build(records, rev=rev)
 
     # -- construction ------------------------------------------------------
 
-    def build(self, records: Iterable[Dict[str, Any]],
-              rev: Optional[int] = None) -> "DupeIndex":
+    def build(self, records: Iterable[dict[str, Any]],
+              rev: int | None = None) -> DupeIndex:
         self.records = {}
         self.norms = {}
         self.toks = {}
@@ -153,7 +156,7 @@ class DupeIndex:
             self.rev = rev
         return self
 
-    def add(self, rec: Dict[str, Any]) -> Optional[str]:
+    def add(self, rec: dict[str, Any]) -> str | None:
         if not isinstance(rec, dict):
             return None
         pid = str(rec.get("id") or "")
@@ -190,7 +193,7 @@ class DupeIndex:
         self.records.pop(pid, None)
         return True
 
-    def replace(self, rec: Dict[str, Any]) -> Optional[str]:
+    def replace(self, rec: dict[str, Any]) -> str | None:
         return self.add(rec)
 
     def __len__(self) -> int:
@@ -203,7 +206,7 @@ class DupeIndex:
         return len(b) if b else 0
 
     def candidates(self, toks: frozenset, norm_len: int, threshold: float,
-                   exclude: Iterable[str] = ()) -> Set[str]:
+                   exclude: Iterable[str] = ()) -> set[str]:
         """Stage 1 (blocking) + stage 2 (cheap prefilters).
 
         Stage 1: the probe's ``RARE_TOKENS`` rarest tokens whose document
@@ -222,7 +225,7 @@ class DupeIndex:
         cap = max(DF_ABS, DF_FRAC * n)
         rare = sorted((t for t in toks if self.df(t) <= cap), key=self.df)[:RARE_TOKENS]
 
-        cand: Set[str] = set()
+        cand: set[str] = set()
         for t in rare:
             cand |= self.postings.get(t, set())
 
@@ -238,7 +241,7 @@ class DupeIndex:
 
         na = norm_len
         la = len(toks)
-        out: Set[str] = set()
+        out: set[str] = set()
         for pid in cand:
             nb = len(self.norms.get(pid, ""))
             if not length_ok(na, nb, threshold):
@@ -253,8 +256,8 @@ class DupeIndex:
         return out
 
 
-def build_dupe_index(records: Iterable[Dict[str, Any]],
-                     rev: Optional[int] = None) -> DupeIndex:
+def build_dupe_index(records: Iterable[dict[str, Any]],
+                     rev: int | None = None) -> DupeIndex:
     return DupeIndex(records, rev=rev)
 
 
@@ -263,21 +266,21 @@ def build_dupe_index(records: Iterable[Dict[str, Any]],
 # --------------------------------------------------------------------------
 
 _lock = threading.RLock()
-_one_cache: "OrderedDict[tuple, list]" = OrderedDict()
-_all_cache: "OrderedDict[tuple, dict]" = OrderedDict()
-_index_cache: "OrderedDict[tuple, DupeIndex]" = OrderedDict()
+_one_cache: OrderedDict[tuple, list] = OrderedDict()
+_all_cache: OrderedDict[tuple, dict] = OrderedDict()
+_index_cache: OrderedDict[tuple, DupeIndex] = OrderedDict()
 
 _stats = {"one_calls": 0, "one_hits": 0, "all_calls": 0, "all_hits": 0,
           "index_builds": 0}
 
 
-def cache_stats() -> Dict[str, int]:
+def cache_stats() -> dict[str, int]:
     """Counters, for tests and for a debug endpoint."""
     with _lock:
         return dict(_stats)
 
 
-def invalidate(rev: Optional[int] = None) -> None:
+def invalidate(rev: int | None = None) -> None:
     """Drop cached results.  ``rev=None`` clears everything."""
     with _lock:
         if rev is None:
@@ -294,14 +297,14 @@ def invalidate(rev: Optional[int] = None) -> None:
             _index_cache.pop(key, None)
 
 
-def _lru_put(cache: "OrderedDict", key, value, cap: int):
+def _lru_put(cache: OrderedDict, key, value, cap: int):
     cache[key] = value
     cache.move_to_end(key)
     while len(cache) > cap:
         cache.popitem(last=False)
 
 
-def _lru_get(cache: "OrderedDict", key):
+def _lru_get(cache: OrderedDict, key):
     if key in cache:
         cache.move_to_end(key)
         return cache[key]
@@ -313,7 +316,7 @@ def _lru_get(cache: "OrderedDict", key):
 # --------------------------------------------------------------------------
 
 
-def _resolve(source: Any, rev: Optional[int] = None) -> DupeIndex:
+def _resolve(source: Any, rev: int | None = None) -> DupeIndex:
     """Return a :class:`DupeIndex` for ``source``.
 
     ``source`` may be a :class:`DupeIndex`, a store (``list_all()`` +
@@ -361,18 +364,18 @@ def _norm_ignored(ignored: Iterable[Any]) -> frozenset:
 # --------------------------------------------------------------------------
 
 
-def find_similar(
+def find_similar(  # noqa: C901 - one scoring pass, kept inline on purpose
     source: Any,
     *,
-    text: Optional[str] = None,
-    pid: Optional[str] = None,
-    exclude_id: Optional[str] = None,
+    text: str | None = None,
+    pid: str | None = None,
+    exclude_id: str | None = None,
     threshold: float = DEFAULT_THRESHOLD,
     limit: int = 10,
     with_summary: bool = True,
     ignored: Iterable[Any] = (),
-    rev: Optional[int] = None,
-) -> List[Dict[str, Any]]:
+    rev: int | None = None,
+) -> list[dict[str, Any]]:
     """Records similar to ``text`` (or to record ``pid``'s body).
 
     Returns ``[{id, name, score, pct, summary, preview, used, updated}]``
@@ -412,7 +415,7 @@ def find_similar(
     exclude = [x for x in (self_id,) if x]
     cand = idx.candidates(toks, len(probe), threshold, exclude=exclude)
 
-    scored: List[Tuple[float, str]] = []
+    scored: list[tuple[float, str]] = []
     for cid in cand:
         if self_id and cid == self_id:
             continue
@@ -428,7 +431,7 @@ def find_similar(
     if limit and limit > 0:
         scored = scored[:limit]
 
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for r, cid in scored:
         rec = idx.records.get(cid, {})
         body = rec.get("body") or ""
@@ -452,7 +455,7 @@ def find_similar(
 def page_dupe_counts(source: Any, pids: Sequence[str],
                      threshold: float = DEFAULT_THRESHOLD,
                      *, ignored: Iterable[Any] = (),
-                     rev: Optional[int] = None) -> Dict[str, int]:
+                     rev: int | None = None) -> dict[str, int]:
     """Near-duplicate counts for a handful of ids only (one search page).
 
     This is what ``librarian_search.search(dupe_count_fn=...)`` should be
@@ -460,7 +463,7 @@ def page_dupe_counts(source: Any, pids: Sequence[str],
     """
     idx = _resolve(source, rev)
     ign = _norm_ignored(ignored)
-    out: Dict[str, int] = {}
+    out: dict[str, int] = {}
     for pid in pids or ():
         norm = idx.norms.get(pid)
         if not norm:
@@ -486,16 +489,16 @@ def page_dupe_counts(source: Any, pids: Sequence[str],
 # --------------------------------------------------------------------------
 
 
-def _components(pairs: Dict[str, Dict[str, float]]) -> List[List[str]]:
+def _components(pairs: dict[str, dict[str, float]]) -> list[list[str]]:
     """Connected components over the similarity graph."""
-    seen: Set[str] = set()
-    groups: List[List[str]] = []
+    seen: set[str] = set()
+    groups: list[list[str]] = []
     for start in pairs:
         if start in seen or not pairs[start]:
             continue
         stack = [start]
         seen.add(start)
-        comp: List[str] = []
+        comp: list[str] = []
         while stack:
             cur = stack.pop()
             comp.append(cur)
@@ -510,8 +513,8 @@ def _components(pairs: Dict[str, Dict[str, float]]) -> List[List[str]]:
     return groups
 
 
-def _finish(pairs: Dict[str, Dict[str, float]], threshold: float,
-            rev: Optional[int], exhaustive: bool) -> Dict[str, Any]:
+def _finish(pairs: dict[str, dict[str, float]], threshold: float,
+            rev: int | None, exhaustive: bool) -> dict[str, Any]:
     counts = {pid: len(nb) for pid, nb in pairs.items()}
     return {
         "rev": rev,
@@ -524,8 +527,8 @@ def _finish(pairs: Dict[str, Dict[str, float]], threshold: float,
 
 
 def dupe_counts(source: Any, threshold: float = DEFAULT_THRESHOLD, *,
-                rev: Optional[int] = None, exhaustive: bool = False,
-                ignored: Iterable[Any] = ()) -> Dict[str, Any]:
+                rev: int | None = None, exhaustive: bool = False,
+                ignored: Iterable[Any] = ()) -> dict[str, Any]:
     """All-pairs near-duplicate scan.
 
     Returns::
@@ -553,7 +556,7 @@ def dupe_counts(source: Any, threshold: float = DEFAULT_THRESHOLD, *,
 
     pids = list(idx.records.keys())
     pos = {p: i for i, p in enumerate(pids)}
-    pairs: Dict[str, Dict[str, float]] = {p: {} for p in pids}
+    pairs: dict[str, dict[str, float]] = {p: {} for p in pids}
 
     for i, a in enumerate(pids):
         na = idx.norms.get(a, "")
@@ -582,15 +585,15 @@ def dupe_counts(source: Any, threshold: float = DEFAULT_THRESHOLD, *,
     return result
 
 
-def dupe_ids(result: Dict[str, Any]) -> Set[str]:
+def dupe_ids(result: dict[str, Any]) -> set[str]:
     """Ids with at least one near-duplicate -- feeds ``dupes_only``."""
     return {pid for pid, n in (result or {}).get("counts", {}).items() if n}
 
 
-def patch(old_rec: Optional[Dict[str, Any]], new_rec: Optional[Dict[str, Any]],
+def patch(old_rec: dict[str, Any] | None, new_rec: dict[str, Any] | None,  # noqa: C901
           threshold: float = DEFAULT_THRESHOLD, *,
-          old_rev: Optional[int] = None, new_rev: Optional[int] = None,
-          source: Any = None, exhaustive: bool = False) -> Optional[Dict[str, Any]]:
+          old_rev: int | None = None, new_rev: int | None = None,
+          source: Any = None, exhaustive: bool = False) -> dict[str, Any] | None:
     """Incrementally update a cached all-pairs result for one record write.
 
     ``old_rec`` is the pre-write record (``None`` for a create), ``new_rec``
@@ -662,7 +665,7 @@ def patch(old_rec: Optional[Dict[str, Any]], new_rec: Optional[Dict[str, Any]],
 # --------------------------------------------------------------------------
 
 
-def _tok_pairs(text: Any) -> Tuple[List[str], List[str]]:
+def _tok_pairs(text: Any) -> tuple[list[str], list[str]]:
     """``(display_tokens, match_keys)``.
 
     Display tokens keep original casing and punctuation; keys are NFKC +
@@ -674,7 +677,7 @@ def _tok_pairs(text: Any) -> Tuple[List[str], List[str]]:
     if not isinstance(text, str):
         text = str(text)
     display = _WS_TOKEN_RE.findall(text)
-    keys: List[str] = []
+    keys: list[str] = []
     for tokn in display:
         k = unicodedata.normalize("NFKC", tokn).casefold()
         stripped = _EDGE_PUNCT_RE.sub("", k)
@@ -682,7 +685,7 @@ def _tok_pairs(text: Any) -> Tuple[List[str], List[str]]:
     return display, keys
 
 
-def diff_tokens(a: Any, b: Any, cap: int = DIFF_OPCODE_CAP) -> List[Dict[str, Any]]:
+def diff_tokens(a: Any, b: Any, cap: int = DIFF_OPCODE_CAP) -> list[dict[str, Any]]:
     """Full word-level opcodes, ``equal`` runs included, capped at ``cap``.
 
     ``[{op, a_start, a_end, b_start, b_end, a_tokens, b_tokens}]`` -- one
@@ -695,7 +698,7 @@ def diff_tokens(a: Any, b: Any, cap: int = DIFF_OPCODE_CAP) -> List[Dict[str, An
     # token sequence (every "the", every comma-suffixed word) become junk and
     # the opcode stream degenerates. Do not remove.
     sm = difflib.SequenceMatcher(None, a_keys, b_keys, autojunk=False)
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for op, i1, i2, j1, j2 in sm.get_opcodes():
         out.append({
             "op": op,
@@ -721,7 +724,7 @@ def diff_summary(a: Any, b: Any, max_changes: int = SUMMARY_MAX_CHANGES) -> str:
     ``"toward" -> "towards", + volumetric haze`` (curly quotes, U+2192
     arrow).  The ``differs: `` prefix belongs to the UI, not to this payload.
     """
-    changes: List[str] = []
+    changes: list[str] = []
     total = 0
     for chunk in diff_tokens(a, b):
         op = chunk["op"]
@@ -731,7 +734,7 @@ def diff_summary(a: Any, b: Any, max_changes: int = SUMMARY_MAX_CHANGES) -> str:
         if len(changes) >= max_changes:
             continue
         if op == "replace":
-            changes.append("%s%s%s %s %s%s%s" % (
+            changes.append("{}{}{} {} {}{}{}".format(
                 LQUO, _span(chunk["a_tokens"]), RQUO, ARROW,
                 LQUO, _span(chunk["b_tokens"]), RQUO))
         elif op == "insert":
@@ -743,12 +746,12 @@ def diff_summary(a: Any, b: Any, max_changes: int = SUMMARY_MAX_CHANGES) -> str:
     out = ", ".join(changes)
     extra = total - len(changes)
     if extra > 0:
-        out += ", +%d more" % extra
+        out += f", +{extra} more"
     return out
 
 
 def compare(a_text: Any, b_text: Any,
-            max_changes: int = SUMMARY_MAX_CHANGES) -> Dict[str, Any]:
+            max_changes: int = SUMMARY_MAX_CHANGES) -> dict[str, Any]:
     """``{score, pct, summary, diff}`` for the compare/merge dialog."""
     score = ratio(sim_norm(a_text), sim_norm(b_text), 0.0)
     return {

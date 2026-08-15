@@ -43,7 +43,17 @@ export function createChips({ ctx, el, setQuery }) {
       );
     }
     el.appendChild(
-      h("button", { className: "pl-chip pl-chip-add", type: "button", onclick: pickTag }, h("span", null, "+ tag"))
+      h(
+        "button",
+        {
+          className: "pl-chip pl-chip-add",
+          type: "button",
+          // currentTarget is read synchronously — it is null by the time the
+          // async pickTag resumes.
+          onclick: (ev) => pickTag(ev.currentTarget),
+        },
+        h("span", null, "+ tag")
+      )
     );
     el.appendChild(
       h(
@@ -59,11 +69,12 @@ export function createChips({ ctx, el, setQuery }) {
     );
   }
 
-  async function pickTag() {
+  async function pickTag(anchor) {
     const name = await pickOne(
       ctx,
       "Filter by tag",
-      st().tags.map((t) => t.name)
+      st().tags.map((t) => t.name),
+      { anchor }
     );
     if (!name) return;
     const tags = st().query.tags.slice();

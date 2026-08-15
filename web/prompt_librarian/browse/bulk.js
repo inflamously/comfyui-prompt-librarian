@@ -54,7 +54,19 @@ export function createBulkBar({ ctx, el, source, selection }) {
       )
     );
     el.appendChild(h("span", { className: "pl-spacer" }));
-    el.appendChild(h("button", { className: "pl-btn pl-btn-sm", type: "button", onclick: retag }, "retag"));
+    el.appendChild(
+      h(
+        "button",
+        {
+          className: "pl-btn pl-btn-sm",
+          type: "button",
+          // currentTarget is read synchronously — it is null by the time the
+          // async retag resumes.
+          onclick: (ev) => retag(ev.currentTarget),
+        },
+        "retag"
+      )
+    );
     el.appendChild(
       h("button", { className: "pl-btn pl-btn-sm pl-btn-danger", type: "button", onclick: remove }, "delete")
     );
@@ -85,14 +97,14 @@ export function createBulkBar({ ctx, el, source, selection }) {
     }
   }
 
-  async function retag() {
+  async function retag(anchor) {
     const n = selection.count();
     if (!n) return;
     const tag = await pickOne(
       ctx,
       "Add tag",
       st().tags.map((t) => t.name),
-      { allowNew: true }
+      { allowNew: true, anchor }
     );
     if (!tag) return;
     try {

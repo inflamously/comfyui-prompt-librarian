@@ -7,7 +7,7 @@ any object exposing the two store methods this module uses (``list_all()`` and
 
 Record schema consumed here::
 
-    {id, name, body, category, tags[], rating, used, last_run,
+    {id, name, body, tags[], rating, used, last_run,
      created, updated, notes, pinned, versions[]}
 
 Timestamps are ISO-8601 with a ``Z`` suffix and therefore sort correctly as
@@ -40,7 +40,6 @@ from typing import Any
 
 W_NAME = 3.0
 W_TAG = 2.0
-W_CAT = 1.5
 W_BODY = 1.0
 
 PHRASE_NAME = 2.0
@@ -154,15 +153,12 @@ class Doc:
     pid: str
     name_norm: str
     body_norm: str
-    cat_norm: str
     tags_norm: str
     name_toks: tuple[str, ...]
     body_toks: tuple[str, ...]
-    cat_toks: tuple[str, ...]
     tags_toks: tuple[str, ...]
     name_set: frozenset
     body_set: frozenset
-    cat_set: frozenset
     tags_set: frozenset
     all_toks: frozenset
     used: int
@@ -179,24 +175,20 @@ def make_doc(rec: dict[str, Any]) -> Doc:
     pid = str(rec.get("id") or "")
     name = rec.get("name") or ""
     body = rec.get("body") or ""
-    cat = rec.get("category") or ""
     tags = rec.get("tags") or ()
     if isinstance(tags, str):
         tags = [tags]
 
     name_norm = normalize(name)
     body_norm = normalize(body)
-    cat_norm = normalize(cat)
     tags_norm = " ".join(t for t in (normalize(x) for x in tags) if t)
 
     name_toks = tuple(name_norm.split())
     body_toks = tuple(body_norm.split())
-    cat_toks = tuple(cat_norm.split())
     tags_toks = tuple(tags_norm.split())
 
     name_set = frozenset(name_toks)
     body_set = frozenset(body_toks)
-    cat_set = frozenset(cat_toks)
     tags_set = frozenset(tags_toks)
 
     try:
@@ -212,17 +204,14 @@ def make_doc(rec: dict[str, Any]) -> Doc:
         pid=pid,
         name_norm=name_norm,
         body_norm=body_norm,
-        cat_norm=cat_norm,
         tags_norm=tags_norm,
         name_toks=name_toks,
         body_toks=body_toks,
-        cat_toks=cat_toks,
         tags_toks=tags_toks,
         name_set=name_set,
         body_set=body_set,
-        cat_set=cat_set,
         tags_set=tags_set,
-        all_toks=name_set | body_set | cat_set | tags_set,
+        all_toks=name_set | body_set | tags_set,
         used=used,
         rating=rating,
         updated=str(rec.get("updated") or ""),
@@ -475,15 +464,13 @@ class ParsedQuery:
     phrases: tuple[str, ...] = ()                    # normalized, substring-required
     excludes: tuple[str, ...] = ()                   # normalized tokens
     tags: tuple[str, ...] = ()                       # from tag:x
-    cats: tuple[str, ...] = ()                       # from cat:x
 
     def is_empty(self) -> bool:
-        return not (self.tokens or self.phrases or self.excludes
-                    or self.tags or self.cats)
+        return not (self.tokens or self.phrases or self.excludes or self.tags)
 
 
 _FIELD_OP_RE = re.compile(
-    r'(?P<neg>-)?(?P<fieldk>tag|tags|cat|category)\s*:\s*'
+    r'(?P<neg>-)?(?P<fieldk>tags?)\s*:\s*'
     r'(?:"(?P<quoted>[^"]*)"|(?P<bare>\S+))',
     re.IGNORECASE,
 )
@@ -491,10 +478,9 @@ _PHRASE_RE = re.compile(r'"([^"]*)"')
 
 
 def parse_query(q: Any) -> ParsedQuery:
-    """Strip ``tag:``/``cat:``/``-word``/``"phrase"`` before tokenization."""
+    """Strip ``tag:``/``-word``/``"phrase"`` before tokenization."""
     raw = q if isinstance(q, str) else ("" if q is None else str(q))
     tags: list[str] = []
-    cats: list[str] = []
     excludes: list[str] = []
     phrases: list[str] = []
 
@@ -504,14 +490,11 @@ def parse_query(q: Any) -> ParsedQuery:
             val = m.group("bare") or ""
         norm = normalize(val)
         if norm:
-            key = m.group("fieldk").lower()
             if m.group("neg"):
                 # -tag:x behaves as a plain exclusion of that word
                 excludes.extend(norm.split())
-            elif key in ("tag", "tags"):
-                tags.append(norm)
             else:
-                cats.append(norm)
+                tags.append(norm)
         return " "
 
     rest = _FIELD_OP_RE.sub(_take_field, raw)
@@ -543,7 +526,6 @@ def parse_query(q: Any) -> ParsedQuery:
         phrases=tuple(phrases),
         excludes=tuple(dict.fromkeys(excludes)),
         tags=tuple(dict.fromkeys(tags)),
-        cats=tuple(dict.fromkeys(cats)),
     )
 
 
@@ -588,22 +570,19 @@ def score_doc(doc: Doc, pq: ParsedQuery, index: SearchIndex) -> tuple[float, int
     if not n:
         return 0.0, 0
 
-    s_name = s_tag = s_cat = s_body = 0.0
+    s_name = s_tag = s_body = 0.0
     mask = 0
     for i, qt in enumerate(tokens):
         tn = tok(qt, doc.name_set)
         tt = tok(qt, doc.tags_set)
-        tc = tok(qt, doc.cat_set)
         tb = tok(qt, doc.body_set)
-        if tn or tt or tc or tb:
+        if tn or tt or tb:
             mask |= 1 << i
         s_name += tn
         s_tag += tt
-        s_cat += tc
         s_body += tb
 
-    score = (W_NAME * (s_name / n) + W_TAG * (s_tag / n)
-             + W_CAT * (s_cat / n) + W_BODY * (s_body / n))
+    score = W_NAME * (s_name / n) + W_TAG * (s_tag / n) + W_BODY * (s_body / n)
 
     qnorm = pq.qnorm
     if qnorm:
@@ -628,24 +607,21 @@ def score_doc(doc: Doc, pq: ParsedQuery, index: SearchIndex) -> tuple[float, int
 
 def _doc_has_phrase(doc: Doc, phrase: str) -> bool:
     return (phrase in doc.name_norm or phrase in doc.body_norm
-            or phrase in doc.tags_norm or phrase in doc.cat_norm)
+            or phrase in doc.tags_norm)
 
 
 def _doc_has_token(doc: Doc, token: str) -> bool:
     return (token in doc.name_set or token in doc.body_set
-            or token in doc.tags_set or token in doc.cat_set)
+            or token in doc.tags_set)
 
 
 def _passes_filters(  # noqa: C901 - a flat chain of independent filters
     doc: Doc,
     pq: ParsedQuery,
-    cat_norm: str | None,
     tag_norms: Sequence[str],
     dupes_only: bool,
     dupe_ids: set[str] | None,
 ) -> bool:
-    if cat_norm is not None and doc.cat_norm != cat_norm:
-        return False
     if tag_norms:
         # AND semantics: set(tags) <= set(rec.tags)
         dtags = set(doc.tags_toks)
@@ -656,9 +632,6 @@ def _passes_filters(  # noqa: C901 - a flat chain of independent filters
                     return False
             elif not set(parts) <= dtags:
                 return False
-    for c in pq.cats:
-        if doc.cat_norm != c:
-            return False
     if pq.tags:
         dtags = set(doc.tags_toks)
         for t in pq.tags:
@@ -727,7 +700,6 @@ def search(  # noqa: C901 - the query pipeline reads better as one function
     source: Any,
     query: str = "",
     *,
-    category: str | None = None,
     tags: Iterable[str] = (),
     dupes_only: bool = False,
     sort: str = "relevance",
@@ -772,7 +744,6 @@ def search(  # noqa: C901 - the query pipeline reads better as one function
     if empty_query and sort == "relevance":
         sort = "recent"          # relevance is meaningless without terms
 
-    cat_norm = normalize(category) if category else None
     if isinstance(tags, str):
         tags = [tags]
     tag_norms = [t for t in (normalize(x) for x in (tags or ())) if t]
@@ -816,7 +787,7 @@ def search(  # noqa: C901 - the query pipeline reads better as one function
         doc = docs.get(pid)
         if doc is None:
             continue
-        if not _passes_filters(doc, pq, cat_norm, tag_norms, dupes_only, dupe_id_set):
+        if not _passes_filters(doc, pq, tag_norms, dupes_only, dupe_id_set):
             continue
         if empty_query:
             scored.append((doc, 0.0))
@@ -861,7 +832,6 @@ def search(  # noqa: C901 - the query pipeline reads better as one function
             "id": doc.pid,
             "name": rec.get("name") or "",
             "preview": preview(rec.get("body") or ""),
-            "category": rec.get("category") or "",
             "tags": list(rec.get("tags") or ()),
             "rating": doc.rating,
             "used": doc.used,

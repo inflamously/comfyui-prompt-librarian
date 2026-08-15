@@ -17,14 +17,12 @@ On-disk format::
       "schema": 1,
       "updated": "2026-08-13T18:20:00Z",
       "settings": { "dupe_threshold": 0.9, "version_cap": 50 },
-      "categories": ["videogen_edit_minimax"],
       "snippets": { "cine_lighting": { "body": "volumetric haze", "updated": "..." } },
       "ignored": [["idA", "idB"]],
       "prompts": [{
         "id": "9f2c1b7e...",            // uuid4().hex
         "name": "ballet_drift_v3",
         "body": "make him dance ballet ...",
-        "category": "videogen_edit_minimax",
         "tags": ["dance", "camera-move"],
         "rating": 4,
         "used": 41,
@@ -40,11 +38,14 @@ Design notes worth keeping in mind before editing this file:
 * **``id`` is ``uuid4().hex``, never a content hash.** Two records with identical
   bodies must be able to coexist until the user explicitly merges them, and an
   id must survive a body edit so a saved workflow's ``prompt_id`` link holds.
-* **Tags are derived** from the records (a ``Counter``), never stored top level —
-  a stored list drifts and would need garbage collection. **Categories *are*
-  stored**, so an empty category can exist and a rename is one atomic operation;
-  the effective set on read is ``stored | observed``, so a hand-edited file
-  self-heals.
+* **Tags are the only taxonomy, and they are derived** from the records (a
+  ``Counter``), never stored top level — a stored list drifts and would need
+  garbage collection. There used to be a parallel *category* axis (one per
+  record, plus a stored name list); it did strictly less than tags do, so
+  ``_coerce`` now **scrubs** ``category`` and ``categories`` off whatever it
+  loads and the next save writes them out of the file. The scrub needs no
+  schema bump: an older build reading a scrubbed file simply sees every record
+  uncategorized, which is exactly right.
 * **Reload-before-mutate.** Every write re-stats the file and reloads if it
   changed, then mutates the freshly loaded object. Cross-process editing then
   degrades to per-record last-writer-wins instead of clobbering the whole file.
@@ -84,7 +85,6 @@ SCHEMA_VERSION = 1
 
 MAX_BODY_CHARS = 100000
 MAX_NAME_CHARS = 200
-MAX_CATEGORY_CHARS = 100
 MAX_SNIPPET_NAME_CHARS = 100
 MAX_TAG_CHARS = 40
 MAX_TAGS = 32
@@ -267,11 +267,6 @@ def clean_name(name, body=""):
     return text or "untitled"
 
 
-def clean_category(category):
-    """Strip and cap a category name (``""`` means uncategorized)."""
-    return _WS_RE.sub(" ", _as_str(category)).strip()[:MAX_CATEGORY_CHARS]
-
-
 def clean_body(body):
     """Validate a body. Raises :class:`BodyTooLargeError` — never truncates."""
     text = _as_str(body)
@@ -289,10 +284,10 @@ def _clean_record(rec):
     mutation of the live library so a rejected edit cannot half-apply.
     """
     out = dict(rec)
+    out.pop("category", None)          # removed field: scrubbed, never rewritten
     out["id"] = _as_str(rec.get("id")) or new_id()
     out["body"] = clean_body(rec.get("body", ""))
     out["name"] = clean_name(rec.get("name", ""), out["body"])
-    out["category"] = clean_category(rec.get("category", ""))
     out["tags"] = clean_tags(rec.get("tags", []))
     out["rating"] = _clamp(_as_int(rec.get("rating", 0)), 0, 5)
     out["used"] = max(0, _as_int(rec.get("used", 0)))
@@ -334,10 +329,10 @@ def _coerce_record(raw):
     if not isinstance(raw, dict):
         return None
     out = dict(raw)
+    out.pop("category", None)          # removed field: scrubbed, never rewritten
     out["id"] = _as_str(raw.get("id")) or new_id()
     out["body"] = _as_str(raw.get("body", ""))
     out["name"] = clean_name(raw.get("name", ""), out["body"])
-    out["category"] = clean_category(raw.get("category", ""))
     out["tags"] = clean_tags(raw.get("tags", []))
     out["rating"] = _clamp(_as_int(raw.get("rating", 0)), 0, 5)
     out["used"] = max(0, _as_int(raw.get("used", 0)))
@@ -359,7 +354,6 @@ def empty_envelope():
             "dupe_threshold": DEFAULT_DUPE_THRESHOLD,
             "version_cap": VERSION_CAP,
         },
-        "categories": [],
         "snippets": {},
         "ignored": [],
         "prompts": [],
@@ -379,6 +373,7 @@ def _coerce(raw):  # noqa: C901 - one field-by-field migration of a raw record
         return env
 
     out = dict(raw)  # keep unknown keys
+    out.pop("categories", None)        # removed field: scrubbed, never rewritten
 
     schema = raw.get("schema", SCHEMA_VERSION)
     out["schema"] = _as_int(schema, SCHEMA_VERSION)
@@ -396,17 +391,6 @@ def _coerce(raw):  # noqa: C901 - one field-by-field migration of a raw record
         _as_int(merged.get("version_cap", VERSION_CAP), VERSION_CAP), 1, 1000
     )
     out["settings"] = merged
-
-    cats = []
-    seen_cats = set()
-    raw_cats = raw.get("categories")
-    if isinstance(raw_cats, (list, tuple)):
-        for c in raw_cats:
-            name = clean_category(c)
-            if name and name not in seen_cats:
-                seen_cats.add(name)
-                cats.append(name)
-    out["categories"] = cats
 
     snippets = {}
     raw_snips = raw.get("snippets")
@@ -782,7 +766,7 @@ class LibrarianStore:
 
     # -- create / update / delete ------------------------------------------ #
 
-    def create(self, name="", body="", category="", tags=None, rating=0,
+    def create(self, name="", body="", tags=None, rating=0,
                notes="", pinned=False):
         """Create a record and return a copy of it.
 
@@ -795,7 +779,6 @@ class LibrarianStore:
                 "id": new_id(),
                 "name": name,
                 "body": body,
-                "category": category,
                 "tags": tags or [],
                 "rating": rating,
                 "used": 0,
@@ -807,13 +790,12 @@ class LibrarianStore:
                 "versions": [],
             })
             data["prompts"].append(rec)
-            self._register_category(data, rec["category"])
             self._save_locked(data)
             out = copy.deepcopy(rec)
             self._emit("create", [rec["id"]], {rec["id"]: out})
             return out
 
-    def update(self, pid, name=None, body=None, category=None, tags=None,
+    def update(self, pid, name=None, body=None, tags=None,
                rating=None, notes=None, pinned=None, snapshot=True,
                expect_updated=None):
         """Update the given fields of a record and return a copy of it.
@@ -827,7 +809,7 @@ class LibrarianStore:
 
         Snapshot rule: the *pre-edit* body/name is pushed onto ``versions``
         stamped with the *pre-edit* ``updated`` time, and only when the body or
-        the name actually changed. Tag/rating/category/notes-only edits do not
+        the name actually changed. Tag/rating/notes-only edits do not
         snapshot — they would flood the history with identical bodies. Pass
         ``snapshot=False`` to skip it entirely (restore, rapid retag/rate paths).
         """
@@ -846,8 +828,6 @@ class LibrarianStore:
                 merged["name"] = name
             if body is not None:
                 merged["body"] = body
-            if category is not None:
-                merged["category"] = category
             if tags is not None:
                 merged["tags"] = tags
             if rating is not None:
@@ -864,7 +844,7 @@ class LibrarianStore:
             name_changed = cleaned["name"] != rec["name"]
             changed = any(
                 cleaned[key] != rec[key]
-                for key in ("body", "name", "category", "tags", "rating", "notes", "pinned")
+                for key in ("body", "name", "tags", "rating", "notes", "pinned")
             )
             if not changed:
                 return copy.deepcopy(rec)
@@ -877,11 +857,10 @@ class LibrarianStore:
                     "src": None,
                 })
 
-            for key in ("body", "name", "category", "tags", "rating", "notes", "pinned"):
+            for key in ("body", "name", "tags", "rating", "notes", "pinned"):
                 rec[key] = cleaned[key]
             rec["updated"] = now_iso()
             _trim_versions(rec, self._version_cap(data))
-            self._register_category(data, rec["category"])
 
             self._save_locked(data)
             out = copy.deepcopy(self._by_id[pid])
@@ -954,26 +933,6 @@ class LibrarianStore:
             self._emit(
                 "bulk_retag", touched, {pid: copy.deepcopy(self._by_id[pid]) for pid in touched}
             )
-            return len(touched)
-
-    def bulk_categorize(self, ids, category):
-        """Move many records into ``category`` in one save. Returns the count changed."""
-        wanted = set(ids)
-        target = clean_category(category)
-        with self._lock:
-            data = self._begin_write()
-            touched = []
-            for rec in data["prompts"]:
-                if rec["id"] in wanted and rec["category"] != target:
-                    rec["category"] = target
-                    rec["updated"] = now_iso()
-                    touched.append(rec["id"])
-            if not touched:
-                return 0
-            self._register_category(data, target)
-            self._save_locked(data)
-            self._emit("bulk_categorize", touched,
-                       {pid: copy.deepcopy(self._by_id[pid]) for pid in touched})
             return len(touched)
 
     def bulk_merge(self, ids, winner=None):
@@ -1113,7 +1072,6 @@ class LibrarianStore:
 
             data["prompts"] = [r for r in data["prompts"] if r["id"] != loser_id]
             _drop_pairs(data, {loser_id})
-            self._register_category(data, winner["category"])
 
             self._save_locked(data)
             out = copy.deepcopy(self._by_id[winner_id])
@@ -1142,7 +1100,6 @@ class LibrarianStore:
                 "id": new_id(),
                 "name": name,
                 "body": body,
-                "category": first["category"] or second["category"],
                 "tags": list(first["tags"]),
                 "rating": first["rating"],
                 "used": first["used"],
@@ -1171,7 +1128,6 @@ class LibrarianStore:
             data["prompts"] = [r for r in data["prompts"] if r["id"] not in (a_id, b_id)]
             data["prompts"].append(rec)
             _drop_pairs(data, {a_id, b_id})
-            self._register_category(data, rec["category"])
 
             self._save_locked(data)
             out = copy.deepcopy(self._by_id[rec["id"]])
@@ -1180,20 +1136,6 @@ class LibrarianStore:
             return out
 
     # -- taxonomy ---------------------------------------------------------- #
-
-    def categories(self):
-        """Sorted category names: the stored list unioned with what records use.
-
-        The union is what makes a hand-edited file self-heal, and the stored half
-        is what lets an empty category exist.
-        """
-        self.ensure_loaded()
-        with self._lock:
-            names = set(self._data.get("categories", []))
-            for rec in self._data.get("prompts", []):
-                if rec.get("category"):
-                    names.add(rec["category"])
-            return sorted(names)
 
     def tags(self):
         """Derived tag counts as ``[{"tag": t, "count": n}, ...]``, most used first."""
@@ -1207,88 +1149,14 @@ class LibrarianStore:
                 for tag, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
 
     def taxonomy(self):
-        """Everything the filter rail needs: categories (with counts) and tags."""
+        """Everything the filter rail needs: the tags, with counts."""
         self.ensure_loaded()
         with self._lock:
-            counts = {}
-            for rec in self._data.get("prompts", []):
-                key = rec.get("category", "")
-                counts[key] = counts.get(key, 0) + 1
             total = len(self._data.get("prompts", []))
         return {
-            "categories": [{"name": name, "count": counts.get(name, 0)}
-                           for name in self.categories()],
             "tags": self.tags(),
             "total": total,
         }
-
-    def _register_category(self, data, name):
-        """Remember a category so it survives its last record being deleted."""
-        if name and name not in data.setdefault("categories", []):
-            data["categories"].append(name)
-
-    def add_category(self, name):
-        """Create an (possibly empty) category. Returns the sorted category list."""
-        target = clean_category(name)
-        if not target:
-            raise ValueError("category name is empty")
-        with self._lock:
-            data = self._begin_write()
-            if target in data.get("categories", []):
-                return self.categories()
-            self._register_category(data, target)
-            self._save_locked(data)
-            self._emit("category", [], {})
-            return self.categories()
-
-    def rename_category(self, old, new):
-        """Rename a category and move every record in it. Returns the count moved."""
-        source = clean_category(old)
-        target = clean_category(new)
-        if not source or not target:
-            raise ValueError("category names cannot be empty")
-        if source == target:
-            return 0
-        with self._lock:
-            data = self._begin_write()
-            data["categories"] = [c for c in data.get("categories", []) if c != source]
-            self._register_category(data, target)
-            touched = []
-            for rec in data["prompts"]:
-                if rec.get("category") == source:
-                    rec["category"] = target
-                    rec["updated"] = now_iso()
-                    touched.append(rec["id"])
-            self._save_locked(data)
-            self._emit("category", touched,
-                       {pid: copy.deepcopy(self._by_id[pid]) for pid in touched})
-            return len(touched)
-
-    def delete_category(self, name, reassign_to=""):
-        """Forget a category; its records move to ``reassign_to`` (default none).
-
-        Records are never deleted along with a category — losing prompts to a
-        taxonomy edit would be indefensible.
-        """
-        source = clean_category(name)
-        target = clean_category(reassign_to)
-        if not source:
-            raise ValueError("category name is empty")
-        with self._lock:
-            data = self._begin_write()
-            data["categories"] = [c for c in data.get("categories", []) if c != source]
-            if target:
-                self._register_category(data, target)
-            touched = []
-            for rec in data["prompts"]:
-                if rec.get("category") == source:
-                    rec["category"] = target
-                    rec["updated"] = now_iso()
-                    touched.append(rec["id"])
-            self._save_locked(data)
-            self._emit("category", touched,
-                       {pid: copy.deepcopy(self._by_id[pid]) for pid in touched})
-            return len(touched)
 
     # -- snippets ---------------------------------------------------------- #
 
@@ -1392,14 +1260,13 @@ class LibrarianStore:
 
         ``replace=True`` swaps the library wholesale. ``replace=False`` appends:
         records whose id already exists are given a fresh id rather than
-        clobbering the resident record, and categories/snippets/ignored pairs are
-        unioned. Returns the number of records imported.
+        clobbering the resident record, and snippets/ignored pairs are unioned.
+        Returns the number of records imported.
         """
         incoming = _coerce(raw)
         with self._lock:
             data = self._begin_write()
             if replace:
-                data["categories"] = incoming["categories"]
                 data["snippets"] = incoming["snippets"]
                 data["ignored"] = incoming["ignored"]
                 data["prompts"] = incoming["prompts"]
@@ -1412,9 +1279,6 @@ class LibrarianStore:
                         rec["id"] = new_id()
                     existing.add(rec["id"])
                     data["prompts"].append(rec)
-                    self._register_category(data, rec["category"])
-                for name in incoming["categories"]:
-                    self._register_category(data, name)
                 for name, entry in incoming["snippets"].items():
                     data.setdefault("snippets", {}).setdefault(name, entry)
                 have = {tuple(p) for p in data.get("ignored", [])}
@@ -1475,8 +1339,6 @@ def _merge_fields(winner, loser):
     winner["created"] = _min_ts(winner.get("created", ""), loser.get("created", ""))
     winner["last_run"] = _max_ts(winner.get("last_run", ""), loser.get("last_run", ""))
     winner["pinned"] = bool(winner.get("pinned")) or bool(loser.get("pinned"))
-    if not winner.get("category"):
-        winner["category"] = loser.get("category", "")
     mine, theirs = _as_str(winner.get("notes", "")), _as_str(loser.get("notes", ""))
     if theirs.strip():
         winner["notes"] = (mine + "\n---\n" + theirs) if mine.strip() else theirs

@@ -84,7 +84,6 @@ class Prompt(_Schema):
     """``uuid4().hex``, stable across edits and never a content hash."""
     name: str
     body: str
-    category: str
     tags: list[str]
     rating: int
     used: int
@@ -105,7 +104,6 @@ class SearchHit(_Schema):
     id: str
     name: str
     preview: str
-    category: str
     tags: list[str]
     rating: int
     used: int
@@ -127,7 +125,6 @@ class PromptMeta(_Schema):
     name: str
     rating: int
     used: int
-    category: str
     tags: list[str]
     near_dupes: int
     updated: str
@@ -189,12 +186,6 @@ class Settings(_Schema):
 
 
 @dataclass
-class CategoryCount(_Schema):
-    name: str
-    count: int
-
-
-@dataclass
 class TagCount(_Schema):
     tag: str
     count: int
@@ -222,7 +213,6 @@ class Library(_Schema):
     schema: int
     updated: str
     settings: Settings
-    categories: list[str]
     snippets: dict[str, Snippet]
     ignored: list[list[str]]
     """Pairs the user chose to keep, stored sorted."""
@@ -262,7 +252,6 @@ class SearchQuery(_Schema):
     q: str = ""
     query: str = ""
     """Alias of ``q``, so a stored selector round-trips unchanged."""
-    category: str = ""
     tags: list[str] = field(default_factory=list)
     dupes_only: bool = False
     """The one search shape that pays for the all-pairs scan."""
@@ -328,7 +317,6 @@ class VersionResponse(Envelope):
 
 @dataclass
 class TaxonomyResponse(Envelope):
-    categories: list[CategoryCount]
     tags: list[TagCount]
     total: int
 
@@ -451,7 +439,6 @@ class ResolveResponse(Envelope):
 class CreateBody(_Schema):
     name: str = ""
     body: str = ""
-    category: str = ""
     tags: list[str] = field(default_factory=list)
     rating: int = 0
     notes: str = ""
@@ -465,7 +452,6 @@ class UpdateBody(_Schema):
     id: str
     name: str | None = None
     body: str | None = None
-    category: str | None = None
     tags: list[str] | None = None
     rating: int | None = None
     notes: str | None = None
@@ -526,11 +512,6 @@ class BulkRetagBody(BulkTarget):
     remove: list[str] = field(default_factory=list)
     replace: list[str] | None = None
     """Replaces the whole tag set; `add`/`remove` are ignored when it is given."""
-
-
-@dataclass
-class BulkCategorizeBody(BulkTarget):
-    category: str = ""
 
 
 @dataclass
@@ -596,23 +577,6 @@ class IgnoreDupeResponse(Envelope):
     changed: bool
     """False when the pair was already in that state."""
     ignored: bool
-
-
-@dataclass
-class CategoryBody(_Schema):
-    name: str
-    op: Literal["add", "rename", "delete"] = "add"
-    new: str = ""
-    """The new name, for `rename`."""
-    reassign_to: str = ""
-    """Where `delete` moves the orphaned records."""
-
-
-@dataclass
-class CategoryResponse(Envelope):
-    count: int
-    """Records moved."""
-    categories: list[str]
 
 
 @dataclass

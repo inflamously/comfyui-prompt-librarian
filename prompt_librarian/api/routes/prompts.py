@@ -54,7 +54,6 @@ async def meta(request):
             "name": rec.get("name", ""),
             "rating": int(rec.get("rating", 0) or 0),
             "used": int(rec.get("used", 0) or 0),
-            "category": rec.get("category", ""),
             "tags": list(rec.get("tags") or ()),
             "near_dupes": int(counts.get(pid, 0) or 0),
             "updated": rec.get("updated", ""),
@@ -73,7 +72,6 @@ async def create(request):
         rec = STORE.create(
             name=_str(data.get("name")),
             body=_str(data.get("body")),
-            category=_str(data.get("category")),
             tags=_list(data.get("tags")),
             rating=_int(data.get("rating"), 0),
             notes=_str(data.get("notes")),
@@ -99,7 +97,6 @@ async def update(request):
             pid,
             name=_opt(data, "name"),
             body=_opt(data, "body"),
-            category=_opt(data, "category"),
             tags=(_list(data.get("tags")) if "tags" in data else None),
             rating=(_int(data.get("rating"), 0) if "rating" in data else None),
             notes=_opt(data, "notes"),

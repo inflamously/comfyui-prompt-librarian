@@ -24,7 +24,6 @@ def mk(pid, name, body, **kw):
         "id": pid,
         "name": name,
         "body": body,
-        "category": kw.get("category", "videogen_edit_minimax"),
         "tags": kw.get("tags", []),
         "rating": kw.get("rating", 0),
         "used": kw.get("used", 0),
@@ -53,10 +52,10 @@ def records():
            tags=["dance", "camera-move"], used=41,
            last_run="2026-08-11T19:03:22Z", updated="2026-02-04T00:00:00Z"),
         mk("unrelated", "still life", "a bowl of fruit on a table",
-           category="stills", tags=["studio"], used=1,
+           tags=["studio"], used=1,
            updated="2026-02-05T00:00:00Z"),
         mk("cjk", "猫の写真", "かわいい猫が窓辺で眠っている, Grüße aus München",
-           category="stills", tags=["cat"], used=0,
+           tags=["cat"], used=0,
            updated="2026-02-06T00:00:00Z", versions=[{"body": "x"}]),
     ]
 
@@ -158,9 +157,8 @@ def test_happy_path_does_not_use_fallback(records):
 
 
 def test_parse_query_operators():
-    pq = S.parse_query('tag:Dance cat:stills -fruit "dusk light" ballet')
+    pq = S.parse_query('tag:Dance -fruit "dusk light" ballet')
     assert pq.tags == ("dance",)
-    assert pq.cats == ("stills",)
     assert pq.excludes == ("fruit",)
     assert pq.phrases == ("dusk light",)
     assert "ballet" in pq.tokens and "dusk" in pq.tokens
@@ -176,9 +174,10 @@ def test_tag_operator_multiword_tag(records):
     assert set(ids(res)) == {"phrase", "ballerina"}
 
 
-def test_cat_operator(records):
-    res = S.search(records, "cat:stills", limit=10)
-    assert set(ids(res)) == {"unrelated", "cjk"}
+def test_a_removed_field_operator_is_plain_text(records):
+    """`cat:` is gone, so it tokenizes as ordinary words rather than filtering."""
+    assert S.parse_query("cat:stills").tags == ()
+    assert set(S.parse_query("cat:stills").tokens) == {"cat", "stills"}
 
 
 def test_exclusion_operator(records):
@@ -195,9 +194,9 @@ def test_quoted_phrase_requires_substring(records):
 
 
 def test_operators_and_with_chip_filters(records):
-    res = S.search(records, "tag:dance", category="videogen_edit_minimax", limit=10)
-    assert set(ids(res)) == {"scatter", "ballerina"}
-    res2 = S.search(records, "tag:dance", category="stills", limit=10)
+    res = S.search(records, "tag:dance", tags=["camera-move"], limit=10)
+    assert set(ids(res)) == {"ballerina"}      # both must hold
+    res2 = S.search(records, "tag:dance", tags=["studio"], limit=10)
     assert res2["hits"] == []
 
 
@@ -238,12 +237,6 @@ def test_tags_filter_is_and_not_or(records):
 def test_tags_filter_normalizes_like_stored_tags(records):
     res = S.search(records, "", tags=["Camera-Move"], limit=10)
     assert set(ids(res)) == {"phrase", "ballerina"}
-
-
-def test_category_filter_is_exact(records):
-    res = S.search(records, "", category="stills", limit=10)
-    assert set(ids(res)) == {"unrelated", "cjk"}
-    assert S.search(records, "", category="still", limit=10)["hits"] == []
 
 
 def test_dupes_only_filter(records):
@@ -334,7 +327,7 @@ def test_result_envelope_and_hit_shape(records):
     assert isinstance(res["took_ms"], float)
     assert len(res["hits"]) == 2
     h = res["hits"][0]
-    assert set(h) == {"id", "name", "preview", "category", "tags", "rating",
+    assert set(h) == {"id", "name", "preview", "tags", "rating",
                       "used", "last_run", "updated", "chars", "version_count",
                       "score", "dupe_count", "match_pct"}
 

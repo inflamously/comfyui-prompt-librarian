@@ -35,7 +35,6 @@ def envelope(records, schema=1):
         "schema": schema,
         "updated": "2026-01-01T00:00:00Z",
         "settings": {"dupe_threshold": 0.9, "version_cap": 50},
-        "categories": [],
         "snippets": {},
         "ignored": [],
         "prompts": records,
@@ -47,7 +46,6 @@ def record(pid, **kw):
         "id": pid,
         "name": pid,
         "body": "body of " + pid,
-        "category": "",
         "tags": [],
         "rating": 0,
         "used": 0,
@@ -79,7 +77,7 @@ def test_construction_and_empty_load_touch_no_disk(tmp_path, mod):
 
 def test_round_trip_create_save_and_fresh_instance_load(store, fresh):
     rec = store.create(name="ballet_drift_v3", body="drifting toward the camera",
-                       category="videogen", tags=["Dance", "camera move"], rating=4,
+                       tags=["Dance", "camera move"], rating=4,
                        notes="hi", pinned=True)
     assert len(rec["id"]) == 32
     assert rec["tags"] == ["dance", "camera-move"]
@@ -89,7 +87,6 @@ def test_round_trip_create_save_and_fresh_instance_load(store, fresh):
     other = fresh()
     loaded = other.get(rec["id"])
     assert loaded == rec
-    assert other.categories() == ["videogen"]
     assert os.path.isfile(store.store_path())
 
 
@@ -214,7 +211,6 @@ def test_hand_edited_file_is_coerced_and_unknown_keys_survive(store, lib_path):
     write_raw(lib_path, {
         "schema": 1,
         "future_top_level": {"keep": "me"},
-        "categories": ["a", "a", "  b  ", ""],
         "ignored": [["z", "a"], ["a", "z"], "junk"],
         "snippets": {"plain": "a string snippet"},
         "prompts": [
@@ -230,7 +226,6 @@ def test_hand_edited_file_is_coerced_and_unknown_keys_survive(store, lib_path):
     assert rec["tags"] == ["alpha", "beta"]
     assert rec["rating"] == 5
     assert rec["future_field"] == 7
-    assert store.categories() == ["a", "b"]
     assert store.ignored_pairs() == {("a", "z")}
     assert store.snippets()["plain"]["body"] == "a string snippet"
 
@@ -327,7 +322,7 @@ def test_snapshot_on_body_change_but_not_on_tag_only_change(store):
     rec = store.create(name="v1", body="first")
     created_updated = rec["updated"]
 
-    store.update(rec["id"], tags=["a"], rating=5, category="c", notes="n", pinned=True)
+    store.update(rec["id"], tags=["a"], rating=5, notes="n", pinned=True)
     assert store.versions(rec["id"]) == []       # metadata edits never snapshot
 
     after = store.update(rec["id"], body="second")
@@ -467,13 +462,13 @@ def test_update_and_delete_of_a_missing_record(store, mod):
 
 def build_merge_pair(store):
     store.import_raw(envelope([
-        record("W", name="winner", body="winner body", category="cat",
+        record("W", name="winner", body="winner body",
                tags=["dance", "shared"], rating=3, used=10,
                created="2026-01-02T00:00:00Z", updated="2026-03-01T00:00:00Z",
                last_run="2026-02-01T00:00:00Z", notes="mine", pinned=False,
                versions=[{"body": "w-old", "name": "winner-old",
                           "ts": "2026-01-05T00:00:00Z", "src": None}]),
-        record("L", name="loser", body="loser body", category="other",
+        record("L", name="loser", body="loser body",
                tags=["shared", "camera"], rating=5, used=7,
                created="2026-01-01T00:00:00Z", updated="2026-02-20T00:00:00Z",
                last_run="2026-02-15T00:00:00Z", notes="theirs", pinned=True,
@@ -494,7 +489,6 @@ def test_merge_arithmetic(store):
     assert winner["last_run"] == "2026-02-15T00:00:00Z"      # max
     assert winner["notes"] == "mine\n---\ntheirs"
     assert winner["pinned"] is True                  # OR'd
-    assert winner["category"] == "cat"               # the winner's own
     assert winner["body"] == "winner body"
     assert winner["updated"] > "2026-03-01T00:00:00Z"
 
@@ -572,7 +566,7 @@ def test_bulk_merge_folds_everything_into_the_winner(store):
 # bulk
 # --------------------------------------------------------------------------- #
 
-def test_bulk_delete_retag_and_categorize(store):
+def test_bulk_delete_and_retag(store):
     a = store.create(name="a", body="a", tags=["keep", "drop"])
     b = store.create(name="b", body="b", tags=["drop"])
     c = store.create(name="c", body="c")
@@ -584,10 +578,6 @@ def test_bulk_delete_retag_and_categorize(store):
     assert store.get(c["id"])["tags"] == ["only"]
     assert store.bulk_retag([c["id"]], replace=["only"]) == 0      # no-op, no write
 
-    assert store.bulk_categorize([a["id"], b["id"]], "  Bucket  ") == 2
-    assert store.get(a["id"])["category"] == "Bucket"
-    assert "Bucket" in store.categories()
-
     assert store.bulk_delete([a["id"], b["id"], "ghost"]) == 2
     assert store.count() == 1
 
@@ -596,29 +586,37 @@ def test_bulk_delete_retag_and_categorize(store):
 # taxonomy, snippets, ignored pairs, import/export
 # --------------------------------------------------------------------------- #
 
-def test_categories_are_stored_and_derived(store):
-    store.add_category("empty-one")
-    rec = store.create(name="a", body="a", category="used-one")
-    assert store.categories() == ["empty-one", "used-one"]
+def test_the_removed_category_field_is_scrubbed_on_load(store, lib_path):
+    """`category` / `categories` are dropped, and the next save writes them out.
 
-    assert store.rename_category("used-one", "renamed") == 1
-    assert store.get(rec["id"])["category"] == "renamed"
-    assert store.categories() == ["empty-one", "renamed"]
+    Unknown keys survive coercion by design, so the scrub has to be explicit —
+    which makes this the test that would catch it silently regressing into a
+    field that lives on in every file forever.
+    """
+    write_raw(lib_path, {
+        "schema": 1,
+        "categories": ["videogen", "stills"],
+        "prompts": [{"id": "a" * 32, "name": "a", "body": "a",
+                     "category": "videogen", "tags": ["keep"]}],
+    })
+    assert "category" not in store.all()[0]
+    assert store.all()[0]["tags"] == ["keep"]           # the taxonomy that stayed
+    assert store.taxonomy() == {"tags": [{"tag": "keep", "count": 1}], "total": 1}
 
-    assert store.delete_category("renamed") == 1
-    assert store.get(rec["id"])["category"] == ""       # the record survives
-    assert store.categories() == ["empty-one"]
-    assert store.count() == 1
+    store.create(name="x", body="x")                    # any write rewrites the file
+    raw = read_raw(store)
+    assert "categories" not in raw
+    assert all("category" not in rec for rec in raw["prompts"])
 
 
 def test_tags_and_taxonomy_counts(store):
-    store.create(name="a", body="a", tags=["x", "y"], category="c1")
-    store.create(name="b", body="b", tags=["x"], category="c1")
-    store.create(name="c", body="c", category="c2")
+    store.create(name="a", body="a", tags=["x", "y"])
+    store.create(name="b", body="b", tags=["x"])
+    store.create(name="c", body="c")
     assert store.tags() == [{"tag": "x", "count": 2}, {"tag": "y", "count": 1}]
     tax = store.taxonomy()
     assert tax["total"] == 3
-    assert {c["name"]: c["count"] for c in tax["categories"]} == {"c1": 2, "c2": 1}
+    assert "categories" not in tax
 
 
 def test_snippet_crud(store, mod, fresh):

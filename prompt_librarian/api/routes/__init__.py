@@ -24,7 +24,7 @@ route's module and its tag never disagree:
 ``snippets``
     ``[[snippet]]`` bodies.
 ``taxonomy``
-    Categories and tags — the filter rail.
+    Tags with their counts — the filter rail.
 ``versions``
     Version history: list previews, read one, restore one.
 ``wildcards``

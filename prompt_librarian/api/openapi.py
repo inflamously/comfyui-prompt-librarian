@@ -60,7 +60,6 @@ _TAGS = (
     ("/snippet", "snippets"),
     ("/wildcard", "wildcards"),
     ("/resolve", "wildcards"),
-    ("/category", "taxonomy"),
     ("/taxonomy", "taxonomy"),
     ("/export", "library"),
     ("/import", "library"),

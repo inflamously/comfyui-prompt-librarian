@@ -10,7 +10,7 @@ Design notes that matter
 
 **There are no combo widgets at all.** That single decision deletes the whole
 class of LiteGraph/Vue reactivity pain the old node lives with. Compare
-``prompt_store/node.py`` + ``web/prompt_library.js``, where a JS-populated combo
+``prompt_store/node.py`` + ``web/prompt_store/``, where a JS-populated combo
 forces *all* of:
 
 * ``_category_names()`` returning ``["<empty>"]`` — a sentinel that exists only
@@ -21,7 +21,7 @@ forces *all* of:
   ``setDirtyCanvas`` to make the frontend notice;
 * a 500 ms ``setTimeout`` on ``nodeCreated`` to dodge widget-wiring order.
 
-Here, selection / category / tags / sort / filters are panel state and never
+Here, selection / tags / sort / filters are panel state and never
 workflow state, so none of that machinery is needed. ``text`` is a plain
 serialized multiline STRING widget — the source of truth, always travelling
 inside the workflow ``.json`` — and ``prompt_id`` is a plain serialized STRING

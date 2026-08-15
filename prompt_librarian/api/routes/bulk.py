@@ -50,20 +50,6 @@ async def bulk_retag(request):
     return _json({"count": count, "ids": ids})
 
 
-@_route("post", "/bulk/categorize", op="bulkCategorizePrompts",
-        summary="Move the whole selection into one category.",
-        body=schemas.BulkCategorizeBody, returns=schemas.BulkCountResponse)
-async def bulk_categorize(request):
-    data = await _body(request)
-
-    def _work():
-        ids = _resolve_ids(data)
-        return ids, STORE.bulk_categorize(ids, _str(data.get("category")))
-
-    ids, count = await _offload(_work)
-    return _json({"count": count, "ids": ids})
-
-
 @_route("post", "/bulk/merge", op="bulkMergePrompts",
         summary="Merge the selection into one record.",
         body=schemas.BulkMergeBody, returns=schemas.BulkMergeResponse)

@@ -162,12 +162,12 @@ def test_search_empty_library(call, store):
 
 def test_search_finds_and_shapes_hits(call, store):
     store.create(name="ballet_drift_v3", body="make him dance ballet slowly",
-                 category="video", tags=["dance"])
+                 tags=["dance"])
     store.create(name="other", body="a completely different thing")
     payload = ok(call("get", "/search", {"q": "ballet"}))
     assert payload["total"] == 1
     hit = payload["hits"][0]
-    for key in ("id", "name", "preview", "category", "tags", "rating", "used",
+    for key in ("id", "name", "preview", "tags", "rating", "used",
                 "updated", "chars", "version_count", "score", "dupe_count",
                 "match_pct"):
         assert key in hit
@@ -176,8 +176,8 @@ def test_search_finds_and_shapes_hits(call, store):
 
 def test_search_filters_and_paginates(call, store):
     for index in range(5):
-        store.create(name=f"rec{index}", body=f"body {index}", category="c")
-    payload = ok(call("get", "/search", {"category": "c", "limit": "2",
+        store.create(name=f"rec{index}", body=f"body {index}", tags=["c"])
+    payload = ok(call("get", "/search", {"tags": "c", "limit": "2",
                                          "offset": "1", "sort": "az"}))
     assert payload["total"] == 5
     assert len(payload["hits"]) == 2
@@ -237,10 +237,9 @@ def test_version_bad_index_is_404(call, store):
 
 
 def test_taxonomy(call, store):
-    store.create(name="a", body="x", category="cat", tags=["t1", "t2"])
+    store.create(name="a", body="x", tags=["t1", "t2"])
     payload = ok(call("get", "/taxonomy"))
     assert payload["total"] == 1
-    assert {c["name"] for c in payload["categories"]} == {"cat"}
     assert {t["tag"] for t in payload["tags"]} == {"t1", "t2"}
 
 
@@ -301,7 +300,7 @@ def test_snippets_and_export(call, store):
 
 def test_create(call, store):
     payload = ok(call("post", "/create", body={
-        "name": "n", "body": "b", "category": "c",
+        "name": "n", "body": "b",
         "tags": ["x", "y"], "rating": 3, "notes": "note", "pinned": True,
     }))
     rec = payload["prompt"]
@@ -325,7 +324,7 @@ def test_update(call, store):
 
 
 def test_update_partial_fields_only(call, store):
-    rec = store.create(name="n", body="one", category="c", tags=["t"])
+    rec = store.create(name="n", body="one", tags=["t"])
     payload = ok(call("post", "/update", body={"id": rec["id"], "rating": 5}))
     assert payload["prompt"]["body"] == "one"
     assert payload["prompt"]["tags"] == ["t"]
@@ -386,11 +385,11 @@ def test_usage(call, store):
 
 def test_meta(call, store):
     first = store.create(name="a", body="make him dance ballet toward the camera",
-                         category="c", tags=["t"], rating=2)
+                         tags=["t"], rating=2)
     second = store.create(name="b", body="make him dance ballet towards the camera")
     payload = ok(call("post", "/meta", body={"ids": [first["id"], second["id"], "nope"]}))
     entry = payload["meta"][first["id"]]
-    assert set(entry) == {"name", "rating", "used", "category", "tags",
+    assert set(entry) == {"name", "rating", "used", "tags",
                           "near_dupes", "updated"}
     assert entry["near_dupes"] == 1
     assert "nope" not in payload["meta"]
@@ -408,7 +407,7 @@ def test_malformed_body_is_not_a_500(call, store):
 
 @pytest.fixture
 def five(store):
-    return [store.create(name=f"rec{i}", body=f"body {i}", category="c")
+    return [store.create(name=f"rec{i}", body=f"body {i}", tags=["c"])
             for i in range(5)]
 
 
@@ -421,7 +420,7 @@ def test_bulk_delete_by_ids(call, store, five):
 
 def test_bulk_delete_by_query(call, store, five):
     # "select all filtered" ships the query, not 1 284 ids.
-    payload = ok(call("post", "/bulk/delete", body={"query": {"category": "c"}}))
+    payload = ok(call("post", "/bulk/delete", body={"query": {"tags": ["c"]}}))
     assert payload["count"] == 5
     assert len(payload["ids"]) == 5
     assert store.count() == 0
@@ -439,13 +438,6 @@ def test_bulk_retag_replace(call, store, five):
     ok(call("post", "/bulk/retag", body={"ids": ids, "add": ["a", "b"]}))
     ok(call("post", "/bulk/retag", body={"ids": ids, "replace": ["only"]}))
     assert store.get(ids[0])["tags"] == ["only"]
-
-
-def test_bulk_categorize_by_query(call, store, five):
-    payload = ok(call("post", "/bulk/categorize",
-                      body={"query": {"category": "c"}, "category": "moved"}))
-    assert payload["count"] == 5
-    assert store.get(five[0]["id"])["category"] == "moved"
 
 
 def test_bulk_merge(call, store):
@@ -617,26 +609,6 @@ def test_resolve_reports_missing(call, store):
     assert payload["missing"] == ["[[nope]]"]
 
 
-def test_category_add_rename_delete(call, store):
-    rec = store.create(name="n", body="b", category="old")
-    assert "extra" in ok(call("post", "/category", body={"op": "add",
-                                                         "name": "extra"}))["categories"]
-    payload = ok(call("post", "/category", body={"op": "rename", "name": "old",
-                                                 "new": "new"}))
-    assert payload["count"] == 1
-    assert store.get(rec["id"])["category"] == "new"
-
-    payload = ok(call("post", "/category", body={"op": "delete", "name": "new"}))
-    assert payload["count"] == 1
-    assert store.get(rec["id"])["category"] == ""   # records are never deleted
-
-
-def test_category_unknown_op_is_400(call, store):
-    status, payload = call("post", "/category", body={"op": "explode", "name": "x"})
-    assert status == 400
-    assert payload["code"] == "bad_request"
-
-
 def test_snippet_set_and_delete(call, store):
     payload = ok(call("post", "/snippet", body={"op": "set", "name": "cine",
                                                 "body": "35mm"}))
@@ -660,7 +632,7 @@ def test_settings(call, store):
 
 
 def test_import_and_export_round_trip(call, store):
-    store.create(name="a", body="one", category="c", tags=["t"])
+    store.create(name="a", body="one", tags=["t"])
     library = ok(call("get", "/export"))["library"]
 
     store.import_raw({"prompts": []}, replace=True)

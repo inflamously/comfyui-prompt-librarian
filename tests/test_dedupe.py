@@ -24,7 +24,6 @@ def mk(pid, name, body, **kw):
         "id": pid,
         "name": name,
         "body": body,
-        "category": kw.get("category", "videogen_edit_minimax"),
         "tags": kw.get("tags", []),
         "rating": kw.get("rating", 0),
         "used": kw.get("used", 0),

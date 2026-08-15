@@ -29,8 +29,6 @@ def _run_search(params, limit=None):
     ignored = _ignored()
 
     query = _str(params.get("q") or params.get("query") or "")
-    category = params.get("category")
-    category = _str(category) if category not in (None, "") else None
     tags = _list(params.get("tags"))
     dupes_only = _bool(params.get("dupes_only"))
     sort = _str(params.get("sort") or "relevance")
@@ -61,7 +59,7 @@ def _run_search(params, limit=None):
 
     return search.search(
         STORE, query,
-        category=category, tags=tags, dupes_only=dupes_only,
+        tags=tags, dupes_only=dupes_only,
         sort=sort, mode=mode, offset=offset, limit=page,
         threshold=threshold, rev=rev, dupe_ids=ids,
         dupe_count_fn=_counts, match_fn=match_fn,

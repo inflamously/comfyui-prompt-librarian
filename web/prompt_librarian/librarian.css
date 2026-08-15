@@ -866,7 +866,34 @@
   min-width: 0;
 }
 
-.pl-name {
+/* The selected record's derived handle. A READOUT, not a field: it is
+   computed from the prompt text against the rest of the library, so it has no
+   focus ring, no caret and nothing to type into. Sized like the input it
+   replaced so the pane's rhythm is unchanged. */
+.pl-label {
+  min-width: 0; /* see MIN-SIZE NOTE */
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--pl-bg-input);
+  border: 1px solid var(--pl-border);
+  border-radius: var(--pl-radius-sm);
+  font-family: var(--pl-mono);
+  font-size: 13.5px;
+  letter-spacing: 0.01em;
+  color: var(--pl-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pl-label.is-empty {
+  color: var(--pl-text-mute);
+  font-style: italic;
+}
+
+/* The panel's one plain text input. It was `.pl-name` back when the inspector
+   had a name field; the picker's "new tag" box is what still needs it. */
+.pl-input {
   min-width: 0; /* see MIN-SIZE NOTE */
   width: 100%;
   padding: 10px 12px;
@@ -881,7 +908,7 @@
   transition: border-color var(--pl-fast) ease;
 }
 
-.pl-name:focus {
+.pl-input:focus {
   border-color: var(--pl-accent);
 }
 

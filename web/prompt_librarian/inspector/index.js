@@ -5,9 +5,9 @@
    extension, so this file is loaded whether or not anything imports it.
    Exports only — no module-scope work, no listeners, no fetches.
 
-   Owns: name / tags, the prompt textarea and its counts, the
-   duplicate-check panel, the four stat tiles, and the action row — plus the
-   save flow, which is the feature this whole pane exists for.
+   Owns: the derived label readout / tags, the prompt textarea and its
+   counts, the duplicate-check panel, the four stat tiles, and the action row
+   — plus the save flow, which is the feature this whole pane exists for.
 
    Feature files in this directory:
 
@@ -24,7 +24,7 @@
    lets each of them live in its own file while still reading and writing the
    same edit buffer. Only this file creates it.
 
-   Never innerHTML. Prompt bodies, names and tags are user data — h() and
+   Never innerHTML. Prompt bodies and tags are user data — h() and
    textContent only.
    ========================================================================== */
 
@@ -62,7 +62,7 @@ export function mountInspector(el, ctx) {
     ctx,
     el,
     D,
-    buf: { name: "", tags: [], body: "" },
+    buf: { tags: [], body: "" },
     current: null, // canonical server record for the selection
     baseline: null, // snapshot the dirty check and expect_updated use
     renderedId: null,
@@ -125,7 +125,6 @@ export function mountInspector(el, ctx) {
 
   function getBuffer() {
     return {
-      name: pane.buf.name,
       tags: pane.buf.tags.slice(),
       body: pane.buf.body,
     };
@@ -163,6 +162,25 @@ export function mountInspector(el, ctx) {
     els.charsEl.textContent = D.fmtInt(D.charCount(pane.buf.body));
     els.tokensEl.textContent = "~" + D.fmtInt(D.estimateTokens(pane.buf.body));
     els.editedEl.hidden = !isDirty();
+    renderLabel();
+  }
+
+  /**
+   * The handle this record is known by, which is a derived thing.
+   *
+   * While the buffer matches what was saved, the backend's corpus-derived
+   * label is the truth — it knows which of these words no other prompt uses,
+   * and this pane does not. The moment the body is edited that answer is about
+   * text that no longer exists, so the readout falls back to the head of what
+   * is actually in the box and picks the real label back up on save.
+   */
+  function renderLabel() {
+    const rec = pane.current || {};
+    const label = isDirty() || !rec.id
+      ? D.labelOf(pane.buf.body)
+      : D.labelOf({ label: rec.label, body: pane.buf.body });
+    els.labelEl.textContent = label || "(empty prompt)";
+    els.labelEl.classList.toggle("is-empty", !label);
   }
 
   function renderTags() {
@@ -192,7 +210,6 @@ export function mountInspector(el, ctx) {
   }
 
   function renderFields() {
-    els.nameInput.value = pane.buf.name;
     if (ta.value !== pane.buf.body) ta.value = pane.buf.body;
     renderTags();
     renderCounts();
@@ -321,7 +338,6 @@ export function mountInspector(el, ctx) {
     pane.current = rec || null;
     pane.baseline = rec ? JSON.parse(JSON.stringify(rec)) : null;
     const nb = bufferFrom(rec);
-    pane.buf.name = nb.name;
     pane.buf.tags = nb.tags;
     pane.buf.body = nb.body;
     pane.renderedId = rec && rec.id ? String(rec.id) : null;
@@ -505,7 +521,7 @@ export function mountInspector(el, ctx) {
         title: "Delete prompt",
         // No soft delete on the backend (caps.soft_delete === false), so we
         // must not promise an Undo we cannot deliver.
-        message: "Delete " + LDQUO + (rec.name || rec.id) + RDQUO + "? This cannot be undone.",
+        message: "Delete " + LDQUO + (D.labelOf(rec) || rec.id) + RDQUO + "? This cannot be undone.",
         confirmLabel: "Delete",
         cancelLabel: "Cancel",
         danger: true,
@@ -522,7 +538,7 @@ export function mountInspector(el, ctx) {
     pane.dupeSeq++;
     adoptRecord(null, { silent: false });
     pane.publishDupes([], false);
-    toast("deleted " + LDQUO + (rec.name || rec.id) + RDQUO, "success");
+    toast("deleted " + LDQUO + (D.labelOf(rec) || rec.id) + RDQUO, "success");
     if (typeof ctx.refreshAll === "function") ctx.refreshAll();
   }
 
@@ -564,6 +580,7 @@ export function mountInspector(el, ctx) {
 
   Object.assign(pane, {
     renderCounts,
+    renderLabel,
     renderTags,
     renderFields,
     renderStats,

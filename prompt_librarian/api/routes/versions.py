@@ -7,7 +7,7 @@ pages through previews and asks for a full entry only when one is opened.
 
 from ...store import STORE
 from .. import schemas
-from ..utils import _body, _int, _json, _offload, _query, _route, _str
+from ..utils import _body, _int, _json, _labelled, _labeller, _offload, _query, _route, _str
 
 
 @_route("get", "/versions", op="listVersions",
@@ -17,9 +17,13 @@ async def versions(request):
     params = _query(request)
     pid = _str(params.get("id"))
     chars = _int(params.get("chars"), 160)
+    # A snapshotted body is labelled against the *current* library, not the one
+    # it was taken from: the point of the label is to tell the user what this
+    # entry was about relative to what they have now.
+    label_fn = _labeller().label_for
     # Previews only: a record at the 50-version cap would otherwise be a
     # multi-megabyte response on every selection change.
-    return _json({"id": pid, "versions": STORE.version_previews(pid, chars)})
+    return _json({"id": pid, "versions": STORE.version_previews(pid, chars, label_fn)})
 
 
 @_route("get", "/version", op="getVersion",
@@ -40,4 +44,4 @@ async def versions_restore(request):
     pid = _str(data.get("id"))
     index = _int(data.get("index"), -1)
     # Snapshots the current body first, so the restore is itself undoable.
-    return _json({"prompt": await _offload(STORE.restore_version, pid, index)})
+    return _json(await _offload(lambda: _labelled(STORE.restore_version(pid, index))))

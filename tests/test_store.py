@@ -44,7 +44,6 @@ def envelope(records, schema=1):
 def record(pid, **kw):
     base = {
         "id": pid,
-        "name": pid,
         "body": "body of " + pid,
         "tags": [],
         "rating": 0,
@@ -76,7 +75,7 @@ def test_construction_and_empty_load_touch_no_disk(tmp_path, mod):
 
 
 def test_round_trip_create_save_and_fresh_instance_load(store, fresh):
-    rec = store.create(name="ballet_drift_v3", body="drifting toward the camera",
+    rec = store.create(body="drifting toward the camera",
                        tags=["Dance", "camera move"], rating=4,
                        notes="hi", pinned=True)
     assert len(rec["id"]) == 32
@@ -91,32 +90,32 @@ def test_round_trip_create_save_and_fresh_instance_load(store, fresh):
 
 
 def test_reload_when_the_file_changes_underneath(store, fresh, lib_path):
-    a = store.create(name="one", body="one")
+    a = store.create(body="one")
     reader = fresh()
-    assert reader.get(a["id"])["name"] == "one"
+    assert reader.get(a["id"])["body"] == "one"
     rev_before = reader.rev()
 
     # A second process (here: a second store instance) rewrites the file.
     writer = fresh()
-    writer.update(a["id"], name="one-renamed-by-someone-else")
+    writer.update(a["id"], body="edited-by-someone-else")
 
-    assert reader.get(a["id"])["name"] == "one-renamed-by-someone-else"
+    assert reader.get(a["id"])["body"] == "edited-by-someone-else"
     assert reader.rev() > rev_before
 
 
 def test_reload_before_mutate_keeps_the_other_records(store, fresh, lib_path):
-    a = store.create(name="a", body="a")
+    a = store.create(body="a")
     other = fresh()
-    b = other.create(name="b", body="b")      # store's in-memory copy is now stale
+    b = other.create(body="b")      # store's in-memory copy is now stale
     store.update(a["id"], body="a2")          # must reload rather than clobber b
-    names = sorted(r["name"] for r in fresh().all())
-    assert names == ["a", "b"]
+    bodies = sorted(r["body"] for r in fresh().all())
+    assert bodies == ["a2", "b"]
     assert fresh().get(b["id"]) is not None
 
 
 def test_save_writes_a_backup_of_the_previous_file(store):
-    store.create(name="one", body="one")
-    store.create(name="two", body="two")
+    store.create(body="one")
+    store.create(body="two")
     backup = store.backup_path()
     assert os.path.isfile(backup)
     with open(backup, encoding="utf-8") as handle:
@@ -125,7 +124,7 @@ def test_save_writes_a_backup_of_the_previous_file(store):
 
 
 def test_atomic_write_retries_permission_error(store, mod, monkeypatch):
-    store.create(name="one", body="one")
+    store.create(body="one")
     real_replace = os.replace
     target = os.path.abspath(store.store_path())
     calls = {"n": 0}
@@ -140,15 +139,15 @@ def test_atomic_write_retries_permission_error(store, mod, monkeypatch):
     monkeypatch.setattr(os, "replace", flaky)
     monkeypatch.setattr(mod.time, "sleep", lambda *_: None)
 
-    rec = store.create(name="two", body="two")
+    rec = store.create(body="two")
     assert calls["n"] == 3                      # two failures, then success
     monkeypatch.undo()
     assert len(read_raw(store)["prompts"]) == 2
-    assert store.get(rec["id"])["name"] == "two"
+    assert store.get(rec["id"])["body"] == "two"
 
 
 def test_write_failure_raises_and_leaves_the_file_intact(store, mod, monkeypatch):
-    store.create(name="one", body="one")
+    store.create(body="one")
     before = read_raw(store)
     directory = store.store_dir()
 
@@ -158,7 +157,7 @@ def test_write_failure_raises_and_leaves_the_file_intact(store, mod, monkeypatch
     monkeypatch.setattr(os, "replace", always_locked)
     monkeypatch.setattr(mod.time, "sleep", lambda *_: None)
     with pytest.raises(mod.StoreWriteError):
-        store.create(name="two", body="two")
+        store.create(body="two")
     monkeypatch.undo()
 
     assert read_raw(store) == before
@@ -167,14 +166,14 @@ def test_write_failure_raises_and_leaves_the_file_intact(store, mod, monkeypatch
 
 
 def test_serialization_failure_never_touches_the_disk(store, mod, monkeypatch):
-    store.create(name="one", body="one")
+    store.create(body="one")
     before = read_raw(store)
     def boom(*_a, **_k):
         raise TypeError("nope")
 
     monkeypatch.setattr(mod.json, "dumps", boom)
     with pytest.raises(mod.StoreWriteError):
-        store.create(name="two", body="two")
+        store.create(body="two")
     monkeypatch.undo()
     assert read_raw(store) == before
 
@@ -191,7 +190,7 @@ def test_corrupt_file_loads_empty_and_is_preserved_then_quarantined(store, lib_p
     assert store.is_corrupt() is True
     assert read_text(lib_path) == original                       # untouched so far
 
-    store.create(name="rescue", body="rescue")
+    store.create(body="rescue")
     assert store.is_corrupt() is False
 
     quarantined = [n for n in os.listdir(store.store_dir()) if ".corrupt-" in n]
@@ -215,28 +214,28 @@ def test_hand_edited_file_is_coerced_and_unknown_keys_survive(store, lib_path):
         "snippets": {"plain": "a string snippet"},
         "prompts": [
             "not a record",
-            {"body": "no id and no name", "tags": "Alpha,Beta", "rating": 99,
+            {"body": "no id at all", "tags": "Alpha,Beta", "rating": 99,
              "future_field": 7},
         ],
     })
     assert store.count() == 1
     rec = store.all()[0]
     assert len(rec["id"]) == 32
-    assert rec["name"] == "no id and no name"
+    assert rec["body"] == "no id at all"
     assert rec["tags"] == ["alpha", "beta"]
     assert rec["rating"] == 5
     assert rec["future_field"] == 7
     assert store.ignored_pairs() == {("a", "z")}
     assert store.snippets()["plain"]["body"] == "a string snippet"
 
-    store.create(name="x", body="x")
+    store.create(body="x")
     raw = read_raw(store)
     assert raw["future_top_level"] == {"keep": "me"}
     assert any(r.get("future_field") == 7 for r in raw["prompts"])
 
 
 def test_duplicate_ids_are_re_keyed_on_load(store, lib_path):
-    write_raw(lib_path, envelope([record("dup"), record("dup", name="second")]))
+    write_raw(lib_path, envelope([record("dup"), record("dup", body="second")]))
     ids = {r["id"] for r in store.all()}
     assert len(ids) == 2
 
@@ -246,7 +245,7 @@ def test_forward_schema_is_read_only(store, lib_path, mod):
     assert store.count() == 1                    # readable
     assert store.is_readonly() is True
     with pytest.raises(mod.ReadOnlyError):
-        store.create(name="x", body="x")
+        store.create(body="x")
     with pytest.raises(mod.ReadOnlyError):
         store.update("a", body="x")
     with pytest.raises(mod.ReadOnlyError):
@@ -261,56 +260,64 @@ def test_forward_schema_is_read_only(store, lib_path, mod):
 # --------------------------------------------------------------------------- #
 
 def test_body_over_the_cap_is_rejected_and_nothing_is_written(store, mod):
-    rec = store.create(name="keep", body="short")
+    rec = store.create(body="short")
     huge = "x" * (mod.MAX_BODY_CHARS + 1)
 
     with pytest.raises(mod.BodyTooLargeError):
-        store.create(name="too big", body=huge)
+        store.create(body=huge)
     assert store.count() == 1
 
     with pytest.raises(mod.BodyTooLargeError):
-        store.update(rec["id"], name="renamed", body=huge)
+        store.update(rec["id"], tags=["kept-out"], body=huge)
     after = store.get(rec["id"])
     assert after["body"] == "short"
-    assert after["name"] == "keep"              # the name edit did not sneak through
+    assert after["tags"] == []                  # the tag edit did not sneak through
     assert after["versions"] == []
     assert len(read_raw(store)["prompts"]) == 1
 
     at_the_limit = "y" * mod.MAX_BODY_CHARS
-    assert len(store.create(name="ok", body=at_the_limit)["body"]) == mod.MAX_BODY_CHARS
+    assert len(store.create(body=at_the_limit)["body"]) == mod.MAX_BODY_CHARS
 
 
 def test_tag_normalization_and_the_tag_cap(store, mod):
-    rec = store.create(name="t", body="t", tags=[
+    rec = store.create(body="t", tags=[
         "  Camera Move  ", "camera move", "CAMERA\tMOVE", "Straße",
         "x" * 60, "", "   ", 12,
     ])
     assert rec["tags"] == ["camera-move", "strasse", "x" * mod.MAX_TAG_CHARS, "12"]
 
-    many = store.create(name="m", body="m", tags=[f"tag{i:02d}" for i in range(40)])
+    many = store.create(body="m", tags=[f"tag{i:02d}" for i in range(40)])
     assert len(many["tags"]) == mod.MAX_TAGS
     assert many["tags"][0] == "tag00"
     assert many["tags"][-1] == "tag31"
 
 
-def test_name_and_rating_normalization(store, mod):
-    blank = store.create(name="   ", body="  first line\nsecond line  ")
-    assert blank["name"] == "first line second line"
-    assert store.create(name="", body="")["name"] == "untitled"
-    assert store.create(name="n" * 400, body="b")["name"] == "n" * mod.MAX_NAME_CHARS
-    assert store.create(name="r", body="b", rating=42)["rating"] == 5
-    assert store.create(name="r", body="b", rating=-3)["rating"] == 0
+def test_rating_normalization(store):
+    assert store.create(body="b", rating=42)["rating"] == 5
+    assert store.create(body="b", rating=-3)["rating"] == 0
+    assert store.create(body="b", rating="4")["rating"] == 4
+
+
+def test_a_record_never_grows_a_name(store, mod):
+    """The field is gone: not accepted, not stored, not written."""
+    rec = store.create(body="a body")
+    assert "name" not in rec
+    assert not hasattr(mod, "clean_name")
+    with pytest.raises(TypeError):
+        store.create(body="b", name="nope")
+    with pytest.raises(TypeError):
+        store.update(rec["id"], name="nope")
+    assert "name" not in read_raw(store)["prompts"][0]
 
 
 def test_unicode_round_trip_is_written_unescaped(store, fresh):
     body = "cinematic 🎬 ballet, 東京の夜, שלום עולם, café"
-    rec = store.create(name="unicode 🎬 東京", body=body, tags=["東京", "🎬"])
+    rec = store.create(body=body, tags=["東京", "🎬"])
     with open(store.store_path(), encoding="utf-8") as handle:
         text = handle.read()
     assert "🎬" in text and "東京" in text and "שלום" in text     # ensure_ascii=False
     reloaded = fresh().get(rec["id"])
     assert reloaded["body"] == body
-    assert reloaded["name"] == "unicode 🎬 東京"
     assert reloaded["tags"] == ["東京", "🎬"]
 
 
@@ -319,7 +326,7 @@ def test_unicode_round_trip_is_written_unescaped(store, fresh):
 # --------------------------------------------------------------------------- #
 
 def test_snapshot_on_body_change_but_not_on_tag_only_change(store):
-    rec = store.create(name="v1", body="first")
+    rec = store.create(body="first")
     created_updated = rec["updated"]
 
     store.update(rec["id"], tags=["a"], rating=5, notes="n", pinned=True)
@@ -329,35 +336,34 @@ def test_snapshot_on_body_change_but_not_on_tag_only_change(store):
     versions = store.versions(rec["id"])
     assert len(versions) == 1
     assert versions[0]["body"] == "first"
-    assert versions[0]["name"] == "v1"
+    assert "name" not in versions[0]
     assert versions[0]["src"] is None
     assert after["body"] == "second"
 
-    renamed = store.update(rec["id"], name="v2")
-    assert len(store.versions(rec["id"])) == 2   # a rename snapshots too
+    store.update(rec["id"], body="third")
+    assert len(store.versions(rec["id"])) == 2
     assert store.versions(rec["id"])[-1]["body"] == "second"
-    assert renamed["name"] == "v2"
 
     # The snapshot carries the PRE-edit updated stamp, not "now".
     assert store.versions(rec["id"])[0]["ts"] == created_updated
 
 
 def test_no_snapshot_when_nothing_actually_changed(store):
-    rec = store.create(name="v1", body="first", tags=["a"])
-    same = store.update(rec["id"], body="first", name="v1", tags=["A"])
+    rec = store.create(body="first", tags=["a"])
+    same = store.update(rec["id"], body="first", tags=["A"])
     assert store.versions(rec["id"]) == []
     assert same["updated"] == rec["updated"]
 
 
 def test_snapshot_false_bypasses_history(store):
-    rec = store.create(name="v1", body="first")
+    rec = store.create(body="first")
     store.update(rec["id"], body="second", snapshot=False)
     assert store.versions(rec["id"]) == []
     assert store.get(rec["id"])["body"] == "second"
 
 
 def test_version_cap_by_count(store, mod):
-    rec = store.create(name="v", body="body-000")
+    rec = store.create(body="body-000")
     for i in range(1, mod.VERSION_CAP + 6):
         store.update(rec["id"], body=f"body-{i:03d}")
     versions = store.versions(rec["id"])
@@ -368,7 +374,7 @@ def test_version_cap_by_count(store, mod):
 
 def test_version_cap_by_bytes(store, mod):
     chunk = 40000
-    rec = store.create(name="big", body="0" * chunk)
+    rec = store.create(body="0" * chunk)
     for i in range(1, 11):
         store.update(rec["id"], body=str(i) * chunk)
     versions = store.versions(rec["id"])
@@ -379,13 +385,17 @@ def test_version_cap_by_bytes(store, mod):
 
 
 def test_version_previews_and_single_version_fetch(store, mod):
-    rec = store.create(name="v", body="first line\nsecond line")
+    rec = store.create(body="first line\nsecond line")
     store.update(rec["id"], body="replacement")
     previews = store.version_previews(rec["id"], chars=12)
     assert previews == [{
-        "index": 0, "name": "v", "ts": rec["updated"], "src": None,
+        "index": 0, "label": "", "ts": rec["updated"], "src": None,
         "chars": len("first line\nsecond line"), "preview": "first line s",
     }]
+    # The label is injected, because it is a fact about the whole library and
+    # the store is the one layer that must not know about the whole library.
+    labelled = store.version_previews(rec["id"], chars=12, label_fn=lambda b: b[:5])
+    assert labelled[0]["label"] == "first"
     assert store.version(rec["id"], 0)["body"] == "first line\nsecond line"
     with pytest.raises(mod.NotFoundError):
         store.version(rec["id"], 7)
@@ -394,12 +404,11 @@ def test_version_previews_and_single_version_fetch(store, mod):
 
 
 def test_restore_version_snapshots_the_current_body_first(store):
-    rec = store.create(name="v1", body="first")
-    store.update(rec["id"], body="second", name="v2")
+    rec = store.create(body="first")
+    store.update(rec["id"], body="second")
     restored = store.restore_version(rec["id"], 0)
 
     assert restored["body"] == "first"
-    assert restored["name"] == "v1"
     versions = store.versions(rec["id"])
     assert [v["body"] for v in versions] == ["first", "second"]
     # ...so the restore is itself undoable: history was extended, never erased.
@@ -413,7 +422,7 @@ def test_restore_version_snapshots_the_current_body_first(store):
 # --------------------------------------------------------------------------- #
 
 def test_record_usage_happy_path(store):
-    rec = store.create(name="u", body="  the body  ")
+    rec = store.create(body="  the body  ")
     used = store.record_usage(rec["id"], body="the body")   # whitespace-insensitive
     assert used["used"] == 1
     assert used["last_run"]
@@ -422,7 +431,7 @@ def test_record_usage_happy_path(store):
 
 
 def test_record_usage_writes_nothing_for_unknown_id_or_edited_body(store):
-    rec = store.create(name="u", body="the body")
+    rec = store.create(body="the body")
     before = read_raw(store)
     mtime = os.stat(store.store_path()).st_mtime_ns
 
@@ -439,7 +448,7 @@ def test_record_usage_writes_nothing_for_unknown_id_or_edited_body(store):
 # --------------------------------------------------------------------------- #
 
 def test_expect_updated_guards_the_write(store, mod):
-    rec = store.create(name="c", body="one")
+    rec = store.create(body="one")
     ok = store.update(rec["id"], body="two", expect_updated=rec["updated"])
     assert ok["body"] == "two"
 
@@ -462,17 +471,17 @@ def test_update_and_delete_of_a_missing_record(store, mod):
 
 def build_merge_pair(store):
     store.import_raw(envelope([
-        record("W", name="winner", body="winner body",
+        record("W", body="winner body",
                tags=["dance", "shared"], rating=3, used=10,
                created="2026-01-02T00:00:00Z", updated="2026-03-01T00:00:00Z",
                last_run="2026-02-01T00:00:00Z", notes="mine", pinned=False,
-               versions=[{"body": "w-old", "name": "winner-old",
+               versions=[{"body": "w-old",
                           "ts": "2026-01-05T00:00:00Z", "src": None}]),
-        record("L", name="loser", body="loser body",
+        record("L", body="loser body",
                tags=["shared", "camera"], rating=5, used=7,
                created="2026-01-01T00:00:00Z", updated="2026-02-20T00:00:00Z",
                last_run="2026-02-15T00:00:00Z", notes="theirs", pinned=True,
-               versions=[{"body": f"l-{i}", "name": f"l{i}",
+               versions=[{"body": f"l-{i}",
                           "ts": f"2026-01-0{i + 1}T00:00:00Z", "src": None}
                          for i in range(7)]),
     ]))
@@ -522,13 +531,12 @@ def test_merge_drops_the_ignored_pair(store):
 
 def test_merge_new_absorbs_both_and_deletes_them(store, mod):
     build_merge_pair(store)
-    created = store.merge_new("W", "L", body="synthesized body", name="merged")
+    created = store.merge_new("W", "L", body="synthesized body")
 
     assert created["id"] not in ("W", "L")
     assert store.get("W") is None and store.get("L") is None
     assert store.count() == 1
     assert created["body"] == "synthesized body"
-    assert created["name"] == "merged"
     assert created["used"] == 17
     assert created["rating"] == 5
     assert created["tags"] == ["dance", "shared", "camera"]
@@ -541,19 +549,19 @@ def test_merge_new_absorbs_both_and_deletes_them(store, mod):
     assert "loser body" in [v["body"] for v in created["versions"]]
 
 
-def test_merge_new_requires_body_and_name(store):
+def test_merge_new_requires_a_body(store):
     build_merge_pair(store)
     with pytest.raises(ValueError):
-        store.merge_new("W", "L", body="x", name="   ")
+        store.merge_new("W", "L", body="")
     with pytest.raises(ValueError):
-        store.merge_new("W", "L", body="", name="x")
+        store.merge_new("W", "L", body="   ")
     assert store.count() == 2
 
 
 def test_bulk_merge_folds_everything_into_the_winner(store):
-    a = store.create(name="a", body="a")
-    b = store.create(name="b", body="b")
-    c = store.create(name="c", body="c")
+    a = store.create(body="a")
+    b = store.create(body="b")
+    c = store.create(body="c")
     store.record_usage(b["id"], body="b")
     store.record_usage(c["id"], body="c")
     winner = store.bulk_merge([a["id"], b["id"], c["id"]])
@@ -567,9 +575,9 @@ def test_bulk_merge_folds_everything_into_the_winner(store):
 # --------------------------------------------------------------------------- #
 
 def test_bulk_delete_and_retag(store):
-    a = store.create(name="a", body="a", tags=["keep", "drop"])
-    b = store.create(name="b", body="b", tags=["drop"])
-    c = store.create(name="c", body="c")
+    a = store.create(body="a", tags=["keep", "drop"])
+    b = store.create(body="b", tags=["drop"])
+    c = store.create(body="c")
 
     assert store.bulk_retag([a["id"], b["id"]], add=["New Tag"], remove=["drop"]) == 2
     assert store.get(a["id"])["tags"] == ["keep", "new-tag"]
@@ -586,8 +594,8 @@ def test_bulk_delete_and_retag(store):
 # taxonomy, snippets, ignored pairs, import/export
 # --------------------------------------------------------------------------- #
 
-def test_the_removed_category_field_is_scrubbed_on_load(store, lib_path):
-    """`category` / `categories` are dropped, and the next save writes them out.
+def test_the_removed_fields_are_scrubbed_on_load(store, lib_path):
+    """`category` / `categories` / `name` are dropped and written out.
 
     Unknown keys survive coercion by design, so the scrub has to be explicit —
     which makes this the test that would catch it silently regressing into a
@@ -596,23 +604,29 @@ def test_the_removed_category_field_is_scrubbed_on_load(store, lib_path):
     write_raw(lib_path, {
         "schema": 1,
         "categories": ["videogen", "stills"],
-        "prompts": [{"id": "a" * 32, "name": "a", "body": "a",
-                     "category": "videogen", "tags": ["keep"]}],
+        "prompts": [{"id": "a" * 32, "name": "hand-typed", "body": "a",
+                     "category": "videogen", "tags": ["keep"],
+                     "versions": [{"body": "old", "name": "hand-typed-v0",
+                                   "ts": "2026-01-01T00:00:00Z", "src": None}]}],
     })
     assert "category" not in store.all()[0]
+    assert "name" not in store.all()[0]
+    assert "name" not in store.all()[0]["versions"][0]
     assert store.all()[0]["tags"] == ["keep"]           # the taxonomy that stayed
     assert store.taxonomy() == {"tags": [{"tag": "keep", "count": 1}], "total": 1}
 
-    store.create(name="x", body="x")                    # any write rewrites the file
+    store.create(body="x")                    # any write rewrites the file
     raw = read_raw(store)
     assert "categories" not in raw
     assert all("category" not in rec for rec in raw["prompts"])
+    assert all("name" not in rec for rec in raw["prompts"])
+    assert all("name" not in v for rec in raw["prompts"] for v in rec["versions"])
 
 
 def test_tags_and_taxonomy_counts(store):
-    store.create(name="a", body="a", tags=["x", "y"])
-    store.create(name="b", body="b", tags=["x"])
-    store.create(name="c", body="c")
+    store.create(body="a", tags=["x", "y"])
+    store.create(body="b", tags=["x"])
+    store.create(body="c")
     assert store.tags() == [{"tag": "x", "count": 2}, {"tag": "y", "count": 1}]
     tax = store.taxonomy()
     assert tax["total"] == 3
@@ -645,15 +659,15 @@ def test_ignore_pair_is_order_independent(store):
 
 
 def test_deleting_a_record_forgets_its_ignored_pairs(store):
-    a = store.create(name="a", body="a")
-    b = store.create(name="b", body="b")
+    a = store.create(body="a")
+    b = store.create(body="b")
     store.ignore_pair(a["id"], b["id"])
     store.delete(a["id"])
     assert store.ignored_pairs() == set()
 
 
 def test_export_and_import_raw(store, mod):
-    a = store.create(name="a", body="a", tags=["t"])
+    a = store.create(body="a", tags=["t"])
     store.set_snippet("s", "snippet body")
     dump = store.export_raw()
     assert json.dumps(dump)                     # must be json-serializable as-is
@@ -680,7 +694,7 @@ def test_settings_round_trip(store, fresh):
 
 def test_version_cap_setting_is_honoured(store):
     store.set_settings(version_cap=2)
-    rec = store.create(name="v", body="b0")
+    rec = store.create(body="b0")
     for i in range(1, 6):
         store.update(rec["id"], body=f"b{i}")
     assert [v["body"] for v in store.versions(rec["id"])] == ["b3", "b4"]
@@ -694,10 +708,10 @@ def test_on_change_reports_ids_and_records(store):
     events = []
     off = store.on_change(lambda op, ids, records: events.append((op, ids, records)))
 
-    rec = store.create(name="a", body="a")
+    rec = store.create(body="a")
     assert events[-1][0] == "create"
     assert events[-1][1] == [rec["id"]]
-    assert events[-1][2][rec["id"]]["name"] == "a"
+    assert events[-1][2][rec["id"]]["body"] == "a"
 
     store.update(rec["id"], body="b")
     assert events[-1][0] == "update"
@@ -707,7 +721,7 @@ def test_on_change_reports_ids_and_records(store):
     assert events[-1][2] == {rec["id"]: None}      # None means deleted
 
     off()
-    store.create(name="c", body="c")
+    store.create(body="c")
     assert events[-1][0] == "delete"               # unsubscribed
 
 
@@ -716,7 +730,7 @@ def test_a_broken_listener_cannot_fail_a_write(store):
         raise RuntimeError("listener bug")
 
     store.on_change(boom)
-    rec = store.create(name="a", body="a")
+    rec = store.create(body="a")
     assert store.get(rec["id"]) is not None
 
 
@@ -728,7 +742,7 @@ def test_concurrent_writers_do_not_lose_records(store):
     def worker(index):
         try:
             for i in range(5):
-                store.create(name=f"t{index}-{i}", body=f"body {index} {i}")
+                store.create(body=f"body {index} {i}")
         except Exception as exc:  # pragma: no cover - only fires on a real bug
             errors.append(exc)
 
@@ -744,8 +758,8 @@ def test_concurrent_writers_do_not_lose_records(store):
 
 
 def test_returned_records_are_copies(store):
-    rec = store.create(name="a", body="a", tags=["t"])
+    rec = store.create(body="a", tags=["t"])
     rec["tags"].append("mutated")
-    rec["name"] = "mutated"
+    rec["body"] = "mutated"
     assert store.get(rec["id"])["tags"] == ["t"]
-    assert store.get(rec["id"])["name"] == "a"
+    assert store.get(rec["id"])["body"] == "a"

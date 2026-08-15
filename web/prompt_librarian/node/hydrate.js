@@ -102,7 +102,7 @@ function bindFace(node) {
 }
 
 /**
- * Pull the record's name/rating/used from the backend for the node face.
+ * Pull the record's label/rating/used from the backend for the node face.
  *
  * Lazily imported and guarded: with no backend the face simply shows what the
  * local widgets already know — a complete, usable node, just without stars and

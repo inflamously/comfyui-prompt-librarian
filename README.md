@@ -31,7 +31,7 @@ Output is a single `STRING` named `text` — wire it into any CLIP Text Encode.
 
 Because `text` is a normal serialized widget, **a workflow carries its prompt inside the `.json`**.
 Open it on a machine with no library and it still renders and still runs; it just won't count usage
-or show a name. That is also why there are no combo widgets: it sidesteps the entire class of
+or show the record's label. That is also why there are no combo widgets: it sidesteps the entire class of
 LiteGraph/Vue combo-reactivity problems the older node has to work around.
 
 ### The node and the panel are one field
@@ -62,14 +62,32 @@ so it marks the record `edited` and still goes through the full dupe-and-stalene
 
 Click **Open Librarian** on the node. The panel is a full-screen overlay:
 
-- **Left rail** — fuzzy search over name + body + tags with a live hit count, tag filter
+- **Left rail** — fuzzy search over body + tags with a live hit count, tag filter
   chips, a `dupes only` toggle, `relevance | recent | most used | a–z` sorting, and a virtualised
   list. Each row shows its near-dupe count and, when you have a prompt selected, its `% match`
   against it — so duplicates are visible *before* you open anything.
-- **Right pane** — name, tags, the prompt text with char and token counts, the duplicate
-  check panel, four stat tiles (used / last run / versions / rating), and the action bar.
+- **Right pane** — the derived label, tags, the prompt text with char and token counts, the
+  duplicate check panel, four stat tiles (used / last run / versions / rating), and the action bar.
 
 Search supports operators: `tag:dance`, `-word` to exclude, and `"quoted phrase"`.
+
+### Prompts have no names
+
+You never name a prompt, because a name is not a fact about a prompt — it is a second, hand-typed
+copy of what the body already says, and it goes stale on the first edit. What a row, a node face or
+a version entry prints is **derived**: the terms this body has that the rest of your library does
+not, by tf-idf over the same tokens the search index already keeps.
+
+    a lone ballerina drifting through a ruined theatre, volumetric haze, 35mm
+    → ruined theatre · 35mm
+
+Two prompts that open with the same forty words of boilerplate still read apart, because the label
+is made of the words only one of them uses. It is a *display* string and nothing else: it changes
+when the library around it changes, nothing is stored by it, and nothing is looked up by it. The
+search bar is how you find a prompt again — search the words you would have put in the name.
+
+(A body with nothing distinctive to say, or one in a library too small to have an opinion, falls
+back to its own opening words.)
 
 ### Never a silent overwrite
 
@@ -118,7 +136,7 @@ state into its cache key — edit a file and dependent nodes correctly re-run.
 
 ### Other features
 
-- **Version history** — every save that changes the body or name snapshots the previous one. Browse,
+- **Version history** — every save that changes the body snapshots the previous one. Browse,
   diff against current, restore (restore is itself undoable), or push an old version to the node
   without saving.
 - **Compare / merge** — word-level diff, side by side. Merging sums usage counts, unions tags, keeps
@@ -148,17 +166,22 @@ save can't truncate it. Records look like:
   "ignored": [["idA", "idB"]],
   "prompts": [{
     "id": "9f2c1b7e4a5d4f0e8c3b1a2d5e6f7a8b",
-    "name": "ballet_drift_v3",
     "body": "make him dance ballet slowly drifting towards the camera, ...",
     "tags": ["dance", "camera-move"],
     "rating": 4, "used": 41,
     "last_run": "2026-08-11T19:03:22Z",
     "created": "...", "updated": "...",
     "notes": "", "pinned": false,
-    "versions": [{ "body": "...", "name": "ballet_drift_v2", "ts": "...", "src": null }]
+    "versions": [{ "body": "...", "ts": "...", "src": null }]
   }]
 }
 ```
+
+There is no `name`, and no derived label on disk either — a derived field written to a file is a
+stored name again by another route. A record that still carries one from an older build is scrubbed
+on load and written out of the file on the next save, versions included; no schema bump, because an
+older build reading a scrubbed file just sees an unnamed record and derives a label for it, which is
+what it would have done anyway.
 
 Ids are random, not content hashes — two prompts with identical bodies must be able to coexist
 until you merge them, and an id has to survive a body edit to keep the workflow link intact.
@@ -219,6 +242,7 @@ prompt_librarian/             the Librarian domain
   wildcards.py                {a|b} / __file__ / [[snippet]] resolution
   dedupe.py                   similarity cascade, dupe caches, word-level diff
   search.py                   inverted index, relevance scoring, filters, sorts
+  labels.py                   what a record is called, derived from the corpus
   store.py                    schema, atomic I/O, CRUD, versions, merge, snippets
 
 prompt_store/                 the OLD node's domain — untouched
@@ -238,7 +262,7 @@ web/prompt_librarian/         the Librarian's frontend — one directory per fea
   librarian.css               scoped dark theme
 web/prompt_store/             the OLD node's frontend — same split, four files
 scripts/openapi.py            route table -> route listing or OpenAPI spec
-tests/*.py                    307 tests, stdlib + pytest only
+tests/*.py                    338 tests, stdlib + pytest only
 ```
 
 The modules inside `prompt_librarian/` are listed highest-layer first: each may import the ones
@@ -268,9 +292,10 @@ failure in the route stack cannot take the node down with it.
 `VERSION_CAP = 50`, `VERSION_BYTES_CAP = 256 KB`, `DEFAULT_DUPE_THRESHOLD = 0.90`), the exception
 hierarchy the API maps to error codes (`NotFoundError`, `BodyTooLargeError`, `ReadOnlyError`,
 `ConflictError`, `SameRecordError`, `StoreWriteError`), path helpers (`user_dir`, `store_dir`,
-`store_path`, `backup_path`, `wildcards_dir`), field cleaners (`clean_name`, `clean_tags`,
-`clean_body`) and the `_coerce` layer that makes a hand-edited file loadable — and that scrubs the
-removed `category` / `categories` fields off anything still carrying them.
+`store_path`, `backup_path`, `wildcards_dir`), field cleaners (`clean_tags`, `clean_body`) and the
+`_coerce` layer that makes a hand-edited file loadable — and that scrubs the removed fields
+(`_REMOVED_FIELDS`: `category`, `name`, plus `categories` at the top level) off anything still
+carrying them.
 The bulk is `class LibrarianStore`: lock-guarded load/save (temp file + `os.replace` with retries
 for transient Windows locks, `.bak.json` rewritten each save, corrupt files moved aside rather than
 overwritten, newer-schema files loaded read-only), a monotonic `rev()` used for cache invalidation,
@@ -281,15 +306,35 @@ versions (`versions`, `version_previews`, `restore_version`, `_trim_versions`), 
 pair list (`ignore_pair` / `is_ignored`), and `export_raw` / `import_raw`. Ends with the module-level
 singleton `STORE`.
 
-**`prompt_librarian/search.py`** (888 lines) — stdlib-only, knows nothing about aiohttp, ComfyUI or the
-file format; it takes an iterable of record dicts or anything with `list_all()` + `rev()`. Holds the
-scoring weights as module constants so they stay patchable from tests (`W_NAME 3.0`, `W_TAG 2.0`,
-`W_BODY 1.0`, phrase bonuses, popularity/recency nudges, and the exact/prefix/infix
-tiers). Provides `normalize`, `tokenize`, `preview`, the `Doc` and `SearchIndex` dataclasses,
+**`prompt_librarian/search.py`** (907 lines) — stdlib-only, knows nothing about aiohttp, ComfyUI or the
+file format; it takes an iterable of record dicts or anything with `list_all()` + `rev()`. With no
+name to match, **this module is the whole of how a library is navigated**, so the scoring weights
+are module constants and worth reading before they are changed: `W_TAG 2.0`, `W_BODY 1.0` and
+`W_HEAD 1.5` — a bonus on the body's first `HEAD_TOKENS` words, which inherit the role the name
+weight used to play, since a prompt says what it is about up front and qualifies it afterwards.
+Then phrase bonuses, popularity/recency nudges, and the exact/prefix/infix tiers. Provides
+`normalize`, `tokenize`, `preview`, the `Doc` and `SearchIndex` dataclasses,
 `build_index` / `get_index` / `invalidate_index`, the query parser (`ParsedQuery`, `parse_query`,
 handling `tag:`, `-exclude` and `"quoted phrases"`), `score_doc`, the filter and sort passes
-(`relevance | recent | most_used | az`), and the public `search()` returning a page dict.
+(`relevance | recent | most_used | az`, all sorting and tie-breaking on the body's opening words),
+and the public `search()` returning a page dict. `SearchIndex` also answers the corpus half of
+`labels.py`: `postings[token]` already *is* the set of records containing a token, so `df()` is a
+`len()` and nothing extra is counted; `label_of(pid)` memoizes per index and the cache is dropped
+wholesale on any write, because one added record can change every label.
 Timestamps are compared as plain ISO strings — nothing here parses a date.
+
+**`prompt_librarian/labels.py`** (336 lines) — what a record is *called*, computed and never
+stored. Pure and stdlib-only, one layer below `search.py`: the index owns the document frequencies,
+this module owns what to do with them. `label_for(body, df, ndocs)` picks the `LABEL_TERMS` most
+distinctive terms of a body by tf-idf, merges the ones that were adjacent in the body back into
+phrases (`ruined theatre`, not `ruined · theatre`), renders them in body order and caps the result;
+`head_label` is the fallback for an empty corpus or a body of pure boilerplate, and is mirrored
+character-for-character by `headLabel` in `web/prompt_librarian/shared/text.js` so a draft's handle
+does not jump when it is saved. The idf is smoothed (`df + 0.5`) on purpose: unsmoothed it is
+exactly zero for a term in *every* document, which in a one-record library is every term — and a
+library's first prompt would be the only one that never got a real label. `term_tokens` folds a
+surface word exactly as `search.normalize` does, splits included, and a word that splits is scored
+by its rarest piece.
 
 **`prompt_librarian/dedupe.py`** (758 lines) — near-duplicate detection and diffing, also stdlib-only.
 `sim_norm` produces the normalized comparison text (capped at `SIM_MAX_CHARS = 4000`), `length_ok`
@@ -355,7 +400,7 @@ python3 scripts/openapi.py                  # every route, id and types, as text
 python3 scripts/openapi.py -o openapi.json  # OpenAPI 3.1, needs pip install -e ".[dev]"
 ```
 
-The handlers take a bare `request` and read `data.get("name")`, so nothing can be introspected out
+The handlers take a bare `request` and read `data.get("body")`, so nothing can be introspected out
 of them — `schemas.py` is a parallel declaration, and keeping it true to the handlers is a review
 question. `tests/test_openapi.py` covers the mechanical half: a route with no types, a response that
 skips the `rev` envelope, a duplicate operation id, an unresolvable `$ref`, a query type that nests
@@ -461,7 +506,7 @@ server-authoritative: there is no local filtering here by design, because the `%
 badges are computed by the backend for the current page and a locally-filtered list would show rows
 whose badges disagree with it.
 
-**`inspector/`** (11 files, 2273 lines) — the right pane: name, tags, the prompt textarea
+**`inspector/`** (11 files, 2273 lines) — the right pane: the derived label, tags, the prompt textarea
 with char/token counts and the `edited` marker, the duplicate-check panel, the four stat tiles and the
 action row. The feature files share one mutable `pane` object rather than a closure, which is what
 lets each of them live in its own file while still reading and writing the same edit buffer; only
@@ -516,11 +561,12 @@ reach in.
 | File | Tests | Covers |
 |---|---|---|
 | `conftest.py` | — | Injects a stub `folder_paths` into `sys.modules` **before** `prompt_librarian.store` imports, and an autouse fixture repoints it at each test's `tmp_path`. Also puts the pack root on `sys.path` so the `from prompt_librarian import search` form works. No test can reach a real user directory or the old node's `prompts.json`. |
-| `test_store.py` | 47 | Schema coercion, atomic write and backup, corrupt/newer-schema handling, CRUD, conflicts, bulk ops, version trimming, merge semantics, taxonomy, snippets, ignored pairs. |
+| `test_store.py` | 48 | Schema coercion (including the removed-field scrub), atomic write and backup, corrupt/newer-schema handling, CRUD, conflicts, bulk ops, version trimming, merge semantics, taxonomy, snippets, ignored pairs. |
 | `test_search.py` | 44 | Free-standing (plain dict fixtures, no store): tokenizing, index building, query operators, scoring, filters, all four sorts, paging. |
+| `test_labels.py` | 29 | Also free-standing: distinctive-term selection, stopwords and the digit exception, phrase merging, ordering, caps, the body-head fallback, the smoothed idf that keeps a one-record library labelled, and that `term_tokens` folds exactly as `search.normalize` does. |
 | `test_dedupe.py` | 39 | Also free-standing: ratio cascade vs raw `difflib`, length prefilter, blocking index correctness, clustering, cache invalidation, diff opcodes and summaries. |
 | `test_wildcards.py` | 63 | Determinism, nesting, weights, pick-N, escapes — and the three guards that matter for not hanging a render worker: path traversal, cycles, output size. |
-| `test_api.py` | 67 | Drives handlers directly with a stub request (`.rel_url.query` + async `.json()`), so no server is stood up; skips wholesale if aiohttp is absent. Route table, error-code mapping, `rev` propagation. |
+| `test_api.py` | 68 | Drives handlers directly with a stub request (`.rel_url.query` + async `.json()`), so no server is stood up; skips wholesale if aiohttp is absent. Route table, error-code mapping, `rev` propagation. |
 | `test_openapi.py` | 17 | Drift guards on the generated spec: every route typed, every response inheriting the `rev` envelope, every operation id unique, every `$ref` resolvable, and `Capabilities` / `Prompt` / `Settings` / the error codes still matching the live tables. Needs no aiohttp; skips wholesale without pydantic. |
 | `test_node.py` | 30 | The load-bearing node properties: `INPUT_TYPES` is pure (no disk, no combos), `run()` never fails a render, `IS_CHANGED` responds to the right inputs, and usage counts only a run of the *saved* body. |
 
@@ -550,7 +596,7 @@ accept the call and silently drop it. `Open Librarian` exists either way.
 ## Tests
 
 ```
-python3 -m pytest tests/ -q      # 307 tests, no ComfyUI required
+python3 -m pytest tests/ -q      # 338 tests, no ComfyUI required
 ruff check .                     # style, imports, complexity
 lint-imports                     # the layer + independence contracts
 python3 scripts/openapi.py       # the route table, as a listing or a spec

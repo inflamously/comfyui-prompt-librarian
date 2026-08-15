@@ -4,8 +4,8 @@ This is the storage half of the ``PromptLibrarian`` node. It is deliberately
 independent of the older ``prompt_store`` module: that one keys prompts by their
 own text (``{category: [text, ...]}``), which makes two near-identical prompts
 literally unrepresentable — precisely the thing this feature exists to manage.
-Here every prompt is a record with a stable id, a name, tags, a rating, usage
-counters and a version history.
+Here every prompt is a record with a stable id, tags, a rating, usage counters
+and a version history.
 
 Everything lives in one json file under ComfyUI's user directory::
 
@@ -21,7 +21,6 @@ On-disk format::
       "ignored": [["idA", "idB"]],
       "prompts": [{
         "id": "9f2c1b7e...",            // uuid4().hex
-        "name": "ballet_drift_v3",
         "body": "make him dance ballet ...",
         "tags": ["dance", "camera-move"],
         "rating": 4,
@@ -29,7 +28,7 @@ On-disk format::
         "last_run": "2026-08-11T19:03:22Z",
         "created": "...", "updated": "...",
         "notes": "", "pinned": false,
-        "versions": [{ "body": "...", "name": "...", "ts": "...", "src": null }]
+        "versions": [{ "body": "...", "ts": "...", "src": null }]
       }]
     }
 
@@ -38,14 +37,19 @@ Design notes worth keeping in mind before editing this file:
 * **``id`` is ``uuid4().hex``, never a content hash.** Two records with identical
   bodies must be able to coexist until the user explicitly merges them, and an
   id must survive a body edit so a saved workflow's ``prompt_id`` link holds.
+* **A record has no name.** What a prompt is *called* is derived from what it
+  says — see :mod:`.labels` — and finding one again is what the search bar is
+  for. A stored name was a second, hand-maintained copy of the body that went
+  stale on the first edit and was blank on most records anyway.
+* **Removed fields are scrubbed, not migrated.** ``category``/``categories``
+  went first and ``name`` followed it: ``_coerce`` drops them off whatever it
+  loads and the next save writes them out of the file, versions included.
+  Neither scrub needs a schema bump — an older build reading a scrubbed file
+  sees every record uncategorized and unnamed, and unnamed records are what it
+  would have derived a label for anyway.
 * **Tags are the only taxonomy, and they are derived** from the records (a
   ``Counter``), never stored top level — a stored list drifts and would need
-  garbage collection. There used to be a parallel *category* axis (one per
-  record, plus a stored name list); it did strictly less than tags do, so
-  ``_coerce`` now **scrubs** ``category`` and ``categories`` off whatever it
-  loads and the next save writes them out of the file. The scrub needs no
-  schema bump: an older build reading a scrubbed file simply sees every record
-  uncategorized, which is exactly right.
+  garbage collection.
 * **Reload-before-mutate.** Every write re-stats the file and reloads if it
   changed, then mutates the freshly loaded object. Cross-process editing then
   degrades to per-record last-writer-wins instead of clobbering the whole file.
@@ -84,7 +88,6 @@ log = logging.getLogger("prompt-librarian")
 SCHEMA_VERSION = 1
 
 MAX_BODY_CHARS = 100000
-MAX_NAME_CHARS = 200
 MAX_SNIPPET_NAME_CHARS = 100
 MAX_TAG_CHARS = 40
 MAX_TAGS = 32
@@ -108,6 +111,11 @@ _EVENT_USED = "prompt_librarian.used"
 _WS_RE = re.compile(r"\s+", re.UNICODE)
 _tmp_counter = itertools.count()
 
+# Fields this build no longer keeps. Dropped from every record it loads and
+# therefore written out of the file on the next save. See the module docstring
+# for why neither of them needs a schema bump.
+_REMOVED_FIELDS = ("category", "name")
+
 
 # --------------------------------------------------------------------------- #
 # Errors — the api layer maps these onto HTTP codes, so the names are contract.
@@ -118,7 +126,7 @@ class StoreError(Exception):
 
 
 class NotFoundError(StoreError):
-    """No record / version / snippet with that id or name (HTTP 404)."""
+    """No record / version / snippet with that id or snippet name (HTTP 404)."""
 
 
 class BodyTooLargeError(StoreError):
@@ -254,19 +262,6 @@ def clean_tags(tags):
     return out
 
 
-def clean_name(name, body=""):
-    """Strip and cap a name, falling back to a body-derived label when empty.
-
-    A record with no name is unusable in the list, so an empty name is filled in
-    rather than rejected.
-    """
-    text = _WS_RE.sub(" ", _as_str(name)).strip()[:MAX_NAME_CHARS]
-    if text:
-        return text
-    text = preview_of(body, 40).strip()
-    return text or "untitled"
-
-
 def clean_body(body):
     """Validate a body. Raises :class:`BodyTooLargeError` — never truncates."""
     text = _as_str(body)
@@ -284,10 +279,10 @@ def _clean_record(rec):
     mutation of the live library so a rejected edit cannot half-apply.
     """
     out = dict(rec)
-    out.pop("category", None)          # removed field: scrubbed, never rewritten
+    for gone in _REMOVED_FIELDS:       # removed fields: scrubbed, never rewritten
+        out.pop(gone, None)
     out["id"] = _as_str(rec.get("id")) or new_id()
     out["body"] = clean_body(rec.get("body", ""))
-    out["name"] = clean_name(rec.get("name", ""), out["body"])
     out["tags"] = clean_tags(rec.get("tags", []))
     out["rating"] = _clamp(_as_int(rec.get("rating", 0)), 0, 5)
     out["used"] = max(0, _as_int(rec.get("used", 0)))
@@ -309,8 +304,8 @@ def _coerce_versions(raw):
         if not isinstance(entry, dict):
             continue
         item = dict(entry)
+        item.pop("name", None)         # removed field: scrubbed, never rewritten
         item["body"] = _as_str(entry.get("body", ""))
-        item["name"] = _as_str(entry.get("name", ""))
         item["ts"] = _as_str(entry.get("ts", ""))
         src = entry.get("src")
         item["src"] = _as_str(src) if isinstance(src, str) and src else None
@@ -329,10 +324,10 @@ def _coerce_record(raw):
     if not isinstance(raw, dict):
         return None
     out = dict(raw)
-    out.pop("category", None)          # removed field: scrubbed, never rewritten
+    for gone in _REMOVED_FIELDS:       # removed fields: scrubbed, never rewritten
+        out.pop(gone, None)
     out["id"] = _as_str(raw.get("id")) or new_id()
     out["body"] = _as_str(raw.get("body", ""))
-    out["name"] = clean_name(raw.get("name", ""), out["body"])
     out["tags"] = clean_tags(raw.get("tags", []))
     out["rating"] = _clamp(_as_int(raw.get("rating", 0)), 0, 5)
     out["used"] = max(0, _as_int(raw.get("used", 0)))
@@ -766,7 +761,7 @@ class LibrarianStore:
 
     # -- create / update / delete ------------------------------------------ #
 
-    def create(self, name="", body="", tags=None, rating=0,
+    def create(self, body="", tags=None, rating=0,
                notes="", pinned=False):
         """Create a record and return a copy of it.
 
@@ -777,7 +772,6 @@ class LibrarianStore:
             stamp = now_iso()
             rec = _clean_record({
                 "id": new_id(),
-                "name": name,
                 "body": body,
                 "tags": tags or [],
                 "rating": rating,
@@ -795,7 +789,7 @@ class LibrarianStore:
             self._emit("create", [rec["id"]], {rec["id"]: out})
             return out
 
-    def update(self, pid, name=None, body=None, tags=None,
+    def update(self, pid, body=None, tags=None,
                rating=None, notes=None, pinned=None, snapshot=True,
                expect_updated=None):
         """Update the given fields of a record and return a copy of it.
@@ -807,11 +801,11 @@ class LibrarianStore:
         :class:`ConflictError` instead of silently overwriting a change made in
         another tab or process.
 
-        Snapshot rule: the *pre-edit* body/name is pushed onto ``versions``
-        stamped with the *pre-edit* ``updated`` time, and only when the body or
-        the name actually changed. Tag/rating/notes-only edits do not
-        snapshot — they would flood the history with identical bodies. Pass
-        ``snapshot=False`` to skip it entirely (restore, rapid retag/rate paths).
+        Snapshot rule: the *pre-edit* body is pushed onto ``versions`` stamped
+        with the *pre-edit* ``updated`` time, and only when the body actually
+        changed. Tag/rating/notes-only edits do not snapshot — they would flood
+        the history with identical bodies. Pass ``snapshot=False`` to skip it
+        entirely (restore, rapid retag/rate paths).
         """
         with self._lock:
             data = self._begin_write()
@@ -824,8 +818,6 @@ class LibrarianStore:
                 )
 
             merged = dict(rec)
-            if name is not None:
-                merged["name"] = name
             if body is not None:
                 merged["body"] = body
             if tags is not None:
@@ -841,23 +833,21 @@ class LibrarianStore:
             cleaned = _clean_record(merged)
 
             body_changed = cleaned["body"] != rec["body"]
-            name_changed = cleaned["name"] != rec["name"]
             changed = any(
                 cleaned[key] != rec[key]
-                for key in ("body", "name", "tags", "rating", "notes", "pinned")
+                for key in ("body", "tags", "rating", "notes", "pinned")
             )
             if not changed:
                 return copy.deepcopy(rec)
 
-            if snapshot and (body_changed or name_changed):
+            if snapshot and body_changed:
                 rec["versions"].append({
                     "body": rec["body"],
-                    "name": rec["name"],
                     "ts": rec.get("updated", "") or now_iso(),
                     "src": None,
                 })
 
-            for key in ("body", "name", "tags", "rating", "notes", "pinned"):
+            for key in ("body", "tags", "rating", "notes", "pinned"):
                 rec[key] = cleaned[key]
             rec["updated"] = now_iso()
             _trim_versions(rec, self._version_cap(data))
@@ -996,21 +986,28 @@ class LibrarianStore:
                 raise NotFoundError(f"no prompt with id {pid!r}")
             return copy.deepcopy(rec.get("versions", []))
 
-    def version_previews(self, pid, chars=160):
+    def version_previews(self, pid, chars=160, label_fn=None):
         """Version metadata + a short preview, never the full bodies.
 
         A record sitting at the version cap would otherwise be a multi-megabyte
         response on every selection change.
+
+        ``label_fn(body) -> str`` is injected the same way ``search`` injects
+        its dupe counters: a label is a function of the whole library, the
+        store is the one layer that must not know that, and the caller already
+        holds the index that does. Without it the entries carry no label and
+        the caller falls back to the version's number.
         """
         out = []
         for index, entry in enumerate(self.versions(pid)):
+            body = entry.get("body", "")
             out.append({
                 "index": index,
-                "name": entry.get("name", ""),
+                "label": _as_str(label_fn(body)) if label_fn is not None else "",
                 "ts": entry.get("ts", ""),
                 "src": entry.get("src"),
-                "chars": len(entry.get("body", "")),
-                "preview": preview_of(entry.get("body", ""), chars),
+                "chars": len(body),
+                "preview": preview_of(body, chars),
             })
         return out
 
@@ -1026,15 +1023,14 @@ class LibrarianStore:
         return entries[index]
 
     def restore_version(self, pid, index):
-        """Restore a version's body and name onto the record.
+        """Restore a version's body onto the record.
 
         Goes through :meth:`update` with ``snapshot=True``, so the *current*
         body is snapshotted first and the restore is itself undoable. History is
         never erased.
         """
         entry = self.version(pid, index)
-        return self.update(pid, name=entry.get("name", ""), body=entry.get("body", ""),
-                           snapshot=True)
+        return self.update(pid, body=entry.get("body", ""), snapshot=True)
 
     # -- merge ------------------------------------------------------------- #
 
@@ -1061,7 +1057,6 @@ class LibrarianStore:
                 winner["versions"].append(item)
             winner["versions"].append({
                 "body": loser["body"],
-                "name": loser["name"],
                 "ts": loser.get("updated", "") or now_iso(),
                 "src": loser_id,
             })
@@ -1078,16 +1073,14 @@ class LibrarianStore:
             self._emit("merge", [winner_id, loser_id], {winner_id: out, loser_id: None})
             return out
 
-    def merge_new(self, a_id, b_id, body, name):
+    def merge_new(self, a_id, b_id, body):
         """Create a third record absorbing both inputs, then delete both.
 
-        ``body`` and ``name`` are required: a synthesized record has no
-        defensible default body, so there is nothing sane to fall back to.
+        ``body`` is required: a synthesized record has no defensible default
+        body, so there is nothing sane to fall back to.
         """
         if a_id == b_id:
             raise SameRecordError("cannot merge a record with itself")
-        if not _as_str(name).strip():
-            raise ValueError("merge_new requires a name")
         if not _as_str(body).strip():
             raise ValueError("merge_new requires a body")
         with self._lock:
@@ -1098,7 +1091,6 @@ class LibrarianStore:
             stamp = now_iso()
             rec = _clean_record({
                 "id": new_id(),
-                "name": name,
                 "body": body,
                 "tags": list(first["tags"]),
                 "rating": first["rating"],
@@ -1117,7 +1109,6 @@ class LibrarianStore:
                     rec["versions"].append(item)
                 rec["versions"].append({
                     "body": source["body"],
-                    "name": source["name"],
                     "ts": source.get("updated", "") or stamp,
                     "src": source["id"],
                 })

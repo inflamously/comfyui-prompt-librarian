@@ -7,8 +7,13 @@ any object exposing the two store methods this module uses (``list_all()`` and
 
 Record schema consumed here::
 
-    {id, name, body, tags[], rating, used, last_run,
+    {id, body, tags[], rating, used, last_run,
      created, updated, notes, pinned, versions[]}
+
+There is no ``name``: a record is its body, the handle a row prints is derived
+by :mod:`.labels`, and *this* module is what finds a prompt again. That makes
+the weights below the whole of how a library is navigated, so they are worth
+reading before they are changed.
 
 Timestamps are ISO-8601 with a ``Z`` suffix and therefore sort correctly as
 plain strings -- nothing in this module parses a date.
@@ -33,18 +38,27 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from . import labels
+
 # --------------------------------------------------------------------------
 # Tuning constants (module level on purpose -- the scoring formula is a
 # product decision, so it must be inspectable and patchable from tests).
 # --------------------------------------------------------------------------
 
-W_NAME = 3.0
+# The name field used to carry a weight of its own (3.0, plus an exact-match
+# bonus), and it was the field a user searched when they knew what they were
+# looking for.  With it gone, the *head* of the body inherits that role: a
+# prompt says what it is about in its first line and qualifies it afterwards,
+# so an early match is a stronger signal than a late one.  It is a bonus on
+# top of W_BODY, not a replacement for it -- a head token scores both.
+W_HEAD = 1.5
 W_TAG = 2.0
 W_BODY = 1.0
 
-PHRASE_NAME = 2.0
+HEAD_TOKENS = 12
+
+PHRASE_HEAD = 1.0
 PHRASE_BODY = 1.0
-EXACT_NAME_BONUS = 3.0
 POP_BONUS = 0.15
 REC_BONUS = 0.10
 
@@ -57,12 +71,14 @@ EDIT1_MIN_LEN = 4
 PREFIX_EXPAND_CAP = 200
 FALLBACK_TERM_CAP = 200
 PREVIEW_CHARS = 160
+SORT_KEY_CHARS = 120     # of the body, per doc, kept only to sort "az" by
 
 SORTS = ("relevance", "recent", "most_used", "az")
 MODES = ("all", "any")
 
 _NON_WORD_RE = re.compile(r"[^\w]+", re.UNICODE)
 _NEWLINE_RE = re.compile(r"[\r\n]+")
+_WS_RE = re.compile(r"\s+", re.UNICODE)
 
 
 # --------------------------------------------------------------------------
@@ -151,13 +167,12 @@ class Doc:
     """One indexed record.  Everything scoring needs, nothing it does not."""
 
     pid: str
-    name_norm: str
     body_norm: str
     tags_norm: str
-    name_toks: tuple[str, ...]
+    head_norm: str
     body_toks: tuple[str, ...]
     tags_toks: tuple[str, ...]
-    name_set: frozenset
+    head_set: frozenset
     body_set: frozenset
     tags_set: frozenset
     all_toks: frozenset
@@ -166,28 +181,26 @@ class Doc:
     updated: str
     last_run: str
     created: str
-    name_disp_lower: str
+    body_disp_lower: str
     body_len: int
 
 
 def make_doc(rec: dict[str, Any]) -> Doc:
     """Build a :class:`Doc` from a raw record dict."""
     pid = str(rec.get("id") or "")
-    name = rec.get("name") or ""
     body = rec.get("body") or ""
     tags = rec.get("tags") or ()
     if isinstance(tags, str):
         tags = [tags]
 
-    name_norm = normalize(name)
     body_norm = normalize(body)
     tags_norm = " ".join(t for t in (normalize(x) for x in tags) if t)
 
-    name_toks = tuple(name_norm.split())
     body_toks = tuple(body_norm.split())
     tags_toks = tuple(tags_norm.split())
+    head_toks = body_toks[:HEAD_TOKENS]
 
-    name_set = frozenset(name_toks)
+    head_set = frozenset(head_toks)
     body_set = frozenset(body_toks)
     tags_set = frozenset(tags_toks)
 
@@ -202,22 +215,24 @@ def make_doc(rec: dict[str, Any]) -> Doc:
 
     return Doc(
         pid=pid,
-        name_norm=name_norm,
         body_norm=body_norm,
         tags_norm=tags_norm,
-        name_toks=name_toks,
+        head_norm=" ".join(head_toks),
         body_toks=body_toks,
         tags_toks=tags_toks,
-        name_set=name_set,
+        head_set=head_set,
         body_set=body_set,
         tags_set=tags_set,
-        all_toks=name_set | body_set | tags_set,
+        all_toks=body_set | tags_set,
         used=used,
         rating=rating,
         updated=str(rec.get("updated") or ""),
         last_run=str(rec.get("last_run") or ""),
         created=str(rec.get("created") or ""),
-        name_disp_lower=str(name).casefold(),
+        # The "az" sort key. Alphabetical by the prompt's own opening words --
+        # not by its label, which is corpus-derived and would therefore reorder
+        # the list every time an unrelated record was saved.
+        body_disp_lower=_WS_RE.sub(" ", str(body)).strip()[:SORT_KEY_CHARS].casefold(),
         body_len=len(body) if isinstance(body, str) else len(str(body)),
     )
 
@@ -229,10 +244,14 @@ class SearchIndex:
     ``vocab`` is the sorted token list used for ``bisect`` prefix expansion.
     Single-record writes patch the index (``add``/``remove``/``replace``)
     instead of rebuilding it.
+
+    It also answers the corpus half of :mod:`.labels`: ``postings[token]`` is
+    already the set of records containing a token, so ``len()`` of it is that
+    token's document frequency and nothing extra has to be counted.
     """
 
     __slots__ = ("docs", "records", "postings", "vocab", "rev", "_stats_dirty",
-                 "_max_used", "_updated_sorted")
+                 "_max_used", "_updated_sorted", "_labels")
 
     def __init__(self, records: Iterable[dict[str, Any]] | None = None, rev: int = 0):
         self.docs: dict[str, Doc] = {}
@@ -243,6 +262,7 @@ class SearchIndex:
         self._stats_dirty = True
         self._max_used = 0
         self._updated_sorted: list[str] = []
+        self._labels: dict[str, str] = {}
         if records is not None:
             self.build(records, rev=rev)
 
@@ -272,6 +292,7 @@ class SearchIndex:
         if rev is not None:
             self.rev = rev
         self._stats_dirty = True
+        self._labels = {}
         return self
 
     def add(self, rec: dict[str, Any]) -> Doc | None:
@@ -295,6 +316,9 @@ class SearchIndex:
             else:
                 bucket.add(doc.pid)
         self._stats_dirty = True
+        # Every label is a function of the whole corpus, so one added record
+        # can change any of them. Nothing finer than "drop the lot" is correct.
+        self._labels = {}
         return doc
 
     def remove(self, pid: str) -> bool:
@@ -316,11 +340,37 @@ class SearchIndex:
                 if i < len(vocab) and vocab[i] == tok:
                     del vocab[i]
         self._stats_dirty = True
+        self._labels = {}
         return True
 
     def replace(self, rec: dict[str, Any]) -> Doc | None:
         """Re-index one record in place."""
         return self.add(rec)
+
+    # -- labels ------------------------------------------------------------
+
+    def df(self, token: str) -> int:
+        """How many records contain ``token`` -- the corpus half of a label."""
+        bucket = self.postings.get(token)
+        return len(bucket) if bucket else 0
+
+    def label_for(self, body: Any) -> str:
+        """Label any text against this corpus (a version body, a draft)."""
+        return labels.label_for(body, self.df, len(self.docs))
+
+    def label_of(self, pid: str) -> str:
+        """Label one indexed record, memoized for the life of the index.
+
+        A search page labels up to 50 records and the panel re-requests the
+        same page on every filter toggle, so the cache is what keeps labelling
+        off the per-keystroke path. It is dropped wholesale on any write --
+        see :meth:`add`.
+        """
+        hit = self._labels.get(pid)
+        if hit is None:
+            hit = self.label_for((self.records.get(pid) or {}).get("body") or "")
+            self._labels[pid] = hit
+        return hit
 
     # -- stats -------------------------------------------------------------
 
@@ -570,28 +620,26 @@ def score_doc(doc: Doc, pq: ParsedQuery, index: SearchIndex) -> tuple[float, int
     if not n:
         return 0.0, 0
 
-    s_name = s_tag = s_body = 0.0
+    s_head = s_tag = s_body = 0.0
     mask = 0
     for i, qt in enumerate(tokens):
-        tn = tok(qt, doc.name_set)
+        th = tok(qt, doc.head_set)
         tt = tok(qt, doc.tags_set)
         tb = tok(qt, doc.body_set)
-        if tn or tt or tb:
+        if th or tt or tb:
             mask |= 1 << i
-        s_name += tn
+        s_head += th
         s_tag += tt
         s_body += tb
 
-    score = W_NAME * (s_name / n) + W_TAG * (s_tag / n) + W_BODY * (s_body / n)
+    score = W_HEAD * (s_head / n) + W_TAG * (s_tag / n) + W_BODY * (s_body / n)
 
     qnorm = pq.qnorm
     if qnorm:
-        if qnorm in doc.name_norm:            # phrase bonus: str.__contains__
-            score += PHRASE_NAME
+        if qnorm in doc.head_norm:            # phrase bonus: str.__contains__
+            score += PHRASE_HEAD
         if qnorm in doc.body_norm:
             score += PHRASE_BODY
-        if qnorm == doc.name_norm:
-            score += EXACT_NAME_BONUS
 
     max_used = index.max_used
     if max_used > 0 and doc.used > 0:
@@ -606,13 +654,11 @@ def score_doc(doc: Doc, pq: ParsedQuery, index: SearchIndex) -> tuple[float, int
 
 
 def _doc_has_phrase(doc: Doc, phrase: str) -> bool:
-    return (phrase in doc.name_norm or phrase in doc.body_norm
-            or phrase in doc.tags_norm)
+    return phrase in doc.body_norm or phrase in doc.tags_norm
 
 
 def _doc_has_token(doc: Doc, token: str) -> bool:
-    return (token in doc.name_set or token in doc.body_set
-            or token in doc.tags_set)
+    return token in doc.body_set or token in doc.tags_set
 
 
 def _passes_filters(  # noqa: C901 - a flat chain of independent filters
@@ -656,20 +702,24 @@ def _sort_scored(scored: list[tuple[Doc, float]], sort: str) -> list[tuple[Doc, 
     """Stable multi-pass sort -- the last pass is the primary key.
 
     Multi-pass keeps descending-string keys (ISO timestamps) and ascending
-    string keys (name) in one comparator-free scheme.
+    string keys (the body) in one comparator-free scheme.
+
+    ``az`` and every tie-break sort on the body's opening words. They used to
+    sort on the name; the body is what the name was a copy of, and unlike the
+    derived label it does not move when an unrelated record is saved.
     """
     if sort == "az":
         scored.sort(key=lambda p: p[0].used, reverse=True)
-        scored.sort(key=lambda p: p[0].name_disp_lower)
+        scored.sort(key=lambda p: p[0].body_disp_lower)
     elif sort == "recent":
-        scored.sort(key=lambda p: p[0].name_disp_lower)
+        scored.sort(key=lambda p: p[0].body_disp_lower)
         scored.sort(key=lambda p: p[0].updated, reverse=True)
     elif sort == "most_used":
-        scored.sort(key=lambda p: p[0].name_disp_lower)
+        scored.sort(key=lambda p: p[0].body_disp_lower)
         scored.sort(key=lambda p: p[0].last_run, reverse=True)
         scored.sort(key=lambda p: p[0].used, reverse=True)
     else:  # relevance
-        scored.sort(key=lambda p: p[0].name_disp_lower)
+        scored.sort(key=lambda p: p[0].body_disp_lower)
         scored.sort(key=lambda p: (-p[1], -p[0].used))
     return scored
 
@@ -830,7 +880,7 @@ def search(  # noqa: C901 - the query pipeline reads better as one function
         m = matches.get(doc.pid)
         hits.append({
             "id": doc.pid,
-            "name": rec.get("name") or "",
+            "label": index.label_of(doc.pid),
             "preview": preview(rec.get("body") or ""),
             "tags": list(rec.get("tags") or ()),
             "rating": doc.rating,

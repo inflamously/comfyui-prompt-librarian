@@ -135,17 +135,17 @@ export const API = {
     return req("compare", { method: "POST", body: { a_id, a_text, b_id, b_text }, signal });
   },
 
-  merge({ winner_id, loser_id, body, name } = {}) {
+  merge({ winner_id, loser_id, body } = {}) {
     return req("merge", {
       method: "POST",
-      body: { winner: winner_id, loser: loser_id, winner_id, loser_id, body, name },
+      body: { winner: winner_id, loser: loser_id, winner_id, loser_id, body },
     });
   },
 
-  mergeNew({ a_id, b_id, body, name, tags } = {}) {
+  mergeNew({ a_id, b_id, body, tags } = {}) {
     return req("merge_new", {
       method: "POST",
-      body: { a: a_id, b: b_id, a_id, b_id, body, name, tags },
+      body: { a: a_id, b: b_id, a_id, b_id, body, tags },
     });
   },
 

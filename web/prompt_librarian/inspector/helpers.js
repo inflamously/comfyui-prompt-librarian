@@ -27,6 +27,14 @@ export function resolveHelpers(ctx) {
       D.estimateTokens ||
       ((s) => (String(s || "").trim() ? String(s).trim().split(/\s+/).length : 0)),
     starsOf: D.stars || ((r) => "*".repeat(Math.max(0, Math.min(5, Math.round(r || 0))))),
+    labelOf:
+      D.labelOf ||
+      ((x) => {
+        if (x == null) return "";
+        if (typeof x === "string") return x.replace(/\s+/g, " ").trim().slice(0, 64);
+        const given = x.label == null ? "" : String(x.label).trim();
+        return given || String(x.body || x.preview || "").replace(/\s+/g, " ").trim().slice(0, 64);
+      }),
     relTime: D.relTime || ((iso) => (iso ? String(iso).slice(0, 10) : "")),
     fmtInt: D.fmtInt || ((n) => String(Math.floor(Number(n) || 0))),
     STAR_FULL: D.STAR_FULL || String.fromCharCode(0x2605),

@@ -14,7 +14,7 @@ dataclass into ``parameters[]`` because OpenAPI wants query fields one at a
 time rather than as an object.
 
 The handlers cannot be introspected — they take a bare ``request`` and read
-``data.get("name")`` — so the types in :mod:`.schemas` are a parallel
+``data.get("body")`` — so the types in :mod:`.schemas` are a parallel
 declaration, and keeping them true to the handlers is a review question.
 ``tests/test_openapi.py`` covers the mechanical half: a route with no types, a
 response that forgets the ``rev`` envelope, a duplicate operation id, a

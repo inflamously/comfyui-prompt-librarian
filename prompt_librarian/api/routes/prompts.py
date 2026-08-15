@@ -17,6 +17,8 @@ from ..utils import (
     _ignored,
     _int,
     _json,
+    _labelled,
+    _labeller,
     _list,
     _offload,
     _opt,
@@ -36,7 +38,7 @@ async def prompt(request):
     rec = STORE.get(pid)
     if rec is None:
         raise NotFoundError(f"no prompt with id {pid!r}")
-    return _json({"prompt": rec})
+    return _json(_labelled(rec))
 
 
 @_route("post", "/meta", op="getPromptMeta",
@@ -48,10 +50,14 @@ async def meta(request):
     records = STORE.get_many(ids)
     counts = dedupe.page_dupe_counts(STORE, list(records), _threshold(data.get("threshold")),
                                      ignored=_ignored(), rev=_rev())
+    # The same rev-keyed index `/search` labels its rows from, so a node face
+    # and the list row above it can never disagree about what a record is
+    # called.
+    index = _labeller()
     out = {}
     for pid, rec in records.items():
         out[pid] = {
-            "name": rec.get("name", ""),
+            "label": index.label_of(pid),
             "rating": int(rec.get("rating", 0) or 0),
             "used": int(rec.get("used", 0) or 0),
             "tags": list(rec.get("tags") or ()),
@@ -70,7 +76,6 @@ async def create(request):
     def _work():
         old_rev = _rev()
         rec = STORE.create(
-            name=_str(data.get("name")),
             body=_str(data.get("body")),
             tags=_list(data.get("tags")),
             rating=_int(data.get("rating"), 0),
@@ -78,9 +83,9 @@ async def create(request):
             pinned=_bool(data.get("pinned")),
         )
         _patch_dupes(None, rec, old_rev)
-        return rec
+        return _labelled(rec)
 
-    return _json({"prompt": await _offload(_work)})
+    return _json(await _offload(_work))
 
 
 @_route("post", "/update", op="updatePrompt",
@@ -95,7 +100,6 @@ async def update(request):
         old = STORE.get(pid)
         rec = STORE.update(
             pid,
-            name=_opt(data, "name"),
             body=_opt(data, "body"),
             tags=(_list(data.get("tags")) if "tags" in data else None),
             rating=(_int(data.get("rating"), 0) if "rating" in data else None),
@@ -107,9 +111,9 @@ async def update(request):
             expect_updated=_opt(data, "expect_updated"),
         )
         _patch_dupes(old, rec, old_rev)
-        return rec
+        return _labelled(rec)
 
-    return _json({"prompt": await _offload(_work)})
+    return _json(await _offload(_work))
 
 
 @_route("post", "/rate", op="ratePrompt",
@@ -119,7 +123,7 @@ async def rate(request):
     data = await _body(request)
     pid = _str(data.get("id"))
     rating = _int(data.get("rating"), 0)
-    return _json({"prompt": await _offload(STORE.set_rating, pid, rating)})
+    return _json(await _offload(lambda: _labelled(STORE.set_rating(pid, rating))))
 
 
 @_route("post", "/delete", op="deletePrompt",
@@ -159,7 +163,7 @@ async def merge(request):
     data = await _body(request)
     winner = _str(data.get("winner") or data.get("winner_id"))
     loser = _str(data.get("loser") or data.get("loser_id"))
-    return _json({"prompt": await _offload(STORE.merge, winner, loser)})
+    return _json(await _offload(lambda: _labelled(STORE.merge(winner, loser))))
 
 
 @_route("post", "/merge_new", op="mergeIntoNewPrompt",
@@ -167,10 +171,8 @@ async def merge(request):
         body=schemas.MergeNewBody, returns=schemas.PromptResponse)
 async def merge_new(request):
     data = await _body(request)
-    return _json({"prompt": await _offload(
-        STORE.merge_new,
+    return _json(await _offload(lambda: _labelled(STORE.merge_new(
         _str(data.get("a") or data.get("a_id")),
         _str(data.get("b") or data.get("b_id")),
         _str(data.get("body")),
-        _str(data.get("name")),
-    )})
+    ))))

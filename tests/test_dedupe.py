@@ -19,10 +19,9 @@ CANON_B = ("make him dance ballet slowly drifting towards the camera, "
            "dusk light, volumetric haze")
 
 
-def mk(pid, name, body, **kw):
+def mk(pid, body, **kw):
     return {
         "id": pid,
-        "name": name,
         "body": body,
         "tags": kw.get("tags", []),
         "rating": kw.get("rating", 0),
@@ -46,14 +45,11 @@ def _clean_caches():
 @pytest.fixture
 def records():
     return [
-        mk("a1", "ballet_drift_v3", CANON_A, used=41,
-           updated="2026-08-11T19:03:22Z"),
-        mk("a2", "ballet_drift_v4", CANON_B, used=2,
-           updated="2026-08-12T10:00:00Z"),
-        mk("b1", "fruit_bowl", "a bowl of fruit on a wooden table, north light"),
-        mk("b2", "fruit_bowl_alt",
-           "a bowl of fruit on a wooden table, north lights"),
-        mk("c1", "long_one",
+        mk("a1", CANON_A, used=41, updated="2026-08-11T19:03:22Z"),
+        mk("a2", CANON_B, used=2, updated="2026-08-12T10:00:00Z"),
+        mk("b1", "a bowl of fruit on a wooden table, north light"),
+        mk("b2", "a bowl of fruit on a wooden table, north lights"),
+        mk("c1",
            "a very different prompt about spaceships and asteroid mining rigs "
            "drifting through a debris field near jupiter at high speed"),
     ]
@@ -156,11 +152,13 @@ def test_canonical_pair_found_by_find_similar(records):
     hits = D.find_similar(idx, pid="a1", exclude_id="a1", threshold=0.88)
     assert [h["id"] for h in hits] == ["a2"]
     hit = hits[0]
-    assert set(hit) == {"id", "name", "score", "pct", "summary", "preview",
+    # No label: what a record is called is derived from the whole corpus, and
+    # the api attaches it on the way out rather than have a cached match hold
+    # a string that goes stale when an unrelated record is saved.
+    assert set(hit) == {"id", "score", "pct", "summary", "preview",
                         "used", "updated"}
     assert hit["pct"] == 89
     assert hit["summary"] == '“toward” → “towards”, + volumetric haze'
-    assert hit["name"] == "ballet_drift_v4"
 
 
 # --------------------------------------------------------------------------
@@ -187,9 +185,9 @@ def test_short_document_pair_needs_the_length_bucket_escape_hatch(monkeypatch):
     monkeypatch.setattr(D, "DF_ABS", 0)
     monkeypatch.setattr(D, "DF_FRAC", 0.0)
     recs = [
-        mk("s1", "dusk", "dusk light"),
-        mk("s2", "dusk2", "dusk lights"),
-        mk("s3", "other", "a completely unrelated prompt about spaceships "
+        mk("s1", "dusk light"),
+        mk("s2", "dusk lights"),
+        mk("s3", "a completely unrelated prompt about spaceships "
                           "drifting past jupiter at high speed"),
     ]
     idx = D.build_dupe_index(recs, rev=1)
@@ -208,9 +206,9 @@ def test_short_document_pair_needs_the_length_bucket_escape_hatch(monkeypatch):
 
 def test_candidates_apply_length_and_overlap_prefilters():
     recs = [
-        mk("short", "s", "dusk light"),
-        mk("long", "l", "dusk light " * 30),
-        mk("near", "n", "dusk lights"),
+        mk("short", "dusk light"),
+        mk("long", "dusk light " * 30),
+        mk("near", "dusk lights"),
     ]
     idx = D.build_dupe_index(recs, rev=1)
     toks = idx.toks["short"]
@@ -256,7 +254,7 @@ def test_with_summary_false_skips_the_diff(records):
 
 def test_limit_and_sort_order():
     body = "soft warm light on the floor, gentle motion, warm tones"
-    recs = [mk(f"p{i}", f"p{i}", body + ("!" * i)) for i in range(6)]
+    recs = [mk(f"p{i}", body + ("!" * i)) for i in range(6)]
     idx = D.build_dupe_index(recs, rev=1)
     hits = D.find_similar(idx, pid="p0", exclude_id="p0", threshold=0.90, limit=3)
     assert len(hits) == 3
@@ -350,10 +348,10 @@ def test_dupe_counts_lower_threshold_pulls_in_the_canonical_pair(records):
 
 def test_dupe_counts_clusters_transitively():
     recs = [
-        mk("g1", "g1", "soft warm light on the floor gentle motion warm tones"),
-        mk("g2", "g2", "soft warm light on the floor gentle motion warm tone"),
-        mk("g3", "g3", "soft warm light on the floor gentle motion warm tuner"),
-        mk("solo", "solo", "an entirely different subject: neon rain in tokyo"),
+        mk("g1", "soft warm light on the floor gentle motion warm tones"),
+        mk("g2", "soft warm light on the floor gentle motion warm tone"),
+        mk("g3", "soft warm light on the floor gentle motion warm tuner"),
+        mk("solo", "an entirely different subject: neon rain in tokyo"),
     ]
     res = D.dupe_counts(recs, 0.90, rev=1)
     assert res["groups"] == [["g1", "g2", "g3"]]

@@ -9,7 +9,7 @@
    ========================================================================== */
 
 import { h } from "../shared/dom.js";
-import { firstLine } from "../shared/text.js";
+import { firstLine, labelOf } from "../shared/text.js";
 import { fmtInt, relTime } from "../shared/format.js";
 
 const MULT = String.fromCharCode(0x00d7); // "×"
@@ -48,7 +48,7 @@ export function createRow() {
   row.style.top = "0";
   row.__parts = {
     check: row.children[1],
-    name: row.children[2].children[0],
+    label: row.children[2].children[0],
     match: row.children[2].children[1],
     badge: row.children[3],
     body: row.children[4],
@@ -69,7 +69,7 @@ export function updateRow(row, item, index, state) {
     row.classList.add("pl-row-skel");
     row.removeAttribute("data-id");
     row.setAttribute("aria-selected", "false");
-    p.name.textContent = "";
+    p.label.textContent = "";
     p.body.textContent = "";
     p.meta.textContent = "";
     p.match.hidden = true;
@@ -83,7 +83,10 @@ export function updateRow(row, item, index, state) {
   row.dataset.id = id;
   row.id = "pl-r-" + id;
 
-  p.name.textContent = item.name || "(unnamed)";
+  // The backend's derived handle: the terms this body has that the rest of
+  // the library does not. It is a *label*, not an identity — never key
+  // anything off it, and never let a user believe they set it.
+  p.label.textContent = labelOf(item) || "(empty prompt)";
 
   const pct = item.match_pct;
   if (typeof pct === "number" && pct > 0) {

@@ -50,12 +50,34 @@ export function tokensOf(text) {
 }
 
 /** `{prompt: rec}` / `{record: rec}` / `rec` -> rec. */
+/** Unwrap `{prompt, label}` / `{record}` / a bare record.
+ *
+ * The derived `label` rides in the envelope beside the record, never inside
+ * it — a derived field inside would reach the exported file. Carry it onto the
+ * unwrapped copy, which is local and is never sent back.
+ */
 export function unwrapRecord(res) {
   if (!res || typeof res !== "object") return null;
-  if (res.prompt && typeof res.prompt === "object") return res.prompt;
-  if (res.record && typeof res.record === "object") return res.record;
-  if (res.id) return res;
-  return null;
+  let rec = null;
+  if (res.prompt && typeof res.prompt === "object") rec = res.prompt;
+  else if (res.record && typeof res.record === "object") rec = res.record;
+  else if (res.id) return res;
+  if (!rec) return null;
+  if (typeof res.label === "string" && res.label) rec.label = res.label;
+  return rec;
+}
+
+/** A record's display handle: the backend's derived label, else the body head. */
+export function labelOf(rec, n = 64) {
+  if (!rec) return "";
+  const given = rec.label == null ? "" : String(rec.label).trim();
+  const text = given || String(rec.body == null ? (rec.preview || "") : rec.body);
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (flat.length <= n) return flat;
+  let cut = flat.slice(0, n);
+  const space = cut.lastIndexOf(" ");
+  if (space >= Math.floor(n / 2)) cut = cut.slice(0, space);
+  return cut.replace(/[ ,;:.\-]+$/, "") + String.fromCharCode(0x2026);
 }
 
 export function errMsg(err) {

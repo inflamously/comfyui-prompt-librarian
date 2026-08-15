@@ -18,7 +18,7 @@
 
 import { NO_AUTOFILL, clear, h } from "../shared/dom.js";
 import { debounce } from "../shared/timing.js";
-import { truncate } from "../shared/text.js";
+import { labelOf, truncate } from "../shared/text.js";
 import { fmtInt } from "../shared/format.js";
 import { PAGE_SIZE, PagedSource } from "./paged-source.js";
 import { OVERSCAN, VirtualList } from "./virtual-list.js";
@@ -56,7 +56,7 @@ export function mountList(el, ctx) {
   const input = h("input", {
     className: "pl-search-in",
     type: "text",
-    placeholder: "search name, body, tags" + "  (tag:x  -word  \"phrase\")",
+    placeholder: "search prompts and tags" + "  (tag:x  -word  \"phrase\")",
     "aria-label": "Search prompts",
     spellcheck: "false",
     ...NO_AUTOFILL,
@@ -291,7 +291,8 @@ export function mountList(el, ctx) {
       const record = (full && (full.prompt || full.record || full)) || null;
       if (!record || record.body == null) throw new ctx.ApiError(0, null, "bad_record");
       const res = ctx.loadIntoNode(record);
-      if (res.ok) ctx.toast(`loaded "${record.name || rec.name || "prompt"}" into the node`, { kind: "success" });
+      const label = labelOf({ label: (full && full.label) || rec.label, body: record.body });
+      if (res.ok) ctx.toast(`loaded "${label || "prompt"}" into the node`, { kind: "success" });
       else if (res.reason === "stale_target") ctx.toast("that node is gone — pick another target", { kind: "error" });
       else ctx.toast("could not load into the node", { kind: "error" });
     } catch (err) {

@@ -161,22 +161,24 @@ def test_search_empty_library(call, store):
 
 
 def test_search_finds_and_shapes_hits(call, store):
-    store.create(name="ballet_drift_v3", body="make him dance ballet slowly",
+    store.create(body="make him dance ballet slowly",
                  tags=["dance"])
-    store.create(name="other", body="a completely different thing")
+    store.create(body="a completely different thing")
     payload = ok(call("get", "/search", {"q": "ballet"}))
     assert payload["total"] == 1
     hit = payload["hits"][0]
-    for key in ("id", "name", "preview", "tags", "rating", "used",
+    for key in ("id", "label", "preview", "tags", "rating", "used",
                 "updated", "chars", "version_count", "score", "dupe_count",
                 "match_pct"):
         assert key in hit
-    assert hit["name"] == "ballet_drift_v3"
+    # Derived from the corpus: "ballet" is the term this body has and the
+    # other one does not.
+    assert "ballet" in hit["label"]
 
 
 def test_search_filters_and_paginates(call, store):
     for index in range(5):
-        store.create(name=f"rec{index}", body=f"body {index}", tags=["c"])
+        store.create(body=f"body {index}", tags=["c"])
     payload = ok(call("get", "/search", {"tags": "c", "limit": "2",
                                          "offset": "1", "sort": "az"}))
     assert payload["total"] == 5
@@ -185,9 +187,9 @@ def test_search_filters_and_paginates(call, store):
 
 
 def test_search_dupes_only(call, store):
-    store.create(name="a", body="make him dance ballet drifting toward the camera")
-    store.create(name="b", body="make him dance ballet drifting towards the camera")
-    store.create(name="c", body="totally unrelated subject matter here")
+    store.create(body="make him dance ballet drifting toward the camera")
+    store.create(body="make him dance ballet drifting towards the camera")
+    store.create(body="totally unrelated subject matter here")
     payload = ok(call("get", "/search", {"dupes_only": "1"}))
     assert payload["total"] == 2
     assert payload["dupes_partial"] is False
@@ -195,18 +197,68 @@ def test_search_dupes_only(call, store):
 
 
 def test_search_match_id_populates_match_pct(call, store):
-    first = store.create(name="a", body="make him dance ballet toward the camera")
-    store.create(name="b", body="make him dance ballet towards the camera")
+    first = store.create(body="make him dance ballet toward the camera")
+    store.create(body="make him dance ballet towards the camera")
     payload = ok(call("get", "/search", {"match_id": first["id"]}))
-    pcts = {hit["name"]: hit["match_pct"] for hit in payload["hits"]}
-    assert pcts["b"] is not None and pcts["b"] >= 90
-    assert pcts["a"] is None            # excluded from its own match map
+    pcts = {hit["id"]: hit["match_pct"] for hit in payload["hits"]}
+    other = next(pid for pid in pcts if pid != first["id"])
+    assert pcts[other] is not None and pcts[other] >= 90
+    assert pcts[first["id"]] is None    # excluded from its own match map
 
 
 def test_prompt(call, store):
-    rec = store.create(name="n", body="b")
+    rec = store.create(body="b")
     payload = ok(call("get", "/prompt", {"id": rec["id"]}))
     assert payload["prompt"]["id"] == rec["id"]
+
+
+def test_every_single_record_response_carries_a_label(call, store):
+    """The label rides BESIDE the record, never inside it.
+
+    Inside, it would be written to the file by `/export` -> `/import`, which is
+    a stored name again by another route.
+    """
+    store.create(body="a bowl of fruit on a wooden table")
+    rec = store.create(body="a lone ballerina in a ruined theatre")
+    pid = rec["id"]
+
+    reads = [call("get", "/prompt", {"id": pid})]
+    writes = [
+        call("post", "/create", body={"body": "neon rain over tokyo rooftops"}),
+        call("post", "/update", body={"id": pid, "body": "a lone ballerina, ruined stage"}),
+        call("post", "/rate", body={"id": pid, "rating": 4}),
+    ]
+    for result in reads + writes:
+        payload = ok(result)
+        assert payload["label"], payload
+        assert "name" not in payload["prompt"]
+        assert "label" not in payload["prompt"]
+
+
+def test_the_label_is_derived_from_the_corpus_not_the_body_head(call, store):
+    """Two prompts opening identically still read apart."""
+    first = store.create(body="a lone ballerina drifting through a ruined theatre")
+    second = store.create(body="a lone ballerina drifting through a sunlit field")
+    a = ok(call("get", "/prompt", {"id": first["id"]}))["label"]
+    b = ok(call("get", "/prompt", {"id": second["id"]}))["label"]
+    assert a != b
+    assert "ruined" in a and "sunlit" in b
+
+
+def test_a_label_moves_when_the_library_around_it_does(call, store):
+    """It is derived, and derived from the *corpus* — so it is not stable and
+    nothing may key off it. Saving an unrelated prompt that happens to share
+    these words is enough to change what this one is called."""
+    rec = store.create(body="a lone ballerina drifting through a ruined theatre at dusk")
+    before = ok(call("get", "/prompt", {"id": rec["id"]}))["label"]
+    assert "ballerina" in before
+
+    ok(call("post", "/create", body={"body": "a lone ballerina drifting slowly"}))
+    after = ok(call("get", "/prompt", {"id": rec["id"]}))["label"]
+    assert after != before
+    # "ballerina" is no longer this record's alone, so what is left of it is.
+    assert "ballerina" not in after
+    assert "ruined theatre" in after
 
 
 def test_prompt_unknown_id_is_404(call, store):
@@ -217,35 +269,36 @@ def test_prompt_unknown_id_is_404(call, store):
 
 
 def test_versions_and_version(call, store):
-    rec = store.create(name="n", body="first")
+    rec = store.create(body="first")
     store.update(rec["id"], body="second")
     payload = ok(call("get", "/versions", {"id": rec["id"]}))
     assert len(payload["versions"]) == 1
     entry = payload["versions"][0]
-    assert set(entry) == {"index", "name", "ts", "src", "chars", "preview"}
+    assert set(entry) == {"index", "label", "ts", "src", "chars", "preview"}
     assert "body" not in entry            # previews only, never full bodies
+    assert entry["label"]                 # derived from the snapshotted body
 
     full = ok(call("get", "/version", {"id": rec["id"], "index": "0"}))
     assert full["version"]["body"] == "first"
 
 
 def test_version_bad_index_is_404(call, store):
-    rec = store.create(name="n", body="b")
+    rec = store.create(body="b")
     status, payload = call("get", "/version", {"id": rec["id"], "index": "9"})
     assert status == 404
     assert payload["code"] == "not_found"
 
 
 def test_taxonomy(call, store):
-    store.create(name="a", body="x", tags=["t1", "t2"])
+    store.create(body="x", tags=["t1", "t2"])
     payload = ok(call("get", "/taxonomy"))
     assert payload["total"] == 1
     assert {t["tag"] for t in payload["tags"]} == {"t1", "t2"}
 
 
 def test_dupes_all(call, store):
-    first = store.create(name="a", body="make him dance ballet toward the camera")
-    second = store.create(name="b", body="make him dance ballet towards the camera")
+    first = store.create(body="make him dance ballet toward the camera")
+    second = store.create(body="make him dance ballet towards the camera")
     payload = ok(call("get", "/dupes/all"))
     assert payload["counts"][first["id"]] == 1
     assert payload["counts"][second["id"]] == 1
@@ -254,8 +307,8 @@ def test_dupes_all(call, store):
 
 
 def test_dupes_all_coalesces_concurrent_callers(call, store, monkeypatch):
-    store.create(name="a", body="make him dance ballet toward the camera")
-    store.create(name="b", body="make him dance ballet towards the camera")
+    store.create(body="make him dance ballet toward the camera")
+    store.create(body="make him dance ballet towards the camera")
     calls = []
     real = dedupe.dupe_counts
 
@@ -300,12 +353,20 @@ def test_snippets_and_export(call, store):
 
 def test_create(call, store):
     payload = ok(call("post", "/create", body={
-        "name": "n", "body": "b",
+        "body": "b",
         "tags": ["x", "y"], "rating": 3, "notes": "note", "pinned": True,
     }))
     rec = payload["prompt"]
-    assert rec["name"] == "n" and rec["tags"] == ["x", "y"] and rec["rating"] == 3
+    assert rec["body"] == "b" and rec["tags"] == ["x", "y"] and rec["rating"] == 3
+    assert "name" not in rec
     assert store.count() == 1
+
+
+def test_create_ignores_a_name_from_an_older_client(call, store):
+    """The field is gone from the api, not merely unused by the panel."""
+    payload = ok(call("post", "/create", body={"body": "b", "name": "n"}))
+    assert "name" not in payload["prompt"]
+    assert "name" not in store.all()[0]
 
 
 def test_create_oversized_body_is_413(call, store):
@@ -317,14 +378,14 @@ def test_create_oversized_body_is_413(call, store):
 
 
 def test_update(call, store):
-    rec = store.create(name="n", body="one")
+    rec = store.create(body="one")
     payload = ok(call("post", "/update", body={"id": rec["id"], "body": "two"}))
     assert payload["prompt"]["body"] == "two"
     assert len(payload["prompt"]["versions"]) == 1
 
 
 def test_update_partial_fields_only(call, store):
-    rec = store.create(name="n", body="one", tags=["t"])
+    rec = store.create(body="one", tags=["t"])
     payload = ok(call("post", "/update", body={"id": rec["id"], "rating": 5}))
     assert payload["prompt"]["body"] == "one"
     assert payload["prompt"]["tags"] == ["t"]
@@ -332,7 +393,7 @@ def test_update_partial_fields_only(call, store):
 
 
 def test_update_expect_updated_conflict_is_409(call, store):
-    rec = store.create(name="n", body="one")
+    rec = store.create(body="one")
     store.update(rec["id"], body="two")          # another tab got there first
     # `updated` is second-precision, so a same-second edit can collide; the
     # baseline the losing tab holds is explicitly older than any real stamp.
@@ -345,7 +406,7 @@ def test_update_expect_updated_conflict_is_409(call, store):
 
 
 def test_update_expect_updated_matching_succeeds(call, store):
-    rec = store.create(name="n", body="one")
+    rec = store.create(body="one")
     payload = ok(call("post", "/update", body={
         "id": rec["id"], "body": "two", "expect_updated": rec["updated"],
     }))
@@ -359,21 +420,21 @@ def test_update_unknown_id_is_404(call, store):
 
 
 def test_rate(call, store):
-    rec = store.create(name="n", body="b")
+    rec = store.create(body="b")
     payload = ok(call("post", "/rate", body={"id": rec["id"], "rating": 4}))
     assert payload["prompt"]["rating"] == 4
     assert payload["prompt"]["versions"] == []   # rating never snapshots
 
 
 def test_delete(call, store):
-    rec = store.create(name="n", body="b")
+    rec = store.create(body="b")
     payload = ok(call("post", "/delete", body={"id": rec["id"]}))
     assert payload["deleted"] is True
     assert store.count() == 0
 
 
 def test_usage(call, store):
-    rec = store.create(name="n", body="body")
+    rec = store.create(body="body")
     payload = ok(call("post", "/usage", body={"id": rec["id"], "body": "body"}))
     assert payload["counted"] is True
     assert payload["prompt"]["used"] == 1
@@ -384,13 +445,14 @@ def test_usage(call, store):
 
 
 def test_meta(call, store):
-    first = store.create(name="a", body="make him dance ballet toward the camera",
+    first = store.create(body="make him dance ballet toward the camera",
                          tags=["t"], rating=2)
-    second = store.create(name="b", body="make him dance ballet towards the camera")
+    second = store.create(body="make him dance ballet towards the camera")
     payload = ok(call("post", "/meta", body={"ids": [first["id"], second["id"], "nope"]}))
     entry = payload["meta"][first["id"]]
-    assert set(entry) == {"name", "rating", "used", "tags",
+    assert set(entry) == {"label", "rating", "used", "tags",
                           "near_dupes", "updated"}
+    assert entry["label"]
     assert entry["near_dupes"] == 1
     assert "nope" not in payload["meta"]
 
@@ -407,7 +469,7 @@ def test_malformed_body_is_not_a_500(call, store):
 
 @pytest.fixture
 def five(store):
-    return [store.create(name=f"rec{i}", body=f"body {i}", tags=["c"])
+    return [store.create(body=f"body {i}", tags=["c"])
             for i in range(5)]
 
 
@@ -441,8 +503,8 @@ def test_bulk_retag_replace(call, store, five):
 
 
 def test_bulk_merge(call, store):
-    first = store.create(name="a", body="one", tags=["x"])
-    second = store.create(name="b", body="two", tags=["y"])
+    first = store.create(body="one", tags=["x"])
+    second = store.create(body="two", tags=["y"])
     store.record_usage(second["id"], body="two")
     payload = ok(call("post", "/bulk/merge",
                       body={"ids": [first["id"], second["id"]], "winner": first["id"]}))
@@ -454,7 +516,7 @@ def test_bulk_merge(call, store):
 
 
 def test_bulk_merge_needs_two_records(call, store):
-    rec = store.create(name="a", body="one")
+    rec = store.create(body="one")
     status, payload = call("post", "/bulk/merge", body={"ids": [rec["id"]]})
     assert status == 400
     assert payload["code"] == "same_record"
@@ -471,27 +533,28 @@ def test_bulk_with_no_ids_is_a_noop(call, store, five):
 # --------------------------------------------------------------------------- #
 
 def test_dupes_by_text(call, store):
-    store.create(name="a", body="make him dance ballet drifting toward the camera")
+    store.create(body="make him dance ballet drifting toward the camera")
     payload = ok(call("post", "/dupes", body={
         "text": "make him dance ballet drifting towards the camera",
     }))
     assert len(payload["matches"]) == 1
     match = payload["matches"][0]
-    assert set(match) == {"id", "name", "score", "pct", "summary", "preview",
+    assert set(match) == {"id", "label", "score", "pct", "summary", "preview",
                           "used", "updated"}
     assert match["pct"] >= 90
     assert match["summary"]
+    assert match["label"]
 
 
 def test_dupes_excludes_self(call, store):
-    rec = store.create(name="a", body="make him dance ballet toward the camera")
+    rec = store.create(body="make him dance ballet toward the camera")
     payload = ok(call("post", "/dupes", body={"id": rec["id"],
                                               "exclude_id": rec["id"]}))
     assert payload["matches"] == []
 
 
 def test_dupes_summaries_can_be_skipped(call, store):
-    store.create(name="a", body="make him dance ballet drifting toward the camera")
+    store.create(body="make him dance ballet drifting toward the camera")
     payload = ok(call("post", "/dupes", body={
         "text": "make him dance ballet drifting towards the camera",
         "summaries": False,
@@ -500,8 +563,8 @@ def test_dupes_summaries_can_be_skipped(call, store):
 
 
 def test_dupes_ignore_round_trip(call, store):
-    first = store.create(name="a", body="make him dance ballet toward the camera")
-    second = store.create(name="b", body="make him dance ballet towards the camera")
+    first = store.create(body="make him dance ballet toward the camera")
+    second = store.create(body="make him dance ballet towards the camera")
     payload = ok(call("post", "/dupes/ignore", body={"a": first["id"],
                                                      "b": second["id"]}))
     assert payload["changed"] is True and payload["ignored"] is True
@@ -519,8 +582,8 @@ def test_dupes_ignore_round_trip(call, store):
 
 
 def test_compare_by_id_and_text(call, store):
-    first = store.create(name="a", body="drifting toward the camera")
-    second = store.create(name="b", body="drifting towards the camera")
+    first = store.create(body="drifting toward the camera")
+    second = store.create(body="drifting towards the camera")
     payload = ok(call("post", "/compare", body={"a_id": first["id"],
                                                 "b_id": second["id"]}))
     assert set(payload) >= {"score", "pct", "summary", "diff"}
@@ -538,8 +601,8 @@ def test_compare_unknown_id_is_404(call, store):
 
 
 def test_merge(call, store):
-    first = store.create(name="a", body="one")
-    second = store.create(name="b", body="two")
+    first = store.create(body="one")
+    second = store.create(body="two")
     payload = ok(call("post", "/merge", body={"winner": first["id"],
                                               "loser": second["id"]}))
     assert payload["prompt"]["id"] == first["id"]
@@ -547,7 +610,7 @@ def test_merge(call, store):
 
 
 def test_merge_into_itself_is_400(call, store):
-    rec = store.create(name="a", body="one")
+    rec = store.create(body="one")
     status, payload = call("post", "/merge", body={"winner": rec["id"],
                                                    "loser": rec["id"]})
     assert status == 400
@@ -555,27 +618,27 @@ def test_merge_into_itself_is_400(call, store):
 
 
 def test_merge_new(call, store):
-    first = store.create(name="a", body="one")
-    second = store.create(name="b", body="two")
+    first = store.create(body="one")
+    second = store.create(body="two")
     payload = ok(call("post", "/merge_new", body={
-        "a": first["id"], "b": second["id"], "body": "one two", "name": "combined",
+        "a": first["id"], "b": second["id"], "body": "one two",
     }))
-    assert payload["prompt"]["name"] == "combined"
+    assert payload["prompt"]["body"] == "one two"
     assert store.count() == 1
 
 
 def test_merge_new_without_a_body_is_400(call, store):
-    first = store.create(name="a", body="one")
-    second = store.create(name="b", body="two")
+    first = store.create(body="one")
+    second = store.create(body="two")
     status, payload = call("post", "/merge_new", body={
-        "a": first["id"], "b": second["id"], "body": "", "name": "combined",
+        "a": first["id"], "b": second["id"], "body": "",
     })
     assert status == 400
     assert payload["code"] == "bad_request"
 
 
 def test_versions_restore(call, store):
-    rec = store.create(name="n", body="first")
+    rec = store.create(body="first")
     store.update(rec["id"], body="second")
     payload = ok(call("post", "/versions/restore", body={"id": rec["id"],
                                                          "index": 0}))
@@ -632,7 +695,7 @@ def test_settings(call, store):
 
 
 def test_import_and_export_round_trip(call, store):
-    store.create(name="a", body="one", tags=["t"])
+    store.create(body="one", tags=["t"])
     library = ok(call("get", "/export"))["library"]
 
     store.import_raw({"prompts": []}, replace=True)
@@ -640,7 +703,7 @@ def test_import_and_export_round_trip(call, store):
 
     payload = ok(call("post", "/import", body={"library": library, "replace": True}))
     assert payload["count"] == 1
-    assert store.all()[0]["name"] == "a"
+    assert store.all()[0]["body"] == "one"
 
 
 # --------------------------------------------------------------------------- #

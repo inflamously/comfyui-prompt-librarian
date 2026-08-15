@@ -19,10 +19,9 @@ from prompt_librarian import search as S  # noqa: E402
 # --------------------------------------------------------------------------
 
 
-def mk(pid, name, body, **kw):
+def mk(pid, body, **kw):
     return {
         "id": pid,
-        "name": name,
         "body": body,
         "tags": kw.get("tags", []),
         "rating": kw.get("rating", 0),
@@ -38,23 +37,29 @@ def mk(pid, name, body, **kw):
 
 @pytest.fixture
 def records():
+    # The three "ballet drift" records differ in *where* the words fall, which
+    # is the whole of how ranking works now that there is no name to match:
+    # `head` opens with the phrase, `phrase` buries it past HEAD_TOKENS, and
+    # `scatter` has the two words far apart and late.
     return [
-        mk("exact", "ballet drift", "a study of stage lighting only",
+        mk("head", "ballet drift across a stage lit for a single figure",
            tags=["stage"], used=3, updated="2026-02-01T00:00:00Z"),
-        mk("phrase", "camera study",
-           "a ballet drift across the stage at dusk",
+        mk("phrase",
+           "a long meandering study of stage lighting and mood, then "
+           "finally a ballet drift at dusk",
            tags=["camera-move"], used=5, updated="2026-02-02T00:00:00Z"),
-        mk("scatter", "stage notes",
-           "a ballet performance with a slow lateral drift of the camera",
+        mk("scatter",
+           "a study of an empty stage under working lights, performers "
+           "waiting in the wings: a ballet performance with a slow "
+           "lateral drift of the camera",
            tags=["dance"], used=9, updated="2026-02-03T00:00:00Z"),
-        mk("ballerina", "ballerina spin",
-           "she spins under volumetric haze, 35mm",
+        mk("ballerina", "a ballerina spins under volumetric haze, 35mm",
            tags=["dance", "camera-move"], used=41,
            last_run="2026-08-11T19:03:22Z", updated="2026-02-04T00:00:00Z"),
-        mk("unrelated", "still life", "a bowl of fruit on a table",
+        mk("unrelated", "a bowl of fruit on a table",
            tags=["studio"], used=1,
            updated="2026-02-05T00:00:00Z"),
-        mk("cjk", "猫の写真", "かわいい猫が窓辺で眠っている, Grüße aus München",
+        mk("cjk", "かわいい猫が窓辺で眠っている, Grüße aus München",
            tags=["cat"], used=0,
            updated="2026-02-06T00:00:00Z", versions=[{"body": "x"}]),
     ]
@@ -117,23 +122,28 @@ def test_within_edit_1():
 # --------------------------------------------------------------------------
 
 
-def test_exact_name_beats_phrase_beats_scattered(records):
+def test_head_phrase_beats_body_phrase_beats_scattered(records):
+    """What the name weight used to buy, the body's first words now buy.
+
+    A prompt says what it is about up front, so an early match outranks a late
+    one — and a phrase outranks the same two words scattered apart.
+    """
     res = S.search(records, "ballet drift", limit=10)
     order = ids(res)
-    assert order[:3] == ["exact", "phrase", "scatter"]
+    assert order[:3] == ["head", "phrase", "scatter"]
     by = {h["id"]: h["score"] for h in res["hits"]}
-    assert by["exact"] > by["phrase"] > by["scatter"]
+    assert by["head"] > by["phrase"] > by["scatter"]
 
 
 def test_prefix_search_finds_longer_term(records):
     res = S.search(records, "ball", limit=10)
     found = set(ids(res))
-    assert {"exact", "phrase", "scatter", "ballerina"} <= found
+    assert {"head", "phrase", "scatter", "ballerina"} <= found
     assert "unrelated" not in found
 
 
 def test_prefix_expansion_is_capped():
-    recs = [mk(f"p{i}", f"n{i}", f"prefixaaa{i:04d}") for i in range(300)]
+    recs = [mk(f"p{i}", f"prefixaaa{i:04d}") for i in range(300)]
     idx = S.build_index(recs)
     assert len(idx.expand_prefix("prefixaaa")) == S.PREFIX_EXPAND_CAP
 
@@ -143,7 +153,7 @@ def test_zero_result_fallback_finds_edit_distance_1(records):
     # zero-result infix/edit-1 vocabulary scan can reach "ballet".
     res = S.search(records, "ballrt", limit=10)
     assert res["fallback"] is True
-    assert "exact" in ids(res)
+    assert "head" in ids(res)
 
 
 def test_happy_path_does_not_use_fallback(records):
@@ -190,7 +200,7 @@ def test_exclusion_operator(records):
 def test_quoted_phrase_requires_substring(records):
     res = S.search(records, '"ballet drift"', limit=10)
     got = set(ids(res))
-    assert got == {"exact", "phrase"}      # "scatter" has the words far apart
+    assert got == {"head", "phrase"}       # "scatter" has the words far apart
 
 
 def test_operators_and_with_chip_filters(records):
@@ -212,11 +222,11 @@ def test_and_gate_rejects_doc_missing_a_token(records):
 
 def test_any_mode_keeps_partial_matches(records):
     res = S.search(records, "ballet unicorn", mode="any", limit=10)
-    assert "exact" in ids(res)
+    assert "head" in ids(res)
 
 
 def test_and_gate_across_fields(records):
-    # "dance" only exists as a tag, "ballet" only in name/body: a doc is a hit
+    # "dance" only exists as a tag, "ballet" only in a body: a doc is a hit
     # when each token matched in *some* field.
     res = S.search(records, "ballet dance", mode="all", limit=10)
     assert set(ids(res)) == {"scatter"}
@@ -240,9 +250,9 @@ def test_tags_filter_normalizes_like_stored_tags(records):
 
 
 def test_dupes_only_filter(records):
-    res = S.search(records, "", dupes_only=True, dupe_ids={"exact", "phrase"},
+    res = S.search(records, "", dupes_only=True, dupe_ids={"head", "phrase"},
                    limit=10)
-    assert set(ids(res)) == {"exact", "phrase"}
+    assert set(ids(res)) == {"head", "phrase"}
     assert res["dupes_partial"] is True     # no dupe_count_fn was supplied
 
 
@@ -262,41 +272,49 @@ def test_empty_query_returns_all_with_zero_score_and_recent_order(records):
     assert res["total"] == 6
     assert all(h["score"] == 0 for h in res["hits"])
     assert ids(res) == ["cjk", "unrelated", "ballerina", "scatter",
-                        "phrase", "exact"]      # updated desc
+                        "phrase", "head"]       # updated desc
 
 
-def test_sort_recent_tiebreak_is_name(records):
+def test_sort_recent_tiebreak_is_the_body(records):
     recs = [
-        mk("b", "beta", "x", updated="2026-03-01T00:00:00Z"),
-        mk("a", "alpha", "x", updated="2026-03-01T00:00:00Z"),
-        mk("c", "gamma", "x", updated="2026-04-01T00:00:00Z"),
+        mk("b", "beta", updated="2026-03-01T00:00:00Z"),
+        mk("a", "alpha", updated="2026-03-01T00:00:00Z"),
+        mk("c", "gamma", updated="2026-04-01T00:00:00Z"),
     ]
     assert ids(S.search(recs, "", sort="recent", limit=10)) == ["c", "a", "b"]
 
 
-def test_sort_most_used_tiebreaks_on_last_run_then_name(records):
+def test_sort_most_used_tiebreaks_on_last_run_then_body(records):
     recs = [
-        mk("x", "x", "t", used=5, last_run="2026-01-01T00:00:00Z"),
-        mk("y", "y", "t", used=5, last_run="2026-05-01T00:00:00Z"),
-        mk("z", "z", "t", used=9, last_run=""),
-        mk("w", "w", "t", used=5, last_run="2026-05-01T00:00:00Z"),
+        mk("x", "xx", used=5, last_run="2026-01-01T00:00:00Z"),
+        mk("y", "yy", used=5, last_run="2026-05-01T00:00:00Z"),
+        mk("z", "zz", used=9, last_run=""),
+        mk("w", "ww", used=5, last_run="2026-05-01T00:00:00Z"),
     ]
     assert ids(S.search(recs, "", sort="most_used", limit=10)) == ["z", "w", "y", "x"]
 
 
-def test_sort_az_tiebreaks_on_used_desc():
+def test_sort_az_is_alphabetical_by_body_then_used_desc():
     recs = [
-        mk("low", "same name", "t", used=1),
-        mk("high", "same name", "t", used=7),
-        mk("first", "aaa", "t", used=0),
+        mk("low", "same opening words", used=1),
+        mk("high", "same opening words", used=7),
+        mk("first", "aaa", used=0),
     ]
     assert ids(S.search(recs, "", sort="az", limit=10)) == ["first", "high", "low"]
 
 
-def test_sort_relevance_tiebreaks_on_used_then_name():
+def test_sort_az_ignores_case_and_leading_whitespace():
     recs = [
-        mk("a", "ballet", "ballet", used=1),
-        mk("b", "ballet", "ballet", used=9),
+        mk("b", "  Beta prompt"),
+        mk("a", "alpha prompt"),
+    ]
+    assert ids(S.search(recs, "", sort="az", limit=10)) == ["a", "b"]
+
+
+def test_sort_relevance_tiebreaks_on_used_then_body():
+    recs = [
+        mk("a", "ballet", used=1),
+        mk("b", "ballet", used=9),
     ]
     assert ids(S.search(recs, "ballet", sort="relevance", limit=10))[0] == "b"
 
@@ -327,7 +345,7 @@ def test_result_envelope_and_hit_shape(records):
     assert isinstance(res["took_ms"], float)
     assert len(res["hits"]) == 2
     h = res["hits"][0]
-    assert set(h) == {"id", "name", "preview", "tags", "rating",
+    assert set(h) == {"id", "label", "preview", "tags", "rating",
                       "used", "last_run", "updated", "chars", "version_count",
                       "score", "dupe_count", "match_pct"}
 
@@ -398,12 +416,12 @@ def test_incremental_replace_matches_full_rebuild(records):
     full = S.build_index([edited] + records[1:], rev=1)
     assert inc.postings == full.postings
     assert inc.vocab == full.vocab
-    assert inc.docs["exact"].used == 99
+    assert inc.docs["head"].used == 99
 
 
 def test_vocab_stays_sorted_and_prunes_empty_postings():
-    idx = S.build_index([mk("a", "zeta", "alpha bravo")], rev=1)
-    idx.add(mk("b", "middle", "charlie"))
+    idx = S.build_index([mk("a", "alpha bravo")], rev=1)
+    idx.add(mk("b", "charlie"))
     assert idx.vocab == sorted(idx.vocab)
     assert "charlie" in idx.postings
     idx.remove("b")
@@ -446,7 +464,7 @@ def test_search_accepts_a_duck_typed_store(records):
 def test_index_stats_are_recomputed_after_mutation(records):
     idx = S.build_index(records, rev=1)
     assert idx.max_used == 41
-    idx.add(mk("boost", "boosted", "ballet", used=500))
+    idx.add(mk("boost", "ballet", used=500))
     assert idx.max_used == 500
     idx.remove("boost")
     assert idx.max_used == 41

@@ -17,6 +17,7 @@ import {
   focusFirst,
   isAborted,
   isTextEntry,
+  labelOf,
   openLayer,
   quote,
   skeleton,
@@ -286,7 +287,7 @@ export function openCompare(ctx, opts = {}) {
     });
     if (!ok) return;
     const rec = unwrapRecord(await ctx.API.update({ id: targetId, body: sourceText }));
-    toast(ctx, rec ? `${quote(rec.name || targetName)} updated` : "updated", "success");
+    toast(ctx, rec ? `${quote(labelOf(rec) || targetName)} updated` : "updated", "success");
     if (typeof ctx.refreshAll === "function") ctx.refreshAll();
     if (typeof o.onApplied === "function") o.onApplied(rec);
     layer.close();
@@ -345,8 +346,8 @@ export function openCompare(ctx, opts = {}) {
         title: "edit a union of both bodies and save it as a new prompt",
         run: async () => {
           openMergeEditor(ctx, {
-            left: { id: a_id, name: titleA, body: aText },
-            right: { id: b_id, name: titleB, body: bText },
+            left: { id: a_id, label: titleA, body: aText },
+            right: { id: b_id, label: titleB, body: bText },
             opcodes,
             onSaved: (rec) => {
               if (typeof o.onApplied === "function") o.onApplied(rec);
@@ -374,7 +375,7 @@ export function openCompare(ctx, opts = {}) {
           });
           if (!ok) return;
           const rec = unwrapRecord(await ctx.API.merge({ winner_id: a_id, loser_id: b_id }));
-          toast(ctx, `merged into ${quote((rec && rec.name) || titleA)}`, "success");
+          toast(ctx, `merged into ${quote(labelOf(rec) || titleA)}`, "success");
           if (typeof ctx.refreshAll === "function") ctx.refreshAll();
           if (typeof o.onApplied === "function") o.onApplied(rec);
           layer.close();

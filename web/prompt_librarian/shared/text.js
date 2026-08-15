@@ -84,6 +84,55 @@ export function firstLine(str, n) {
   return truncate(s, n);
 }
 
+/** Cap on a derived label — mirrors `labels.LABEL_CHARS` on the backend. */
+export const LABEL_CHARS = 64;
+
+/**
+ * A body's opening words, cut on a word boundary. The client half of a label.
+ *
+ * A record has no name; what it is *called* is derived from what it says. The
+ * good version of that is corpus-wide (which terms this body has that no other
+ * body does) and can only be computed where the whole library is — so the
+ * backend sends a `label` on every row, match and version it returns, and this
+ * is the fallback for the one case that has no backend answer: text that has
+ * never been saved.
+ *
+ * Kept in step with `labels.head_label` in Python, deliberately: the moment a
+ * draft is saved its label is recomputed server-side, and a user watching that
+ * happen should not see the handle jump.
+ *
+ * @param {string} body
+ * @param {number} [n=LABEL_CHARS]
+ * @returns {string} `""` for an empty body — the caller owns the placeholder
+ */
+export function headLabel(body, n = LABEL_CHARS) {
+  const flat = (body == null ? "" : String(body)).replace(/\s+/g, " ").trim();
+  if (!flat) return "";
+  if (flat.length <= n) return flat;
+  let cut = flat.slice(0, n);
+  const space = cut.lastIndexOf(" ");
+  if (space >= Math.floor(n / 2)) cut = cut.slice(0, space);
+  return cut.replace(/[ ,;:.\-]+$/, "") + "…";
+}
+
+/**
+ * The handle to print for a record, hit, match or version entry.
+ *
+ * Prefers the backend's corpus-derived `label` and falls back to the body's
+ * opening words. Accepts a plain string so a raw body can be labelled too.
+ *
+ * @param {object|string|null} item
+ * @param {number} [n=LABEL_CHARS]
+ * @returns {string} `""` when there is nothing to show
+ */
+export function labelOf(item, n = LABEL_CHARS) {
+  if (item == null) return "";
+  if (typeof item === "string") return headLabel(item, n);
+  const given = item.label == null ? "" : String(item.label).trim();
+  if (given) return truncate(given, n);
+  return headLabel(item.body != null ? item.body : item.preview, n);
+}
+
 /**
  * Rough token count for the UI's `~61 tokens` readout.
  *

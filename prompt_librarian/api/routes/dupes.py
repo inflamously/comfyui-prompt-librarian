@@ -19,6 +19,7 @@ from ..utils import (
     _ignored,
     _int,
     _json,
+    _labeller,
     _offload,
     _query,
     _rev,
@@ -117,7 +118,14 @@ async def dupes(request):
         ignored=_ignored(),
         rev=_rev(),
     )
-    return _json({"matches": list(matches), "threshold": threshold})
+    # `find_similar` returns its *cached* list, so the label goes onto a copy:
+    # mutating a match here would poison every later cache hit with a label
+    # computed against an older corpus.
+    index = _labeller()
+    return _json({
+        "matches": [{**m, "label": index.label_of(m["id"])} for m in matches],
+        "threshold": threshold,
+    })
 
 
 @_route("post", "/compare", op="compareBodies",

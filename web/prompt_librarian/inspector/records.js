@@ -35,12 +35,20 @@ export function isConflict(x) {
   return /\bconflict\b|\b409\b/i.test(String(x.message || x.error || ""));
 }
 
-/** Records come back bare, or wrapped as {prompt}/{record}. */
+/** Records come back bare, or wrapped as {prompt}/{record}.
+ *
+ * The derived `label` travels in the envelope BESIDE the record rather than
+ * inside it — a derived field inside would end up in the exported file, which
+ * is a stored name again by another route. Carry it onto the unwrapped copy so
+ * the pane has one shape to read; nothing ever sends this copy back.
+ */
 export function unwrapRecord(r) {
   if (!r || typeof r !== "object") return null;
-  if (r.prompt && typeof r.prompt === "object") return r.prompt;
-  if (r.record && typeof r.record === "object") return r.record;
-  return r;
+  let rec = r;
+  if (r.prompt && typeof r.prompt === "object") rec = r.prompt;
+  else if (r.record && typeof r.record === "object") rec = r.record;
+  if (rec !== r && typeof r.label === "string" && r.label) rec.label = r.label;
+  return rec;
 }
 
 /** Score as a 0..1 fraction, tolerating a 0..100 payload. */
@@ -52,15 +60,21 @@ export function frac(v) {
 
 export const pct = (v) => Math.round(frac(v) * 100) + "%";
 
-/** Normalise a dupe response into sorted `{id, name, score, summary, body}`. */
+/** Normalise a dupe response into sorted `{id, label, score, summary, body}`.
+ *
+ * `label` is the backend's derived handle for the match; it falls back to the
+ * preview and then to the id, because a row has to say *something* and the id
+ * is the only thing every match is guaranteed to have.
+ */
 export function matchesOf(r) {
   const arr = Array.isArray(r) ? r : (r && (r.matches || r.dupes)) || [];
   const out = [];
   for (const m of arr) {
     if (!m) continue;
+    const id = m.id != null ? String(m.id) : "";
     out.push({
-      id: m.id != null ? String(m.id) : "",
-      name: String(m.name || m.id || "(unnamed)"),
+      id,
+      label: String(m.label || m.preview || id || "(empty prompt)"),
       score: frac(m.score != null ? m.score : m.ratio),
       summary: m.summary == null ? "" : String(m.summary),
       body: typeof m.body === "string" ? m.body : null,
@@ -72,17 +86,21 @@ export function matchesOf(r) {
 
 export function bufferFrom(rec) {
   return {
-    name: String((rec && rec.name) || ""),
     tags: Array.isArray(rec && rec.tags) ? rec.tags.map(String) : [],
     body: String((rec && rec.body) || ""),
   };
 }
 
-/** Field signature used for the dirty comparison (tags order-insensitive). */
+/** Field signature used for the dirty comparison (tags order-insensitive).
+ *
+ * The label is not in it, and must not be: it is derived from the body and
+ * from the rest of the library, so a label that moved because a *different*
+ * record was saved is not an unsaved edit of this one.
+ */
 export function sig(o) {
   if (!o) o = {};
   const tags = Array.isArray(o.tags) ? o.tags.map(String).slice().sort() : [];
-  return JSON.stringify([String(o.name || ""), tags.join(""), String(o.body || "")]);
+  return JSON.stringify([tags.join(""), String(o.body || "")]);
 }
 
 /** Accepts a raw body string or the modal's JSON buffer; returns a body. */

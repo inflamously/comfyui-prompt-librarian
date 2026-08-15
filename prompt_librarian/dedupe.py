@@ -374,8 +374,12 @@ def find_similar(  # noqa: C901 - one scoring pass, kept inline on purpose
 ) -> list[dict[str, Any]]:
     """Records similar to ``text`` (or to record ``pid``'s body).
 
-    Returns ``[{id, name, score, pct, summary, preview, used, updated}]``
-    sorted by score descending.  ``exclude_id`` is how the save flow stops a
+    Returns ``[{id, score, pct, summary, preview, used, updated}]``
+    sorted by score descending.  Carries no display label: what a record is
+    called is derived from the corpus by :mod:`.labels`, and the api attaches
+    it on the way out rather than have this module -- and its caches -- hold a
+    string that changes when an unrelated record does.  ``exclude_id`` is how
+    the save flow stops a
     record matching itself at 100%.  ``ignored`` is the store's "keep both"
     pair set; a pair is dropped when ``exclude_id``/``pid`` and the candidate
     appear in it.
@@ -423,7 +427,9 @@ def find_similar(  # noqa: C901 - one scoring pass, kept inline on purpose
         if r >= threshold and r > 0.0:
             scored.append((r, cid))
 
-    scored.sort(key=lambda p: (-p[0], (idx.records.get(p[1], {}).get("name") or "").casefold()))
+    # Score descending, then by id: an arbitrary but *stable* tie-break, so
+    # equally-similar matches do not shuffle between two identical calls.
+    scored.sort(key=lambda p: (-p[0], p[1]))
     if limit and limit > 0:
         scored = scored[:limit]
 
@@ -433,7 +439,6 @@ def find_similar(  # noqa: C901 - one scoring pass, kept inline on purpose
         body = rec.get("body") or ""
         out.append({
             "id": cid,
-            "name": rec.get("name") or "",
             "score": round(r, 6),
             "pct": int(round(r * 100)),
             "summary": diff_summary(text, body) if with_summary else "",

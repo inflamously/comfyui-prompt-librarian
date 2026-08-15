@@ -132,6 +132,7 @@ layers = [
     "wildcards",
     "dedupe",
     "search",
+    "labels",
     "store",
 ]
 

@@ -11,6 +11,7 @@
    ========================================================================== */
 
 import { fmtInt } from "../shared/format.js";
+import { labelOf } from "../shared/text.js";
 
 /**
  * @param {{ctx: object, source: object, onChange?: () => void}} deps
@@ -87,28 +88,25 @@ export function createSelection({ ctx, source, onChange }) {
     return state.selectionMode === "filter" ? source.total : state.selection.size;
   }
 
-  /** First five names, for the confirm text. Loaded pages only, by design. */
-  function names(limit = 5) {
+  /** First five labels, for the confirm text. Loaded pages only, by design. */
+  function labels(limit = 5) {
     const state = st();
     const out = [];
-    if (state.selectionMode === "filter") {
-      for (let i = 0; i < source.total && out.length < limit; i++) {
-        const rec = source.peek(i);
-        if (rec && rec.name) out.push(rec.name);
-      }
-      return out;
-    }
-    const wanted = new Set(state.selection);
+    const all = state.selectionMode === "filter";
+    const wanted = all ? null : new Set(state.selection);
     for (let i = 0; i < source.total && out.length < limit; i++) {
       const rec = source.peek(i);
-      if (rec && wanted.has(String(rec.id))) out.push(rec.name || rec.id);
+      if (!rec) continue;
+      if (wanted && !wanted.has(String(rec.id))) continue;
+      const label = labelOf(rec);
+      if (label || !all) out.push(label || String(rec.id));
     }
     return out;
   }
 
   function describe() {
     const n = count();
-    const list = names(5);
+    const list = labels(5);
     const more = n > list.length ? `\n… and ${fmtInt(n - list.length)} more` : "";
     return `${fmtInt(n)} prompt${n === 1 ? "" : "s"}:\n${list.map((s) => `  ${s}`).join("\n")}${more}`;
   }
@@ -121,7 +119,7 @@ export function createSelection({ ctx, source, onChange }) {
     queryForServer,
     current,
     count,
-    names,
+    labels,
     describe,
     mode: () => st().selectionMode,
   };

@@ -29,7 +29,7 @@ export function freshState() {
     currentId: null, // set the instant a row is clicked, before the fetch lands
     current: null, // canonical record as loaded from the server
     baseline: null, // snapshot for dirty comparison
-    buffer: { name: "", tags: [], body: "" },
+    buffer: { tags: [], body: "" },
     dupes: { threshold: 0.9, matches: [], loading: false },
     caps: {},
     targetNodeId: null,

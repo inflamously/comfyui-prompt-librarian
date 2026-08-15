@@ -119,7 +119,7 @@ export function createDupes(pane) {
       "div",
       { className: "pl-dupe" + (top ? " is-top" : "") },
       h("div", { className: "pl-score" }, pct(m.score)),
-      h("div", { className: "pl-dupe-name" }, m.name),
+      h("div", { className: "pl-dupe-name" }, m.label),
       // The `differs: ` prefix belongs to the UI. The backend's `summary` is
       // just the change list, so do not expect it in the payload.
       h("div", { className: "pl-dupe-why" }, m.summary ? "differs: " + m.summary : ""),

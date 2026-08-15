@@ -32,7 +32,7 @@ import logging
 import traceback
 from collections import namedtuple
 
-from .. import dedupe
+from .. import dedupe, search
 from ..store import STORE
 from .config import _ERROR_MAP, PREFIX
 
@@ -211,3 +211,24 @@ def _ignored():
         return STORE.ignored_pairs()
     except Exception:
         return ()
+
+
+def _labeller():
+    """``label_of(pid)`` / ``label_for(body)`` against the current library.
+
+    One rev-keyed index for the whole api, so a list row, a node face and a
+    version entry can never disagree about what a record is called.
+    """
+    return search.get_index(STORE)
+
+
+def _labelled(rec):
+    """The ``{prompt, label}`` body every single-record response returns.
+
+    Call it *inside* the executor hop that made the write: a write invalidates
+    the search index, so whoever asks for the first label afterwards pays for
+    the rebuild, and that is not a bill to hand to the event loop.
+    """
+    if not rec:
+        return {"prompt": rec, "label": ""}
+    return {"prompt": rec, "label": _labeller().label_of(_str(rec.get("id")))}

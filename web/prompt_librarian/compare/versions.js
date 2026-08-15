@@ -6,7 +6,7 @@
 
 import { NS } from "../shared/ns.js";
 import { clear, cls, h } from "../shared/dom.js";
-import { truncate } from "../shared/text.js";
+import { labelOf, truncate } from "../shared/text.js";
 import { fmtInt, relTime } from "../shared/format.js";
 import { debounce } from "../shared/timing.js";
 import {
@@ -64,7 +64,7 @@ export function openVersions(ctx, opts = {}) {
   let paneState = "idle"; // idle | loading | ready | error
   let paneError = "";
   let paneOpcodes = null;
-  let paneVersion = null; // {index, name, ts, body}
+  let paneVersion = null; // {index, ts, body}
   let disposed = false;
   let seq = 0; // belt-and-braces over the lane's own sequence guard
   let vlist = null;
@@ -122,7 +122,7 @@ export function openVersions(ctx, opts = {}) {
   const el = h(
     "div",
     { className: "pl-dialog", role: "dialog", "aria-modal": "true", "aria-label": "version history" },
-    h("div", { className: "pl-dialog-title" }, `versions ${MIDDOT} ${str(record.name) || id}`),
+    h("div", { className: "pl-dialog-title" }, `versions ${MIDDOT} ${labelOf(record) || id}`),
     body,
     acts
   );
@@ -130,7 +130,7 @@ export function openVersions(ctx, opts = {}) {
   /* ---- list ------------------------------------------------------------ */
 
   function rowEl() {
-    const name = h("span", { className: "pl-row-name" });
+    const label = h("span", { className: "pl-row-name" });
     const badge = h("span", { className: "pl-badge-dupe", hidden: true }, "current");
     const preview = h("div", { className: "pl-row-body" });
     const meta = h("div", { className: "pl-row-meta" });
@@ -138,12 +138,12 @@ export function openVersions(ctx, opts = {}) {
       "div",
       { className: "pl-row", role: "option", "aria-selected": "false" },
       h("span", { className: "pl-row-bar" }),
-      name,
+      label,
       badge,
       preview,
       meta
     );
-    row.__parts = { name, badge, preview, meta };
+    row.__parts = { label, badge, preview, meta };
     return row;
   }
 
@@ -152,14 +152,14 @@ export function openVersions(ctx, opts = {}) {
     const p = el2.__parts;
     if (!item) {
       el2.classList.add("pl-row-skel");
-      p.name.textContent = "";
+      p.label.textContent = "";
       p.preview.textContent = "";
       p.meta.textContent = "";
       p.badge.hidden = true;
       return;
     }
     el2.classList.remove("pl-row-skel");
-    p.name.textContent = item.label;
+    p.label.textContent = item.label;
     p.badge.hidden = !item.isCurrent;
     p.preview.textContent = item.preview;
     p.meta.textContent = item.meta;
@@ -182,7 +182,7 @@ export function openVersions(ctx, opts = {}) {
     list.push({
       index: null,
       isCurrent: true,
-      label: str(record.name) || "current",
+      label: labelOf(record) || "current",
       preview: truncate(str(currentBody).replace(/\s+/g, " ").trim(), 160),
       chars: str(currentBody).length,
       ts: str(record.updated),
@@ -193,7 +193,10 @@ export function openVersions(ctx, opts = {}) {
       list.push({
         index: Number(v.index),
         isCurrent: false,
-        label: str(v.name) || `version ${Number(v.index) + 1}`,
+        // The backend labels a snapshotted body against the CURRENT library,
+        // which is what makes an old entry legible: it says what that version
+        // was about relative to what the user has now.
+        label: str(v.label) || `version ${Number(v.index) + 1}`,
         preview: str(v.preview),
         chars: Number(v.chars) || 0,
         ts: str(v.ts),
@@ -460,7 +463,7 @@ export function openVersions(ctx, opts = {}) {
       toast(ctx, "restored — the previous body is now a version", "success");
       if (rec) {
         currentBody = str(rec.body);
-        record.name = rec.name != null ? rec.name : record.name;
+        record.label = rec.label != null ? rec.label : record.label;
         record.updated = rec.updated != null ? rec.updated : record.updated;
         record.body = currentBody;
       }
@@ -513,7 +516,7 @@ export function openVersions(ctx, opts = {}) {
         const rec = unwrapRecord(await ctx.API.get(id));
         if (rec) {
           currentBody = str(rec.body);
-          record.name = record.name || rec.name;
+          record.label = record.label || rec.label;
           record.updated = record.updated || rec.updated;
         }
       } catch (_) {

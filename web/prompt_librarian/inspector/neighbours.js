@@ -29,7 +29,7 @@ function pickFn(mod, names) {
 
 /** @param {object} pane */
 export function createNeighbours(pane) {
-  const { ctx } = pane;
+  const { ctx, D } = pane;
   const els = pane.els;
 
   async function openTagPicker() {
@@ -113,8 +113,8 @@ export function createNeighbours(pane) {
         a_text: pane.buf.body,
         b_id: m.id,
         b_text: m.body,
-        titleA: pane.buf.name || "this",
-        titleB: m.name,
+        titleA: D.labelOf(pane.buf.body) || "this",
+        titleB: m.label,
       });
     } catch (err) { pane.toast("compare: " + NOT_YET); }
   }

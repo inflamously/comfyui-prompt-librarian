@@ -47,7 +47,7 @@ export async function pickOne(ctx, title, options, opts = {}) {
 function fill(pop, ctx, title, options, opts, finish) {
   if (opts.allowNew) {
     const field = h("input", {
-      className: "pl-name",
+      className: "pl-input",
       type: "text",
       spellcheck: "false",
       ...NO_AUTOFILL,

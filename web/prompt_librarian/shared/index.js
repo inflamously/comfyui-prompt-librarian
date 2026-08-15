@@ -17,12 +17,15 @@ export { CSS_LINK_ID, ensureStyles } from "./styles.js";
 export { debounce, rafThrottle } from "./timing.js";
 export { setComboValues } from "./widgets.js";
 export {
+  LABEL_CHARS,
   STAR_EMPTY,
   STAR_FULL,
   charCount,
   estimateTokens,
   firstLine,
   graphemes,
+  headLabel,
+  labelOf,
   stars,
   truncate,
 } from "./text.js";

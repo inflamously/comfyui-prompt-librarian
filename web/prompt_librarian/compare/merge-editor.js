@@ -4,7 +4,7 @@
    INERT ON IMPORT. Exports only.
    ========================================================================== */
 
-import { NO_AUTOFILL, h } from "../shared/dom.js";
+import { h } from "../shared/dom.js";
 import {
   ARROW,
   MIDDOT,
@@ -12,6 +12,7 @@ import {
   btn,
   confirmWith,
   errMsg,
+  labelOf,
   openLayer,
   quote,
   str,
@@ -39,20 +40,13 @@ export function openMergeEditor(ctx, opts = {}) {
   const b_id = right.id == null || right.id === "" ? null : String(right.id);
 
   const seed = mergeSeed(o.opcodes, str(left.body), str(right.body));
-  const defaultName = `${str(left.name) || "merged"}_merged`;
 
   let busy = false;
   let disposed = false;
 
-  const nameIn = h("input", {
-    className: "pl-name",
-    type: "text",
-    value: defaultName,
-    "aria-label": "name for the merged prompt",
-    spellcheck: "false",
-    ...NO_AUTOFILL,
-  });
-
+  // No name field: the merged prompt is named by what it says, the same as
+  // every other prompt. The editable thing here is the body, and that is the
+  // whole point of the dialog.
   const ta = h("textarea", {
     className: "pl-ta",
     value: seed,
@@ -71,8 +65,6 @@ export function openMergeEditor(ctx, opts = {}) {
   const body = h(
     "div",
     { className: "pl-dialog-body", style: { display: "flex", flexDirection: "column", gap: "8px" } },
-    h("div", { className: "pl-lbl" }, "name"),
-    nameIn,
     hint,
     h("div", { className: "pl-ta-wrap", style: { minHeight: "220px" } }, ta)
   );
@@ -104,17 +96,7 @@ export function openMergeEditor(ctx, opts = {}) {
 
   async function save() {
     if (busy || disposed) return;
-    const name = str(nameIn.value).trim();
     const text = str(ta.value);
-    if (!name) {
-      toast(ctx, "the merged prompt needs a name", "error");
-      try {
-        nameIn.focus();
-      } catch (_) {
-        /* ignore */
-      }
-      return;
-    }
     if (!text.trim()) {
       toast(ctx, "the merged body is empty", "error");
       return;
@@ -123,7 +105,7 @@ export function openMergeEditor(ctx, opts = {}) {
       const ok = await confirmWith(ctx, {
         title: "save the merge?",
         message:
-          `${quote(str(left.name))} and ${quote(str(right.name))} are absorbed into ${quote(name)}.\n` +
+          `${quote(labelOf(left))} and ${quote(labelOf(right))} are absorbed into one new prompt.\n` +
           "Both originals are deleted and their bodies are kept as versions of the new prompt.",
         confirmLabel: "save as new",
         danger: true,
@@ -135,14 +117,13 @@ export function openMergeEditor(ctx, opts = {}) {
     try {
       const res =
         a_id && b_id
-          ? await ctx.API.mergeNew({ a_id, b_id, body: text, name })
+          ? await ctx.API.mergeNew({ a_id, b_id, body: text })
           : await ctx.API.create({
-              name,
               body: text,
               tags: Array.isArray(left.tags) ? left.tags.slice() : [],
             });
       const rec = unwrapRecord(res);
-      toast(ctx, `created ${quote((rec && rec.name) || name)}`, "success");
+      toast(ctx, `created ${quote(labelOf(rec) || "the merged prompt")}`, "success");
       if (typeof ctx.refreshAll === "function") ctx.refreshAll();
       if (typeof o.onSaved === "function") o.onSaved(rec);
       layer.close();
@@ -186,7 +167,7 @@ export function openMergeEditor(ctx, opts = {}) {
     /* ignore */
   }
 
-  return { el, close: () => layer.close(), textarea: ta, nameInput: nameIn };
+  return { el, close: () => layer.close(), textarea: ta };
 }
 
 /** All `equal` runs plus both sides' inserts, in opcode order. */

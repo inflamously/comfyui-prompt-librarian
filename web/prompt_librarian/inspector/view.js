@@ -7,7 +7,7 @@
    late-bound through `pane`, so this file never has to know the order the
    feature modules were wired in.
 
-   Never innerHTML. Prompt bodies, names and tags are user data — h() and
+   Never innerHTML. Prompt bodies and tags are user data — h() and
    textContent only.
    ========================================================================== */
 
@@ -20,20 +20,18 @@ import { CAP_TITLE, CARET, MIDDOT, MUL } from "./constants.js";
 export function buildView(pane) {
   const { el, D } = pane;
   const h = D.h;
-  const NO_AUTOFILL = D.NO_AUTOFILL;
 
   D.clearEl(el);
 
-  const nameInput = h("input", {
-    className: "pl-name",
-    type: "text",
-    spellcheck: "false",
-    ...NO_AUTOFILL,
-    // Not "prompt_name": an underscore-cased identifier in a lone text field
-    // is itself part of what Dashlane pattern-matches on.
-    placeholder: "name your prompt",
-    "aria-label": "Prompt name",
-    oninput: () => { pane.buf.name = nameInput.value; pane.afterEdit(); },
+  // There is no name field, because there is no name. This is a *readout*:
+  // the handle the rest of the panel prints for this record, derived from the
+  // body against the rest of the library and recomputed whenever either
+  // changes. It is here so the user can see what a row of theirs will say, not
+  // so they can set it — the way to make a prompt findable is to write what it
+  // is about in the prompt, and to search for that.
+  const labelEl = h("div", {
+    className: "pl-label",
+    title: "Derived from the prompt text — search finds prompts, names do not",
   });
 
   const tagsRow = h("div", { className: "pl-tags" });
@@ -156,7 +154,7 @@ export function buildView(pane) {
   );
 
   el.appendChild(h("div", { className: "pl-lbl" }, "// SELECTED"));
-  el.appendChild(h("div", { className: "pl-idrow" }, nameInput));
+  el.appendChild(h("div", { className: "pl-idrow" }, labelEl));
   el.appendChild(tagsRow);
   el.appendChild(draftBar);
   el.appendChild(textHead);
@@ -167,7 +165,7 @@ export function buildView(pane) {
   el.appendChild(actionsEl);
 
   const els = {
-    nameInput, tagsRow,
+    labelEl, tagsRow,
     draftText, draftBar,
     charsEl, tokensEl, editedEl,
     mirror, ta, taWrap,

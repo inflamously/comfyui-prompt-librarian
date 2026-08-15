@@ -57,7 +57,6 @@ class Version(_Schema):
     """One entry in a record's history."""
 
     body: str
-    name: str
     ts: str
     src: str | None
     """What produced the snapshot, or null for an ordinary edit."""
@@ -68,7 +67,8 @@ class VersionPreview(_Schema):
     """A version without its body — what the history list renders."""
 
     index: int
-    name: str
+    label: str
+    """Derived from the snapshotted body; empty for an empty one."""
     ts: str
     src: str | None
     chars: int
@@ -78,11 +78,16 @@ class VersionPreview(_Schema):
 
 @dataclass
 class Prompt(_Schema):
-    """A library record."""
+    """A library record.
+
+    No name: a record *is* its body. Every response that needs a handle for one
+    carries a derived ``label`` instead, and this type deliberately does not —
+    it is also the shape ``/export`` writes and ``/import`` reads, and a
+    derived field in a file would be a stored name again by another route.
+    """
 
     id: str
     """``uuid4().hex``, stable across edits and never a content hash."""
-    name: str
     body: str
     tags: list[str]
     rating: int
@@ -102,7 +107,10 @@ class SearchHit(_Schema):
     """One row of a search page."""
 
     id: str
-    name: str
+    label: str
+    """The row's handle: this body's most distinctive terms, against the rest
+    of the library. Derived per response, never stored, and free to change when
+    the library around it does — sort and filter on the other fields."""
     preview: str
     tags: list[str]
     rating: int
@@ -122,7 +130,7 @@ class SearchHit(_Schema):
 class PromptMeta(_Schema):
     """The subset of a record a node face shows."""
 
-    name: str
+    label: str
     rating: int
     used: int
     tags: list[str]
@@ -135,7 +143,7 @@ class DupeMatch(_Schema):
     """One near-duplicate of the body that was asked about."""
 
     id: str
-    name: str
+    label: str
     score: float
     pct: int
     summary: str
@@ -287,6 +295,10 @@ class GetPromptQuery(_Schema):
 @dataclass
 class PromptResponse(Envelope):
     prompt: Prompt
+    label: str
+    """The record's derived handle. Beside the record rather than inside it:
+    :class:`Prompt` is also what ``/export`` writes, and a derived field in a
+    file on disk would be a stored name again by another route."""
 
 
 @dataclass
@@ -437,7 +449,6 @@ class ResolveResponse(Envelope):
 
 @dataclass
 class CreateBody(_Schema):
-    name: str = ""
     body: str = ""
     tags: list[str] = field(default_factory=list)
     rating: int = 0
@@ -450,7 +461,6 @@ class UpdateBody(_Schema):
     """A partial update: every omitted field is left as it is."""
 
     id: str
-    name: str | None = None
     body: str | None = None
     tags: list[str] | None = None
     rating: int | None = None
@@ -545,10 +555,9 @@ class MergeBody(_Schema):
 
 @dataclass
 class MergeNewBody(_Schema):
-    """Both are required: a synthesized record has no defensible default body."""
+    """``body`` is required: a synthesized record has no defensible default."""
 
     body: str
-    name: str
     a: str = ""
     a_id: str = ""
     b: str = ""

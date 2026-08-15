@@ -152,7 +152,7 @@ def test_error_codes_match_the_live_table(doc):
 
 def test_prompt_type_matches_a_real_record(store):
     """The one model the store can be asked to prove: a created record."""
-    record = store.create(name="n", body="b", tags=["t"])
+    record = store.create(body="b", tags=["t"])
     declared = {entry.name for entry in fields(schemas.Prompt)}
     assert declared == set(record)
 

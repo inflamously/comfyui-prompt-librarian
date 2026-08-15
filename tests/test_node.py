@@ -156,7 +156,7 @@ def test_run_tolerates_a_junk_seed(node, store, wcdir):
 # --------------------------------------------------------------------------- #
 
 def test_usage_increments_for_a_matching_body(node, store):
-    rec = store.create(name="n", body="ballet drift")
+    rec = store.create(body="ballet drift")
     out = node.run("ballet drift", rec["id"], 0, False, True)
     assert out["ui"]["counted"] == [True]
     assert out["ui"]["used"] == [1]
@@ -164,14 +164,14 @@ def test_usage_increments_for_a_matching_body(node, store):
 
 
 def test_usage_does_not_increment_for_an_edited_body(node, store):
-    rec = store.create(name="n", body="ballet drift")
+    rec = store.create(body="ballet drift")
     out = node.run("ballet drift, but edited", rec["id"], 0, False, True)
     assert out["ui"]["counted"] == [False]
     assert store.get(rec["id"])["used"] == 0
 
 
 def test_usage_ignores_whitespace_only_differences(node, store):
-    rec = store.create(name="n", body="ballet drift")
+    rec = store.create(body="ballet drift")
     node.run("  ballet drift\n", rec["id"], 0, False, True)
     assert store.get(rec["id"])["used"] == 1
 
@@ -179,7 +179,7 @@ def test_usage_ignores_whitespace_only_differences(node, store):
 def test_usage_counts_the_raw_text_not_the_resolved_output(node, store, wcdir):
     # A wildcard prompt resolves differently every seed by design, so the
     # comparison has to be against what is saved: the raw widget text.
-    rec = store.create(name="n", body="a {x|y} b")
+    rec = store.create(body="a {x|y} b")
     node.run("a {x|y} b", rec["id"], 5, True, True)
     assert store.get(rec["id"])["used"] == 1
 
@@ -191,13 +191,13 @@ def test_usage_does_not_raise_for_an_unknown_id(node, store):
 
 
 def test_usage_is_skipped_when_disabled(node, store):
-    rec = store.create(name="n", body="body")
+    rec = store.create(body="body")
     node.run("body", rec["id"], 0, False, False)
     assert store.get(rec["id"])["used"] == 0
 
 
 def test_usage_is_skipped_without_an_id(node, store):
-    rec = store.create(name="n", body="body")
+    rec = store.create(body="body")
     node.run("body", "", 0, False, True)
     assert store.get(rec["id"])["used"] == 0
 

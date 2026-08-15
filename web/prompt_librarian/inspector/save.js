@@ -35,8 +35,9 @@ export function createSave(pane) {
     const isUpdate = !asNew && !!(pane.current && pane.current.id);
 
     if (isUpdate && !pane.isDirty()) { pane.toast("no changes"); return; }
-    if (!pane.buf.body.trim()) { pane.toast("prompt text is empty", "error"); return; }
-    if (!pane.buf.name.trim()) { pane.toast("give it a name first", "error"); pane.els.nameInput.focus(); return; }
+    // The body is the only thing a record needs. There is nothing else to
+    // ask the user for before saving — the handle is derived from this text.
+    if (!pane.buf.body.trim()) { pane.toast("prompt text is empty", "error"); pane.focusBody(); return; }
 
     setSaving(true);
     try {
@@ -128,7 +129,7 @@ export function createSave(pane) {
     // push: a save can MINT AN ID ("save as new"). If the node keeps the old
     // one — or none — usage silently stops counting against what just saved.
     pane.adoptRecord(rec, { silent: false, push: true });
-    pane.toast(isUpdate ? "saved" : "created " + LDQUO + rec.name + RDQUO, "success");
+    pane.toast(isUpdate ? "saved" : "created " + LDQUO + D.labelOf(rec) + RDQUO, "success");
     if (typeof ctx.refreshAll === "function") ctx.refreshAll();
     pane.scheduleDupes.cancel();
     pane.runDupes(false);
@@ -148,7 +149,7 @@ export function createSave(pane) {
       h(
         "p",
         null,
-        LDQUO + (fresh.name || fresh.id) + RDQUO + " changed somewhere else " +
+        LDQUO + (D.labelOf(fresh) || fresh.id) + RDQUO + " changed somewhere else " +
           (D.relTime(fresh.updated) ? "(" + D.relTime(fresh.updated) + " ago)" : "") +
           " while you were editing. Saving now would overwrite that change."
       ),
@@ -288,7 +289,7 @@ export function createSave(pane) {
           "div",
           { className: "pl-dupe" },
           h("div", { className: "pl-score" }, pct(m.score)),
-          h("div", { className: "pl-dupe-name" }, m.name),
+          h("div", { className: "pl-dupe-name" }, m.label),
           h("div", { className: "pl-dupe-why" }, m.summary ? "differs: " + m.summary : ""),
           acts
         )
@@ -312,7 +313,7 @@ export function createSave(pane) {
                 title: "Save a duplicate?",
                 message:
                   "This will be saved alongside: " +
-                  matches.map((m) => LDQUO + m.name + RDQUO + " (" + pct(m.score) + ")").join(", ") +
+                  matches.map((m) => LDQUO + m.label + RDQUO + " (" + pct(m.score) + ")").join(", ") +
                   ". They will keep being flagged as duplicates.",
                 confirmLabel: "Save anyway",
                 cancelLabel: "Back",
@@ -377,7 +378,7 @@ export function createSave(pane) {
       ok = await ctx.confirmDialog({
         title: "Merge",
         message:
-          "Merge into " + LDQUO + m.name + RDQUO + "? It keeps the id, usage count and history; " +
+          "Merge into " + LDQUO + m.label + RDQUO + "? It keeps the id, usage count and history; " +
           (mine ? "this record is absorbed and removed." : "your text becomes its current body."),
         confirmLabel: "Merge",
         cancelLabel: "Cancel",
@@ -392,7 +393,7 @@ export function createSave(pane) {
       if (mine && mine !== String(m.id)) {
         rec = unwrapRecord(
           ensureOk(
-            await ctx.API.merge({ winner_id: m.id, loser_id: mine, body: pane.buf.body, name: pane.buf.name || m.name })
+            await ctx.API.merge({ winner_id: m.id, loser_id: mine, body: pane.buf.body })
           )
         );
       } else {
@@ -403,7 +404,6 @@ export function createSave(pane) {
           ensureOk(
             await ctx.API.update({
               id: fresh.id,
-              name: fresh.name,
               tags: fresh.tags,
               body: pane.buf.body,
               expect_updated: fresh.updated,
@@ -415,7 +415,7 @@ export function createSave(pane) {
       if (rec && rec.id) {
         pane.clearDraft(rec.id);
         pane.adoptRecord(rec, { silent: false, push: true });
-        pane.toast("merged into " + LDQUO + rec.name + RDQUO, "success");
+        pane.toast("merged into " + LDQUO + D.labelOf(rec) + RDQUO, "success");
       } else {
         pane.toast("merged", "success");
       }
@@ -433,9 +433,9 @@ export function createSave(pane) {
     let ok = false;
     try {
       ok = await ctx.confirmDialog({
-        title: "Overwrite " + LDQUO + m.name + RDQUO + "?",
+        title: "Overwrite " + LDQUO + m.label + RDQUO + "?",
         message:
-          "Replaces the text of " + LDQUO + m.name + RDQUO + " with what you have here. " +
+          "Replaces the text of " + LDQUO + m.label + RDQUO + " with what you have here. " +
           "Its previous text is kept in that record's version history.",
         confirmLabel: "Overwrite",
         cancelLabel: "Cancel",
@@ -451,7 +451,6 @@ export function createSave(pane) {
         ensureOk(
           await ctx.API.update({
             id: fresh.id,
-            name: fresh.name,
             tags: fresh.tags,
             body: pane.buf.body,
             expect_updated: fresh.updated,
@@ -462,7 +461,7 @@ export function createSave(pane) {
         pane.clearDraft(rec.id);
         pane.adoptRecord(rec, { silent: false, push: true });
       }
-      pane.toast("overwrote " + LDQUO + m.name + RDQUO, "success");
+      pane.toast("overwrote " + LDQUO + m.label + RDQUO, "success");
       if (typeof ctx.refreshAll === "function") ctx.refreshAll();
       pane.scheduleDupes.cancel();
       pane.runDupes(false);

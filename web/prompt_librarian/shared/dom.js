@@ -93,7 +93,7 @@ export function h(tag, props, ...children) {
  * Props that opt a text field out of password-manager autofill. Spread into
  * any h("input", …) that takes a free-text value:
  *
- *   h("input", { className: "pl-name", type: "text", ...NO_AUTOFILL, … })
+ *   h("input", { className: "pl-input", type: "text", ...NO_AUTOFILL, … })
  *
  * `autocomplete: "off"` alone does not work — every major manager ignores it
  * on principle, so each one gets its own opt-out attribute. Dashlane is the

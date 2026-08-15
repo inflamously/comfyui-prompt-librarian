@@ -107,10 +107,10 @@ function buildNodeCard(node, open) {
   };
 
   // Structure and class names come straight from the `.pl-node-card` block in
-  // librarian.css — head (name / stars / used), clamped body, foot (dupe badge).
+  // librarian.css — head (label / stars / used), clamped body, foot (dupe badge).
   const el = mk("div", "pl-node-card");
   const head = mk("div", "pl-nc-head");
-  const name = mk("div", "pl-nc-name");
+  const label = mk("div", "pl-nc-name");
   const starRow = mk("span", "pl-stars");
   const used = mk("span", "pl-nc-used");
   const body = mk("div", "pl-nc-body");
@@ -121,7 +121,7 @@ function buildNodeCard(node, open) {
   starRow.setAttribute("aria-label", "rating");
   dupes.hidden = true;
 
-  head.appendChild(name);
+  head.appendChild(label);
   head.appendChild(starRow);
   head.appendChild(used);
   foot.appendChild(dupes);
@@ -138,7 +138,7 @@ function buildNodeCard(node, open) {
     open(node);
   });
 
-  el.__plParts = { name, body, head, foot, starRow, used, dupes };
+  el.__plParts = { label, body, head, foot, starRow, used, dupes };
   return el;
 }
 
@@ -206,7 +206,7 @@ function buildButtonFace(node, open) {
  * when one mounted, the button labels otherwise. Callers never care which.
  *
  * @param {object} node
- * @param {{name?:string, rating?:number, used?:number, body?:string,
+ * @param {{label?:string, rating?:number, used?:number, body?:string,
  *          near_dupes?:number}} [meta]
  */
 export function paintFace(node, meta) {
@@ -215,20 +215,20 @@ export function paintFace(node, meta) {
   const textW = findWidget(node, "text");
   const idW = findWidget(node, "prompt_id");
   const body = (meta && meta.body) || (textW ? String(textW.value || "") : "");
-  const named = meta && meta.name;
   const linked = idW && String(idW.value || "").trim();
 
+  // The library's derived handle when there is a record to derive one from.
   // "(unsaved)" = no library link at all. "(unsynced)" = the workflow carries
   // an id but this library has no record for it — a workflow from another
   // machine. Both still run: `text` is the source of truth.
-  const name = named || (linked ? "(unsynced)" : "(unsaved)");
+  const label = (meta && meta.label) || (linked ? "(unsynced)" : "(unsaved)");
   const rating = meta ? meta.rating : 0;
   const uses = meta && meta.used ? meta.used : 0;
   const dupes = meta && meta.near_dupes ? meta.near_dupes : 0;
 
   if (face.tier === 2 && face.card) {
     const p = face.card;
-    p.name.textContent = name;
+    p.label.textContent = label;
     p.body.textContent = firstLine(body, 140) || "(empty prompt)";
     p.used.textContent = uses ? `used ${fmtInt(uses)}${MULT}` : "unused";
     paintStars(node, p.starRow, rating);
@@ -236,7 +236,7 @@ export function paintFace(node, meta) {
     p.dupes.hidden = !dupes;
   } else {
     const used = uses ? `  used ${fmtInt(uses)}${MULT}` : "";
-    setWidgetLabel(face.head, truncate(`${name}  ${stars(rating)}${used}`, HEAD_MAX));
+    setWidgetLabel(face.head, truncate(`${label}  ${stars(rating)}${used}`, HEAD_MAX));
     setWidgetLabel(face.body, firstLine(body, BODY_MAX) || "(empty prompt)");
   }
 

@@ -253,9 +253,6 @@ export function mountInspector(el, ctx) {
     els.delBtn.disabled = !hasRec || pane.saving;
     els.saveBtn.disabled = pane.saving;
     els.saveNewBtn.disabled = pane.saving;
-    els.loadBtn.disabled = pane.saving || S().targetOk === false;
-    if (S().targetOk === false) els.loadBtn.setAttribute("title", "no usable Prompt Librarian node selected");
-    else els.loadBtn.setAttribute("title", "Push the text currently in the editor into the target node — unsaved edits included");
     els.diffLink.disabled = !diffOk() || !hasRec;
     els.versLink.disabled = !capOk("versions") || !hasRec;
     els.versV.disabled = !capOk("versions") || !hasRec;
@@ -478,37 +475,6 @@ export function mountInspector(el, ctx) {
   }
 
   /* ------------------------------------------------------------------ *
-   * Load into node.                                                     *
-   * ------------------------------------------------------------------ */
-
-  function loadIntoNode() {
-    // The buffer, not the saved record: pushing a draft to the node without
-    // saving it is an explicitly supported move (the button's title says so).
-    const rec = Object.assign({}, pane.current || {}, getBuffer());
-    let res;
-    try {
-      res = typeof ctx.loadIntoNode === "function" ? ctx.loadIntoNode(rec) : { ok: false, reason: "no_loader" };
-    } catch (err) {
-      toast("could not load into node: " + errMsg(err), "error");
-      return;
-    }
-    if (res && res.ok) {
-      toast(isDirty() ? "loaded into node (unsaved draft)" : "loaded into node", "success");
-      return;
-    }
-    // These codes come from modal/target.js `loadIntoNode` / node/bind.js
-    // `writeNodeText` and are underscored there. They used to be spelt with
-    // hyphens here, which meant every branch fell through to the generic
-    // message.
-    const reason = res && res.reason;
-    if (reason === "stale_target") toast("target node is gone — pick another in the header", "error");
-    else if (reason === "no_text_widget") toast("target node has no text widget", "error");
-    else if (reason === "no_record") toast("nothing to load", "error");
-    else if (reason === "no_loader") toast("the panel is not connected to the graph", "error");
-    else toast("could not load into node" + (reason ? ": " + reason : ""), "error");
-  }
-
-  /* ------------------------------------------------------------------ *
    * Delete.                                                             *
    * ------------------------------------------------------------------ */
 
@@ -595,7 +561,6 @@ export function mountInspector(el, ctx) {
     onStarClick,
     onStarKey,
     rate,
-    loadIntoNode,
     remove,
     setBody,
     focusBody,
@@ -653,7 +618,9 @@ export function mountInspector(el, ctx) {
       ctx.subscribe("currentId", onCurrentIdChanged),
       ctx.subscribe("dupes", () => { if (!pane.disposed) pane.renderDupes(); }),
       ctx.subscribe("caps", () => { if (!pane.disposed) { applyCaps(); renderActions(); } }),
-      ctx.subscribe("targetOk", () => { if (!pane.disposed) renderActions(); }),
+      // No `targetOk` subscription: nothing in this pane's action row depends
+      // on the target node any more. The header chip (modal/target.js) is the
+      // one place that reports a stale target.
     ];
     for (const off of offs) if (typeof off === "function") subs.push(off);
   }

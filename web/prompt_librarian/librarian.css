@@ -1296,7 +1296,8 @@
   background: var(--pl-bg-pane);
 }
 
-/* `Load into node` — solid accent fill, dark ink, weight 600 (spec). */
+/* The pane's committing action (`Save`, versions' `Restore`) — solid accent
+   fill, dark ink, weight 600 (spec). */
 .pl-btn-primary {
   background: var(--pl-accent);
   border-color: var(--pl-accent);

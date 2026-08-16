@@ -169,6 +169,6 @@ export function paintLink() {
     ? "The editor and the node's text mirror each other, and picking a prompt " +
       "loads it straight into the node. Click to work on the library without " +
       "touching the node."
-    : "The editor and the node are independent. Use `Load into node` to push. " +
-      "Click to mirror them again.";
+    : "The editor and the node are independent — browsing, editing and saving " +
+      "library records leaves the node alone. Click to mirror them again.";
 }

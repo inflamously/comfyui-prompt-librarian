@@ -129,24 +129,14 @@ export function buildView(pane) {
     h("div", { className: "pl-stat" }, h("div", { className: "pl-stat-k" }, "RATING"), h("div", { className: "pl-stat-v" }, starsEl))
   );
 
-  const loadBtn = h(
-    "button",
-    {
-      className: "pl-btn pl-btn-primary",
-      type: "button",
-      // Explicit: this pushes what is IN THE BOX, saved or not.
-      title: "Push the text currently in the editor into the target node — unsaved edits included",
-      onclick: () => pane.loadIntoNode(),
-    },
-    "Load into node"
-  );
-  const saveBtn = h("button", { className: "pl-btn", type: "button", onclick: () => pane.save(false) }, "Save");
+  // No `Load into node` button: the box and the node's `text` widget are two
+  // views of one value (modal/binding.js), so every keystroke is already there.
+  const saveBtn = h("button", { className: "pl-btn pl-btn-primary", type: "button", onclick: () => pane.save(false) }, "Save");
   const saveNewBtn = h("button", { className: "pl-btn", type: "button", onclick: () => pane.save(true) }, "Save as new");
   const delBtn = h("button", { className: "pl-btn pl-btn-danger", type: "button", onclick: () => pane.remove() }, "Delete");
   const actionsEl = h(
     "div",
     { className: "pl-actions" },
-    loadBtn,
     saveBtn,
     saveNewBtn,
     h("span", { className: "pl-spacer" }),
@@ -172,7 +162,7 @@ export function buildView(pane) {
     diffLink, wildLink, snipLink, versLink,
     dupesTitle, threshBtn, dupesHead, dupesBody, dupesPanel,
     usedV, lastV, versV, starsEl,
-    loadBtn, saveBtn, saveNewBtn, delBtn,
+    saveBtn, saveNewBtn, delBtn,
   };
 
   /* ------------------------------------------------------------------ *

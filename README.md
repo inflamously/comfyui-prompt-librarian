@@ -42,8 +42,13 @@ the rail loads it straight into the node — body *and* `prompt_id`, which is wh
 counting honest.
 
 The header carries a **⇅ linked** chip. Turn it off to browse, edit and save library records
-without touching the node at all; `Load into node` still pushes on demand. The setting is
-remembered across reloads.
+without touching the node at all. The setting is remembered across reloads.
+
+There is no `Load into node` button in the inspector — the binding *is* the push, so a button that
+re-sent what the node already holds only invited the question of what it did differently. The two
+explicit loads that remain are the ones the binding does not cover: activating a row in the rail
+(Enter / double-click) and `Load into node` in the version history, which sends an old body to the
+node without saving it.
 
 Three rules decide who wins when both sides move at once:
 

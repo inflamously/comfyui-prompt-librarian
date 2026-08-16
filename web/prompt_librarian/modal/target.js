@@ -93,7 +93,7 @@ export function refreshTarget() {
   const span = chip.firstChild;
   if (span) span.textContent = text;
   chip.title = ok
-    ? "Load into node sends the prompt to this node. Click to target a different one."
+    ? "The editor mirrors this node. Click to target a different one."
     : any.length
     ? "The targeted node is gone. Click to pick another; everything else still works."
     : "add a Prompt Librarian node first";

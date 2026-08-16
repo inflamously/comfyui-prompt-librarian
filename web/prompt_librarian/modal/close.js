@@ -1,14 +1,23 @@
 /* ==========================================================================
-   Prompt Librarian — the dirty guard and teardown
+   Prompt Librarian — save-on-close and teardown
    --------------------------------------------------------------------------
    INERT ON IMPORT. Exports only.
+
+   Closing NEVER strands the user. There used to be a `Discard unsaved edits?`
+   bar here that refused to close and made you choose between losing the edit
+   and staying put; every close path hit it, so a dirty buffer meant the modal
+   could not be dismissed at all. Now a dirty buffer is simply saved first.
+
+   The save goes through the ordinary inspector flow (ctx.requestSave), which
+   means the two gates in inspector/save.js still stand: a record changed
+   elsewhere, or a near-duplicate, opens its dialog and the modal STAYS OPEN.
+   Those are the only cases where closing could silently corrupt the library,
+   and they are the only cases that still interrupt.
    ========================================================================== */
 
 import { NS } from "../shared/ns.js";
-import { h } from "../shared/dom.js";
 import { singletonBag } from "../shared/singleton.js";
 import { cancelAllLanes } from "../api/lanes.js";
-import { focusables } from "./keys.js";
 import { popLayer } from "./layers.js";
 import { inst } from "./state.js";
 
@@ -24,68 +33,63 @@ export function isDirty() {
   }
 }
 
-/** Inline `Discard unsaved edits?` bar — never window.confirm(). */
-function showDirtyBar() {
+/**
+ * The close button, disabled while a save-on-close is in flight. The save runs
+ * a staleness GET and a duplicate POST before it can commit, so without this
+ * the button reads as broken for the length of a round trip.
+ */
+function setClosingBusy(on) {
   const it = inst();
-  if (it.dirtyBar) return;
-  const bar = h(
-    "div",
-    {
-      className: "pl-dirty",
-      role: "status",
-      style: {
-        display: "flex",
-        alignItems: "center",
-        gap: "10px",
-        marginLeft: "auto",
-        color: "var(--pl-warn)",
-      },
-    },
-    h("span", null, "Discard unsaved edits?"),
-    h(
-      "button",
-      {
-        className: "pl-btn pl-btn-sm pl-btn-danger",
-        type: "button",
-        onclick: () => {
-          hideDirtyBar();
-          closeModal();
-        },
-      },
-      "Discard"
-    ),
-    h(
-      "button",
-      { className: "pl-btn pl-btn-sm", type: "button", onclick: () => hideDirtyBar() },
-      "Keep editing"
-    )
-  );
-  it.dirtyBar = bar;
-  it.els.foot.appendChild(bar);
-  const btn = focusables(bar)[1];
-  if (btn) {
-    try {
-      btn.focus();
-    } catch (_) {
-      /* ignore */
-    }
+  const btn = it.els && it.els.close;
+  if (!btn) return;
+  try {
+    btn.disabled = !!on;
+  } catch (_) {
+    /* ignore */
   }
 }
 
-export function hideDirtyBar() {
-  const it = inst();
-  if (!it.dirtyBar) return;
-  if (it.dirtyBar.parentNode) it.dirtyBar.parentNode.removeChild(it.dirtyBar);
-  it.dirtyBar = null;
-}
-
+/**
+ * Close, saving first when there is anything to save.
+ *
+ * Returns true only when the modal is already gone. A dirty buffer makes this
+ * ASYNCHRONOUS: it returns false and closes later, once ctx.requestSave() has
+ * reported "saved" or "clean". "blocked" means the save flow put a decision on
+ * screen (remote change / duplicate) and the modal must stay. No current
+ * caller reads the return value.
+ */
 export function attemptClose() {
-  if (isDirty()) {
-    showDirtyBar();
-    return false;
+  const it = inst();
+  if (!isDirty()) {
+    closeModal();
+    return true;
   }
-  closeModal();
-  return true;
+  if (it.closing) return false; // Esc mashing must not stack saves
+
+  const save = it.ctx && it.ctx.requestSave;
+  // Dirty with no save hook should be impossible — inspector/index.js
+  // registers both in one block — but an undismissable modal is worse than a
+  // lost buffer, and the sessionStorage draft still holds the text.
+  if (typeof save !== "function") {
+    closeModal();
+    return true;
+  }
+
+  it.closing = true;
+  setClosingBusy(true);
+  Promise.resolve()
+    .then(() => save(false))
+    .then((status) => {
+      if (status === "saved" || status === "clean") closeModal();
+    })
+    .catch((err) => {
+      console.error(`${NS} save on close failed`, err);
+    })
+    .finally(() => {
+      it.closing = false;
+      setClosingBusy(false);
+    });
+  return false;
 }
 
 /**
@@ -100,7 +104,8 @@ export function closeModal() {
   if (!it || !it.built || !it.open) return;
 
   it.open = false;
-  hideDirtyBar();
+  it.closing = false;
+  setClosingBusy(false);
 
   while (it.layers.length) popLayer(it.layers[it.layers.length - 1]);
 

@@ -90,7 +90,7 @@ export function inst() {
     ctx: null,
     mounted: { list: false, inspector: false },
     backdropDown: false,
-    dirtyBar: null,
+    closing: false, // a save-on-close is in flight; see modal/close.js
     binding: null, // {nodeId, node, unbind} — see modal/binding.js
   }));
 }

@@ -15,6 +15,22 @@
    Steps 2-3 build their dialogs INLINE via the pane's own layer host rather
    than through compare/. The gate is the safety property; it must still work
    on an install where compare/ failed to load.
+
+   SAVE STATUS — what `save()` returns. Ctrl+S ignores it; the close path in
+   modal/close.js needs it, because "I put a dialog on screen" and "I wrote the
+   record" are the same `undefined` otherwise:
+
+     "saved"    committed; the buffer is now clean
+     "clean"    nothing to write — already matches what is stored
+     "blocked"  a decision is on screen (conflict / duplicate) or the body is
+                empty. The modal must stay open.
+     "failed"   the write or its pre-flight errored; a toast says why
+     "busy"     a save is already in flight, or the pane is disposed
+
+   Only "saved" and "clean" mean it is safe to close. The vocabulary is
+   duplicated as a comment in modal/ctx.js and compared there as a plain
+   string — modal/ must not import from inspector/, which is lazily loaded and
+   optional.
    ========================================================================== */
 
 import { LDQUO, MDASH, MIDDOT, RDQUO } from "./constants.js";
@@ -30,14 +46,15 @@ export function createSave(pane) {
     pane.renderActions();
   }
 
+  /** @returns {Promise<"saved"|"clean"|"blocked"|"failed"|"busy">} see the header */
   async function save(asNew) {
-    if (pane.disposed || pane.saving) return;
+    if (pane.disposed || pane.saving) return "busy";
     const isUpdate = !asNew && !!(pane.current && pane.current.id);
 
-    if (isUpdate && !pane.isDirty()) { pane.toast("no changes"); return; }
+    if (isUpdate && !pane.isDirty()) { pane.toast("no changes"); return "clean"; }
     // The body is the only thing a record needs. There is nothing else to
     // ask the user for before saving — the handle is derived from this text.
-    if (!pane.buf.body.trim()) { pane.toast("prompt text is empty", "error"); pane.focusBody(); return; }
+    if (!pane.buf.body.trim()) { pane.toast("prompt text is empty", "error"); pane.focusBody(); return "blocked"; }
 
     setSaving(true);
     try {
@@ -48,12 +65,12 @@ export function createSave(pane) {
           fresh = unwrapRecord(ensureOk(await ctx.API.get(pane.current.id)));
         } catch (err) {
           pane.toast("could not check for remote changes: " + errMsg(err), "error");
-          return;
+          return "failed";
         }
-        if (!fresh || !fresh.id) { pane.toast("this prompt no longer exists", "error"); return; }
+        if (!fresh || !fresh.id) { pane.toast("this prompt no longer exists", "error"); return "failed"; }
         if (pane.baseline && String(fresh.updated || "") !== String(pane.baseline.updated || "")) {
           openConflict(fresh, asNew);
-          return;
+          return "blocked";
         }
       }
 
@@ -82,11 +99,11 @@ export function createSave(pane) {
         pane.toast("duplicate check unavailable — saving without it", "error");
         gate = [];
       }
-      if (pane.disposed) return;
-      if (gate.length) { openResolve(gate, asNew); return; }
+      if (pane.disposed) return "busy";
+      if (gate.length) { openResolve(gate, asNew); return "blocked"; }
 
       // ---- 5. commit ----------------------------------------------------
-      await commit(asNew);
+      return (await commit(asNew)) ? "saved" : "failed";
     } finally {
       setSaving(false);
     }

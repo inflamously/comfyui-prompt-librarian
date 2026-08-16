@@ -5,10 +5,18 @@
 
    Always the SAME object, so a pane can attach hooks to it:
 
-     ctx.isDirty       = () => boolean        (inspector — drives close/discard)
+     ctx.isDirty       = () => boolean        (inspector — drives save-on-close)
+     ctx.requestSave   = (asNew?) => Promise  (inspector — Ctrl+S and close)
      ctx.list          = {refresh, ...}       (browse/ registers itself)
      ctx.inspector     = {select, ...}        (inspector registers itself)
      ctx.onSelectPrompt= (id) => void         (alternative to ctx.inspector)
+
+   `requestSave` resolves to one of "saved" | "clean" | "blocked" | "failed" |
+   "busy" — the vocabulary is defined in inspector/save.js. modal/ compares it
+   as a PLAIN STRING and never imports the constant: inspector/ is lazily
+   loaded by panes.js and may legitimately be absent, which is also why both
+   hooks are duck-typed rather than assumed. Only "saved" and "clean" mean the
+   modal is safe to close; see modal/close.js.
    ========================================================================== */
 
 import * as dom from "../shared/index.js";

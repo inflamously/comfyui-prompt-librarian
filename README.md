@@ -76,6 +76,17 @@ Click **Open Librarian** on the node. The panel is a full-screen overlay:
 
 Search supports operators: `tag:dance`, `-word` to exclude, and `"quoted phrase"`.
 
+**Ctrl+S** (⌘S) saves from anywhere in the panel. ComfyUI never sees the chord — the key isolation
+described under `keys.js` below stops every keystroke inside the overlay before the canvas can act
+on it — and the browser's own *Save Page* dialog is suppressed too.
+
+**Closing saves.** Escape, the `×` and a backdrop click all save first and then close; a panel with
+nothing to write closes straight away. There is no `Discard unsaved edits?` prompt, because being
+unable to dismiss the panel is a worse failure than a save you did not ask for. The two gates in
+*Never a silent overwrite* below still apply: a near-duplicate or a record changed elsewhere opens
+its dialog and the panel stays open, since those are the only cases where closing could quietly
+damage the library. Whatever is in the box also survives in the per-record draft either way.
+
 ### Prompts have no names
 
 You never name a prompt, because a name is not a fact about a prompt — it is a second, hand-typed
@@ -480,7 +491,7 @@ try/catch. `lanes.js` coalesces per concern using both an `AbortController` and 
 type-fast-get-stale-results race). `caps.js` is optimistic-by-default feature detection, `routes.js`
 is one method per route, and `meta.js` batches every node face on the canvas into one `POST /meta`.
 
-**`modal/`** (14 files, 1816 lines) — the shell and the app's spine. `state.js` (the singleton
+**`modal/`** (14 files, 1845 lines) — the shell and the app's spine. `state.js` (the singleton
 instance and the `getState` / `setState` / `subscribe` store), `shell.js` (the header / rail /
 inspector / footer DOM, the target picker, click-outside, the responsive switch), `layers.js`
 (`pushLayer` / `popLayer` / `topLayer`, `toast()` and `confirmDialog()`), `target.js` (resolution BY
@@ -490,15 +501,23 @@ ID on every call — holding a node reference survives the node being deleted �
 a re-pointed or re-created node is picked up without a hook of its own; the seed direction on attach
 is node → panel, deliberately, because the node holds what will actually render), `drafts.js`,
 `data.js` (taxonomy, header, `refreshAll`), `panes.js` (the lazy try/catch mounts of `browse/` and
-`inspector/`, so a broken module degrades to a placeholder rather than an empty modal), `ctx.js` (the
-shared object every pane is handed) and `index.js` (`openModal`, plus the public re-exports).
+`inspector/`, so a broken module degrades to a placeholder rather than an empty modal), `close.js`
+(save-on-close and the teardown of everything that could outlive the modal), `ctx.js` (the shared
+object every pane is handed) and `index.js` (`openModal`, plus the public re-exports).
+
+`close.js` reaches the inspector through two duck-typed hooks on `ctx` — `isDirty()` and
+`requestSave()`, the latter resolving to `saved | clean | blocked | failed | busy`, with only the
+first two clearing the modal to close. They are compared as plain strings because `modal/` must
+never import from `inspector/`, which `panes.js` loads lazily and may legitimately be absent.
 
 `keys.js` is the file to read before touching anything key-related. It installs the **key isolation**
 guard — a window-capture listener that calls `stopImmediatePropagation()` on every key event
 originating inside `.pl-root`, so ComfyUI's global shortcuts (Delete removes the node, Ctrl+Z undoes
 the graph, Space pans the canvas) can't fire while you type — and re-delivers those events on its own
 key bus. That is why a plain `addEventListener("keydown", …)` is dead code everywhere else in the
-panel.
+panel. The guard only ever calls `stopPropagation`, never `preventDefault`, because text entry and
+IME composition are default actions rather than listeners; the two sanctioned exceptions both live in
+`shell.js`, where Escape and Ctrl+S prevent a browser default that is not text entry.
 
 **`browse/`** (8 files, 1249 lines) — the left rail: search box with live hit count, filter chips,
 `dupes only`, sort tabs, the virtualised list and the footer/bulk bar. `paged-source.js` handles
@@ -511,7 +530,7 @@ server-authoritative: there is no local filtering here by design, because the `%
 badges are computed by the backend for the current page and a locally-filtered list would show rows
 whose badges disagree with it.
 
-**`inspector/`** (11 files, 2273 lines) — the right pane: the derived label, tags, the prompt textarea
+**`inspector/`** (11 files, 2259 lines) — the right pane: the derived label, tags, the prompt textarea
 with char/token counts and the `edited` marker, the duplicate-check panel, the four stat tiles and the
 action row. The feature files share one mutable `pane` object rather than a closure, which is what
 lets each of them live in its own file while still reading and writing the same edit buffer; only

@@ -131,7 +131,7 @@ export function buildView(pane) {
 
   // No `Load into node` button: the box and the node's `text` widget are two
   // views of one value (modal/binding.js), so every keystroke is already there.
-  const saveBtn = h("button", { className: "pl-btn pl-btn-primary", type: "button", onclick: () => pane.save(false) }, "Save");
+  const saveBtn = h("button", { className: "pl-btn pl-btn-primary", type: "button", title: "Save (Ctrl+S)", onclick: () => pane.save(false) }, "Save");
   const saveNewBtn = h("button", { className: "pl-btn", type: "button", onclick: () => pane.save(true) }, "Save as new");
   const delBtn = h("button", { className: "pl-btn pl-btn-danger", type: "button", onclick: () => pane.remove() }, "Delete");
   const actionsEl = h(

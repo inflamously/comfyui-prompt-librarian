@@ -381,6 +381,18 @@
   color: var(--pl-text);
 }
 
+/* close.js disables this for the length of a save-on-close round trip. Same
+   0.45 as .pl-btn[disabled], so "working, wait" reads the same everywhere. */
+.pl-close[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pl-close[disabled]:hover {
+  background: var(--pl-bg-pane);
+  color: var(--pl-text-dim);
+}
+
 /* --------------------------------------------------------------------------
    Body grid — rail | inspector
    -------------------------------------------------------------------------- */
@@ -1834,17 +1846,6 @@
  * visual treatment only -- inline styles still win for the properties
  * they set, which keeps the fallbacks working if a rule is ever removed.
  * ------------------------------------------------------------------ */
-
-/* modal.js -- the "Discard unsaved edits?" bar shown when a click lands
-   on the backdrop while the inspector buffer is dirty. */
-.pl-root .pl-dirty {
-  padding: 6px 10px;
-  border: 1px solid var(--pl-warn-border);
-  border-radius: var(--pl-radius-sm);
-  background: var(--pl-warn-bg);
-  color: var(--pl-warn);
-  font-size: 12px;
-}
 
 /* dialogs.js -- one chunk per diff opcode, emitted into BOTH columns so
    the two sides stay row-aligned. The rAF pass writes min-height inline;

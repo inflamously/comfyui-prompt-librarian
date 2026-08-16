@@ -10,6 +10,7 @@
    ========================================================================== */
 
 import { h } from "../shared/dom.js";
+import { NS } from "../shared/ns.js";
 import { warnOnce } from "../shared/singleton.js";
 import { ARROW, CARET, LINKED, TIMES } from "./glyphs.js";
 import { attemptClose } from "./close.js";
@@ -87,6 +88,20 @@ export function buildShell() {
 
   const sub = h("div", { className: "pl-sub" }, "");
 
+  // Held in `els` so close.js can disable it for the length of a
+  // save-on-close round trip.
+  const closeBtn = h(
+    "button",
+    {
+      className: "pl-close",
+      type: "button",
+      "aria-label": "Close",
+      title: "Close (Esc) — unsaved edits are saved first",
+      onclick: () => attemptClose(),
+    },
+    TIMES
+  );
+
   const head = h(
     "div",
     { className: "pl-head" },
@@ -96,17 +111,7 @@ export function buildShell() {
     h("div", { className: "pl-spacer" }),
     link,
     target,
-    h(
-      "button",
-      {
-        className: "pl-close",
-        type: "button",
-        "aria-label": "Close",
-        title: "Close (Esc)",
-        onclick: () => attemptClose(),
-      },
-      TIMES
-    ),
+    closeBtn,
     seg
   );
 
@@ -140,7 +145,7 @@ export function buildShell() {
     toasts
   );
 
-  Object.assign(els, { backdrop, card, head, sub, link, target, seg, body, rail, inspect, foot, layers, toasts });
+  Object.assign(els, { backdrop, card, head, sub, link, target, close: closeBtn, seg, body, rail, inspect, foot, layers, toasts });
   it.root = root;
   it.built = true;
 
@@ -209,15 +214,41 @@ export function wireShell() {
   const it = inst();
   const root = it.root;
 
-  // ---- Escape + Tab, through the key bus (see modal/keys.js) -------------
+  // ---- Escape + Ctrl/Cmd+S + Tab, through the key bus (see modal/keys.js) --
   onKey(root, "keydown", (e) => {
     if (e.key === "Escape" || e.key === "Esc") {
-      // Escape is the ONE key we are allowed to preventDefault.
+      // Escape is one of only two keys we are allowed to preventDefault.
       e.preventDefault();
       if (it.layers.length) popLayer();
       else attemptClose();
       return;
     }
+
+    // Ctrl/Cmd+S — the other one. ComfyUI never sees this key at all: the
+    // window-capture guard in modal/keys.js already called
+    // stopImmediatePropagation() before we were handed the event. The
+    // preventDefault here is purely to stop the BROWSER's "Save Page" dialog,
+    // which is a default action but not a TEXT-ENTRY default action — the
+    // distinction keys.js draws when it forbids preventDefault on the guard.
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && String(e.key).toLowerCase() === "s") {
+      e.preventDefault();
+      if (e.repeat) return; // a held chord must not queue saves
+      // A layer owns whatever decision is on screen: the merge editor binds
+      // its own Ctrl+S (compare/merge-editor.js), and the conflict / duplicate
+      // dialogs must not be saved out from under the user.
+      if (it.layers.length) return;
+      const save = it.ctx && it.ctx.requestSave;
+      if (typeof save !== "function") return; // inspector not mounted
+      // Narrow mode hides the inspector behind the Edit tab. Bring it forward
+      // so the toast — and focusBody() on an empty prompt — land where they
+      // can be seen.
+      if (root.dataset.w === "narrow") setPane("edit");
+      Promise.resolve()
+        .then(() => save(false))
+        .catch((err) => console.error(`${NS} Ctrl+S save failed`, err));
+      return;
+    }
+
     if (e.key === "Tab") handleTab(e);
   });
 

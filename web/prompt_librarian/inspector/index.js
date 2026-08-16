@@ -634,8 +634,21 @@ export function mountInspector(el, ctx) {
    * wires the list's row activation and the close-guard to this pane.    *
    * Purely additive, and undone on unmount.                              *
    * ------------------------------------------------------------------ */
-  const registered = { inspector: false, isDirty: false, debounces: false };
-  const publicApi = { unmount, selectPrompt, isDirty, getBuffer, setBody, focusBody };
+  const registered = { inspector: false, isDirty: false, requestSave: false, debounces: false };
+  /**
+   * Always a promise, never a throw: the modal's Ctrl+S and close paths await
+   * this and must not have to defend against a synchronous exception.
+   * Resolves to the save-status vocabulary documented in inspector/save.js.
+   */
+  function requestSave(asNew) {
+    return Promise.resolve()
+      .then(() => pane.save(!!asNew))
+      .catch((err) => {
+        console.error("[prompt-librarian] save threw", err);
+        return "failed";
+      });
+  }
+  const publicApi = { unmount, selectPrompt, isDirty, requestSave, getBuffer, setBody, focusBody };
   try {
     if (ctx && typeof ctx === "object") {
       ctx.inspector = Object.assign({ select: (id) => selectPrompt(id) }, publicApi);
@@ -643,6 +656,12 @@ export function mountInspector(el, ctx) {
       if (typeof ctx.isDirty !== "function") {
         ctx.isDirty = isDirty;
         registered.isDirty = true;
+      }
+      // Paired with ctx.isDirty on purpose: close.js only reaches for this
+      // hook once isDirty() has already said there is something to save.
+      if (typeof ctx.requestSave !== "function") {
+        ctx.requestSave = requestSave;
+        registered.requestSave = true;
       }
       if (Array.isArray(ctx.debounces)) {
         ctx.debounces.push(scheduleDupes, scheduleDraft);
@@ -684,6 +703,7 @@ export function mountInspector(el, ctx) {
     try {
       if (registered.inspector && ctx.inspector && ctx.inspector.unmount === unmount) ctx.inspector = null;
       if (registered.isDirty && ctx.isDirty === isDirty) ctx.isDirty = null;
+      if (registered.requestSave && ctx.requestSave === requestSave) ctx.requestSave = null;
       if (registered.debounces && Array.isArray(ctx.debounces)) {
         for (const d of [scheduleDupes, scheduleDraft]) {
           const i = ctx.debounces.indexOf(d);

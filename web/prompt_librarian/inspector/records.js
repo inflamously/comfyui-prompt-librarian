@@ -100,7 +100,12 @@ export function bufferFrom(rec) {
 export function sig(o) {
   if (!o) o = {};
   const tags = Array.isArray(o.tags) ? o.tags.map(String).slice().sort() : [];
-  return JSON.stringify([tags.join(""), String(o.body || "")]);
+  // The tag ARRAY is stringified, not `tags.join("")`. Joining loses the
+  // boundaries, so ["cat","dog"] and ["catdog"] produced the same signature —
+  // isDirty() returned false, save() reported "clean", and save-on-close threw
+  // the retag away. No separator is safe either: clean_tag() only collapses
+  // whitespace to "-", so a tag may contain any other character.
+  return JSON.stringify([tags, String(o.body || "")]);
 }
 
 /** Accepts a raw body string or the modal's JSON buffer; returns a body. */

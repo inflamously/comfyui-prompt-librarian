@@ -1,0 +1,203 @@
+/* ==========================================================================
+   Harness chrome only. Nothing here styles the pack — librarian.css is fully
+   self-scoped, so the panel renders exactly as it does in ComfyUI and any
+   difference you see is a real difference.
+   ========================================================================== */
+
+:root {
+  --bg: #1b1c1f;
+  --bg2: #232428;
+  --line: #34363c;
+  --fg: #d7d9de;
+  --dim: #8b8f98;
+  --ok: #7fc48b;
+  --warn: #e0b464;
+  --err: #e08585;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.5 ui-sans-serif, system-ui, sans-serif;
+}
+
+/* -- top bar -------------------------------------------------------------- */
+
+#dev-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line);
+}
+
+#dev-bar label {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+#dev-bar select,
+#dev-bar button {
+  background: #2c2e33;
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+#dev-bar button:hover { border-color: #4a4d55; }
+
+.dev-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--line);
+}
+
+.dev-pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #2c2e33;
+  color: var(--dim);
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  max-width: 40ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -- fake canvas ---------------------------------------------------------- */
+
+main { overflow: auto; padding: 16px; }
+
+#dev-canvas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.dev-node {
+  width: 340px;
+  background: #2a2c31;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.dev-node-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--dim);
+  margin-bottom: 6px;
+}
+
+.dev-widget {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  padding: 2px 0;
+  color: var(--dim);
+}
+
+.dev-widget textarea {
+  flex: 1;
+  min-height: 48px;
+  background: #1e1f23;
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: inherit;
+  resize: vertical;
+}
+
+.dev-widget button,
+.dev-node-del {
+  background: #34363c;
+  color: var(--fg);
+  border: 1px solid #44464d;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  width: 100%;
+}
+
+.dev-node-del { margin-top: 8px; color: var(--dim); }
+
+/* -- docked panels -------------------------------------------------------- */
+
+#dev-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  height: 220px;
+  background: var(--line);
+  border-top: 1px solid var(--line);
+}
+
+.dev-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg2);
+}
+
+.dev-panel h2 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0;
+  padding: 4px 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  border-bottom: 1px solid var(--line);
+}
+
+.dev-clear {
+  background: none;
+  border: 0;
+  color: var(--dim);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  text-transform: none;
+}
+
+.dev-panel ol {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 4px 10px;
+  list-style: none;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.dev-panel li { padding: 1px 0; color: var(--dim); }
+.dev-panel li.ok { color: var(--ok); }
+.dev-panel li.warn { color: var(--warn); }
+.dev-panel li.err { color: var(--err); }

@@ -22,6 +22,9 @@ dev = [
     # Only `scripts/openapi.py` and `tests/test_openapi.py` import it; the pack
     # itself must keep running without it, which is why it is not a dependency.
     "pydantic>=2.0",
+    # ComfyUI supplies aiohttp at runtime, so it stays out of `dependencies` —
+    # but `scripts/devserver.py` and `tests/test_api.py` need it outside ComfyUI.
+    "aiohttp>=3.9",
 ]
 
 # ComfyUI Registry metadata (https://docs.comfy.org/registry/overview).
@@ -103,6 +106,9 @@ known-third-party = ["folder_paths", "server", "comfy", "nodes"]
 # Absolute imports are not an option: ComfyUI loads the pack by file location,
 # so `prompt_librarian` is not importable by name at runtime.
 "prompt_librarian/api/**/*.py" = ["ARG001", "TID252"]
+# Same rule for the dev server's aiohttp handlers, plus its seed word lists,
+# which are prose kept readable as one split string rather than a list literal.
+"scripts/devserver.py" = ["ARG001", "SIM905"]
 # Registration only; the import order in the pack root is load-bearing. (The
 # domain `__init__.py` facades need none of this — their re-exports are covered
 # by `__all__` — but ruff matches this pattern on the basename alone.)

@@ -1,7 +1,16 @@
 .idea
 .pytest_cache
+.ruff_cache
+.import_linter_cache
 __pycache__
 **/*.pyc
 
 # Generated on demand by scripts/openapi.py; the route table is the source.
 /openapi.json
+
+# JS test tooling. `jsdom` is the only dependency and it is dev-only — nothing
+# under web/ imports it, and ComfyUI never sees it.
+/node_modules/
+
+# Scratch libraries written by scripts/devserver.py. Never the real one.
+/.devserver/

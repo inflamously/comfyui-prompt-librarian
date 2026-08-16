@@ -593,6 +593,76 @@ reach in.
 | `test_api.py` | 68 | Drives handlers directly with a stub request (`.rel_url.query` + async `.json()`), so no server is stood up; skips wholesale if aiohttp is absent. Route table, error-code mapping, `rev` propagation. |
 | `test_openapi.py` | 17 | Drift guards on the generated spec: every route typed, every response inheriting the `rev` envelope, every operation id unique, every `$ref` resolvable, and `Capabilities` / `Prompt` / `Settings` / the error codes still matching the live tables. Needs no aiohttp; skips wholesale without pydantic. |
 | `test_node.py` | 30 | The load-bearing node properties: `INPUT_TYPES` is pure (no disk, no combos), `run()` never fails a render, `IS_CHANGED` responds to the right inputs, and usage counts only a run of the *saved* body. |
+| `test_route_contract.py` | 34 | The one test that spans both languages. Runs `tests-js/tools/dump-routes.mjs`, which invokes all 30 `API` methods against a recording transport, and asserts the resulting `(method, path)` set equals the Python `_ROUTES` table in **both** directions. Extraction is by execution, not regex, and reads neither `openapi.json` nor pydantic. Skips with a reason when `node` is absent. |
+
+### JS tests — `tests-js/`
+
+`node --test` (Node 22's built-in runner) with `jsdom` as the only dependency. No build step, no
+config file. **`npm install` on a filesystem without symlinks — a Windows drive, a `fuseblk` mount —
+needs `npm install --no-bin-links`**; nothing here runs a package binary, so the shims are not missed.
+
+The whole tree is exercised through a **mirrored mount**: `web/` is copied into a temp directory laid
+out exactly as ComfyUI serves it (`/extensions/<pack>/…` beside a stub `/scripts/`), and
+`harness/mount.js`'s `imp()` is the only way a test reaches production code. Importing `web/` in place
+would resolve the four hardcoded `../../../scripts/app.js` walks against the repo and never notice a
+layout change. (Copied, not symlinked: Node resolves ESM against a module's *real* path, so a symlink
+defeats the whole point.)
+
+| File | Tests | Covers |
+|---|---|---|
+| `structure.test.js` | 8 | Tier 0, no jsdom. Every module imports through the mirror; the four `../` depths land on the stubs; only the declared files touch ComfyUI and the two domains stay independent; **`INERT ON IMPORT` as a runtime assertion** — imported with no `document`/`window` at all, the singleton bag must hold exactly `lanes` and `caps`; `api.fetchApi` is the only network call site. |
+| `devharness.test.js` | 8 | The dev playground's own source, which nothing else would notice a typo in until the page was opened. |
+| `unit/records.test.js` | 32 | `inspector/records.js` — zero imports, and `sig()` is the dirty comparison the whole close flow rests on. |
+| `unit/text-format.test.js` | 44 | Grapheme safety (both the `Intl.Segmenter` and `Array.from` branches), label derivation, `relTime` with `now` injected, `escapeQuery` round-tripping. |
+| `unit/tokenize-timing.test.js` | 22 | The wildcard grammar against its Python counterpart, including the two deliberate divergences; `debounce`/`rafThrottle` including `cancel()`, which `closeModal()` relies on. |
+| `dom/close-save.test.js` | 18 | **Save-on-close.** The five-status matrix (`saved`/`clean` close; `blocked`/`failed`/`busy` stay open), the `it.closing` re-entry latch against Esc-mashing, the close button disabled for the round trip, all three close routes, the drag-to-backdrop that must *not* close, and full teardown. |
+| `dom/shortcuts.test.js` | 9 | Ctrl/Cmd+S: fires once, `e.repeat` guarded, skipped while a layer is open, narrow mode brings the editor forward, `preventDefault` for the chord but never for a plain letter. |
+| `dom/key-isolation.test.js` | 9 | The pack's stated top hazard, against a simulated ComfyUI that registers document-capture listeners first: nothing inside `.pl-root` escapes, everything outside still works, typing is never `preventDefault`-ed, and closing removes **both** layers. |
+
+Writing these turned up one live bug, since fixed: `sig()` joined the tags with `""`, so
+`["cat","dog"]` and `["catdog"]` produced the same signature — `isDirty()` reported false, `save()`
+returned `"clean"`, and save-on-close discarded the retag without a word. It now stringifies the
+sorted tag array, which no separator could have made safe (`clean_tag()` only collapses whitespace).
+
+What jsdom **cannot** check, and where no test should pretend to: it has no layout engine, so every
+`getBoundingClientRect` is zero. `pickers/mirror.js` caret measurement, popover positioning and
+`browse/virtual-list.js` scroll maths are therefore untested on purpose — an assertion there would
+pass forever, including after the code broke. The same goes for CSS: jsdom does not cascade, so the
+one style invariant worth pinning (`.pl-dirty` is gone) is a grep in tier 0, not a DOM assertion.
+
+### The dev playground — `scripts/devserver.py`
+
+```
+python scripts/devserver.py --seed 2000     # then open http://localhost:8189
+python scripts/devserver.py --check         # assert everything and exit; CI-able
+```
+
+Run it with **the Python you start ComfyUI with** — it needs `aiohttp`, which ComfyUI provides and
+which is deliberately not a runtime dependency of this pack. A bare system Python usually lacks it;
+the script says so up front and names the interpreter it was run with. `pip install aiohttp` in that
+interpreter works too.
+
+Mounts the real 29 routes against a real `LibrarianStore`, serves the real `web/` tree at ComfyUI's
+URL layout, and supplies stub `/scripts/{app,api}.js` from `devharness/`. Edit a file under `web/` and
+refresh; with `--reload` the page reloads itself and a `.py` change re-execs the server in ~300 ms.
+ComfyUI is never started.
+
+The API is mounted under `/api` **only**, never also at root — `request.js` exists because a bare
+`fetch("/prompt_librarian/…")` works on a default install and 404s behind a proxy, and answering both
+prefixes would hide exactly that bug. `--api-prefix ""` simulates the other install.
+
+`devharness/` is checked in rather than generated, because the fake node is not boilerplate: it is
+where the widget shapes `node/bind.js` defends against are written down, and the UI can switch
+between them (`legacy` / `domwidget` / `opaque`), make `addDOMWidget` absent, throw, or accept and
+never mount, delay the widgets to reproduce the `nodeCreated`-before-widgets quirk, and select which
+of the four graph probes `modal/target.js` will find. Those defences are otherwise unreachable.
+
+**It cannot touch a real library.** Four independent layers have to fail first: the explicit
+`LibrarianStore(path=…)` override, a stub `folder_paths` injected before the pack imports, a pinned
+`_FALLBACK_USER_DIR`, and a refuse-to-start guard that rejects anything shaped like a real library,
+anything outside `.devserver/`, and any pre-existing file the server did not create. The store is then
+repointed **by object identity** across every module attribute — `wildcards.py` binds it as `_STORE`,
+which a name-based sweep misses — and an incomplete swap is fatal rather than silent.
 
 ### The old node — untouched
 
@@ -620,11 +690,21 @@ accept the call and silently drop it. `Open Librarian` exists either way.
 ## Tests
 
 ```
-python3 -m pytest tests/ -q      # 338 tests, no ComfyUI required
+python3 -m pytest tests/ -q      # 372 tests, no ComfyUI required   (Windows: python / py)
+npm install --no-bin-links       # jsdom, once (drop the flag if symlinks work)
+npm test                         # 151 JS tests, no ComfyUI and no browser
 ruff check .                     # style, imports, complexity
 lint-imports                     # the layer + independence contracts
 python3 scripts/openapi.py       # the route table, as a listing or a spec
+
+python3 scripts/devserver.py --seed 2000   # the whole UI at localhost:8189
 ```
+
+On Windows the interpreter is `python` (or `py`), not `python3` — and for `devserver.py` it must be
+the one ComfyUI runs on, see below.
+
+Both suites run in about a second and neither needs ComfyUI. `npm test` skips nothing; the pytest
+route-contract test skips with a reason if `node` is not installed.
 
 `tests/conftest.py` stubs `folder_paths` at a temp directory, so the suite never touches a real user
 directory. `lint-imports` reads its contracts from `pyproject.toml` and analyses the two domain

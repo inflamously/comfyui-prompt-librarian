@@ -1,0 +1,87 @@
+<!doctype html>
+<!--
+  The dev page. Stands in for ComfyUI's canvas so the Prompt Librarian can be
+  driven without starting ComfyUI at all.
+
+  librarian.css is fully self-scoped (.pl-root / .pl-node-card define their own
+  --pl-* variables and reference no --comfy-* ones), so a dark background is all
+  the theming this page needs and the panel renders as it does in production.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prompt Librarian — dev harness</title>
+    <link rel="stylesheet" href="/__dev/harness/harness.css" />
+    <!-- __DEV_CONFIG__ : templated by scripts/devserver.py -->
+  </head>
+  <body>
+    <header id="dev-bar">
+      <strong>Prompt Librarian</strong>
+      <span class="dev-pill" id="dev-lib" title="the scratch library this server is writing to"></span>
+      <span class="dev-pill" id="dev-count"></span>
+
+      <span class="dev-sep"></span>
+
+      <label>widget
+        <select id="dev-flavour" title="which multiline-widget shape the fake host presents">
+          <option value="legacy">legacy (value over inputEl)</option>
+          <option value="domwidget">domwidget (element wrapper)</option>
+          <option value="opaque">opaque (no element, frozen value)</option>
+        </select>
+      </label>
+
+      <label>addDOMWidget
+        <select id="dev-domwidget" title="how the fake host responds to addDOMWidget">
+          <option value="ok">works</option>
+          <option value="ghost">accepts, never mounts</option>
+          <option value="throws">throws</option>
+          <option value="absent">absent</option>
+        </select>
+      </label>
+
+      <label>graph
+        <select id="dev-graph" title="which graph probe modal/target.js will find">
+          <option value="all">all probes</option>
+          <option value="_nodes">_nodes only</option>
+          <option value="nodes">nodes only</option>
+          <option value="findNodesByType">findNodesByType only</option>
+          <option value="getNodeById">getNodeById only</option>
+        </select>
+      </label>
+
+      <label>late widgets
+        <select id="dev-late" title="delay before the node's widgets exist">
+          <option value="0">none</option>
+          <option value="100">100 ms</option>
+          <option value="800">800 ms</option>
+          <option value="-1">never</option>
+        </select>
+      </label>
+
+      <span class="dev-sep"></span>
+
+      <button id="dev-add">+ node</button>
+      <button id="dev-reset" title="wipe and reseed the scratch library">reset data</button>
+      <button id="dev-hostile" title="simulate ComfyUI's own document-level hotkeys">hostile keys: off</button>
+      <button id="dev-double" title="re-import the entry under a second ?v= — the singleton hazard">double-load</button>
+    </header>
+
+    <main>
+      <section id="dev-canvas" aria-label="fake canvas"></section>
+    </main>
+
+    <footer id="dev-panels">
+      <section class="dev-panel">
+        <h2>console <button class="dev-clear" data-clear="dev-log">clear</button></h2>
+        <ol id="dev-log"></ol>
+      </section>
+      <section class="dev-panel">
+        <h2>network <button class="dev-clear" data-clear="dev-net">clear</button></h2>
+        <ol id="dev-net"></ol>
+      </section>
+    </footer>
+
+    <script type="module" src="/__dev/harness/ui.js"></script>
+  </body>
+</html>

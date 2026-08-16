@@ -1,0 +1,16 @@
+{
+  "name": "comfyui-prompt-library",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Dev-only tooling for the pack's frontend. ComfyUI never reads this file; nothing under web/ depends on it, and there is no build step.",
+  "scripts": {
+    "test": "node --test \"tests-js/**/*.test.js\"",
+    "test:watch": "node --test --watch \"tests-js/**/*.test.js\"",
+    "routes": "node tests-js/tools/dump-routes.mjs",
+    "dev": "python scripts/devserver.py"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0"
+  }
+}

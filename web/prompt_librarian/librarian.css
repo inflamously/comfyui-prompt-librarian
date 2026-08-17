@@ -697,18 +697,8 @@
   margin: calc((var(--pl-row-name-lh) - var(--pl-check-size)) / 2) 0 0;
   accent-color: var(--pl-accent);
   cursor: pointer;
-  /* Hidden until bulk mode / row hover; markup keeps it in the DOM so the
-     grid columns never reflow when it appears. */
-  opacity: 0;
-  transition: opacity var(--pl-fast) ease;
-  margin-top: 1px;
-}
-
-.pl-row:hover .pl-row-check,
-.pl-row-check:checked,
-.pl-row-check:focus-visible,
-.pl-list.is-bulk .pl-row-check {
   opacity: 1;
+  margin-top: 1px;
 }
 
 .pl-row-name {

@@ -493,7 +493,8 @@ export function openVersions(ctx, opts = {}) {
       toast(ctx, res.reason === "stale_target" ? "that node is gone — pick another" : "could not load into the node", "error");
       return;
     }
-    toast(ctx, "sent to the node (not saved)", "success");
+    if (res && res.unchanged) toast(ctx, "the node already holds this text", "info");
+    else toast(ctx, "sent to the node (not saved)", "success");
   }
 
   async function doCopy(item) {

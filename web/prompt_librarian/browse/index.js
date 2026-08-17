@@ -348,7 +348,8 @@ export function mountList(el, ctx) {
       if (!record || record.body == null) throw new ctx.ApiError(0, null, "bad_record");
       const res = ctx.loadIntoNode(record);
       const label = labelOf({ label: (full && full.label) || rec.label, body: record.body });
-      if (res.ok) ctx.toast(`loaded "${label || "prompt"}" into the node`, { kind: "success" });
+      if (res.ok && res.unchanged) ctx.toast(`"${label || "prompt"}" is already loaded`, { kind: "info" });
+      else if (res.ok) ctx.toast(`loaded "${label || "prompt"}" into the node`, { kind: "success" });
       else if (res.reason === "stale_target") ctx.toast("that node is gone — pick another target", { kind: "error" });
       else ctx.toast("could not load into the node", { kind: "error" });
     } catch (err) {

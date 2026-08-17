@@ -7,7 +7,7 @@
 import { cls } from "../shared/dom.js";
 import { API } from "../api/routes.js";
 import { invalidateMeta } from "../api/meta.js";
-import { writeNodeText } from "../node/bind.js";
+import { readNodeText, writeNodeText } from "../node/bind.js";
 import { ARROW, CARET } from "./glyphs.js";
 import { hostApp } from "./host.js";
 import { inst, setState } from "./state.js";
@@ -111,8 +111,16 @@ export function refreshTarget() {
  * What stays here is everything that is specific to *loading a record*: target
  * resolution, selecting the node on the canvas, and the usage ping.
  *
+ * IDEMPOTENT. If the node already holds exactly this body under exactly this
+ * id, nothing is written and — crucially — no usage ping is sent. Re-activating
+ * the row that is already loaded is a no-op the user cannot tell apart from a
+ * load, so counting it would inflate the usage stats with clicks that changed
+ * nothing. The comparison reads the node itself rather than a remembered
+ * "last loaded" value, because the user can edit the textarea on the canvas
+ * afterwards — and then re-loading the record IS a real load.
+ *
  * @param {object} record needs at least {body}; {id} enables usage tracking
- * @returns {{ok: boolean, reason?: string}}
+ * @returns {{ok: boolean, reason?: string, unchanged?: boolean}}
  */
 export function loadIntoNode(record) {
   if (!record) return { ok: false, reason: "no_record" };
@@ -124,6 +132,11 @@ export function loadIntoNode(record) {
 
   const body = record.body == null ? "" : String(record.body);
   const id = record.id == null ? "" : String(record.id);
+
+  const cur = readNodeText(node);
+  if (cur && cur.body === body && String(cur.id || "") === id) {
+    return { ok: true, unchanged: true };
+  }
 
   const res = writeNodeText(node, { body, id }, { canvas: hostApp() && hostApp().canvas });
   if (!res.ok) return res;

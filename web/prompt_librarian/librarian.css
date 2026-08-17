@@ -109,6 +109,7 @@
   text-align: left;
   color: var(--pl-text);
   -webkit-font-smoothing: antialiased;
+  user-select: none;
 }
 
 .pl-root *,
@@ -130,6 +131,13 @@
   color: inherit;
   letter-spacing: inherit;
   margin: 0;
+}
+
+/* The chrome (labels, nav, buttons) is select:none above; editable/readable
+   text content needs it back so prompts and typed text stay selectable. */
+.pl-root input,
+.pl-root textarea {
+  user-select: text;
 }
 
 .pl-root button,

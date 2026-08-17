@@ -38,7 +38,7 @@ function recorder(status = "saved") {
 }
 
 describe("Ctrl+S", () => {
-  test("Ctrl+S and Cmd+S both request a save, as an update", async () => {
+  test("Ctrl+S and Cmd+S both request a save, as a create", async () => {
     for (const meta of [false, true]) {
       env.reset();
       const { ctx, calls } = recorder();
@@ -47,7 +47,7 @@ describe("Ctrl+S", () => {
       s.save({ meta });
       await flush();
 
-      assert.deepEqual(calls, [false], meta ? "Cmd+S" : "Ctrl+S");
+      assert.deepEqual(calls, [true], meta ? "Cmd+S" : "Ctrl+S");
       assert.equal(s.it.open, true, "saving must not close the modal");
       env.assertNoErrors();
     }
@@ -62,7 +62,7 @@ describe("Ctrl+S", () => {
     s.save({ repeat: true });
     await flush();
 
-    assert.deepEqual(calls, [false], "e.repeat must be ignored");
+    assert.deepEqual(calls, [true], "e.repeat must be ignored");
     env.assertNoErrors();
   });
 
@@ -94,7 +94,7 @@ describe("Ctrl+S", () => {
     s.layers.popLayer();
     s.save();
     await flush();
-    assert.deepEqual(calls, [false], "and it works again once the layer closes");
+    assert.deepEqual(calls, [true], "and it works again once the layer closes");
     env.assertNoErrors();
   });
 

@@ -73,7 +73,7 @@ describe("attemptClose", () => {
       assert.equal(s.attemptClose(), false, "a dirty close is asynchronous");
       await flush();
 
-      assert.deepEqual(calls, [false], "saves as an update, never as new");
+      assert.deepEqual(calls, [true], "saves as new, never as a silent overwrite");
       assert.equal(s.it.open, false, `"${status}" must close`);
       assert.equal(s.it.closing, false, "the re-entry latch is released");
       env.assertNoErrors();
@@ -88,7 +88,7 @@ describe("attemptClose", () => {
       s.attemptClose();
       await flush();
 
-      assert.deepEqual(calls, [false]);
+      assert.deepEqual(calls, [true]);
       assert.equal(s.it.open, true, `"${status}" must NOT close the modal`);
       assert.equal(s.root.hidden, false);
       assert.equal(s.it.closing, false, "the latch is released so a retry is possible");
@@ -171,7 +171,7 @@ describe("attemptClose", () => {
     ];
     await flush();
 
-    assert.deepEqual(calls, [false], "exactly one save in flight");
+    assert.deepEqual(calls, [true], "exactly one save in flight");
     assert.deepEqual(results, [false, false, false, false, false]);
     assert.equal(s.it.closing, true, "still latched while the save is in flight");
 
@@ -215,7 +215,7 @@ describe("every close route goes through attemptClose", () => {
       else s.backdropClick();
 
       await flush();
-      assert.deepEqual(calls, [false], `${route} did not route through the save`);
+      assert.deepEqual(calls, [true], `${route} did not route through the save`);
       assert.equal(s.it.open, false, `${route} did not close`);
       env.assertNoErrors();
     }

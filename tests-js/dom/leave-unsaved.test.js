@@ -159,25 +159,27 @@ describe("the unsaved-changes gate", () => {
 
     await h.pane.selectPrompt("b");
 
-    assert.equal(h.calls.update.length, 1, "the edit was committed as an update");
-    assert.equal(h.calls.update[0].body, "an edited body");
-    assert.equal(h.calls.create.length, 0, "an existing record updates, never saves-as-new");
+    // Leaving an edit behind is where an accidental overwrite hurts most, so
+    // the gate's "Save as new" mints a record and leaves `a` as it was.
+    assert.equal(h.calls.create.length, 1, "the edit was committed as a new record");
+    assert.equal(h.calls.create[0].body, "an edited body");
+    assert.equal(h.calls.update.length, 0, "the record in the editor is never overwritten here");
     assert.equal(h.pane.getBuffer().body, "second");
   });
 
   test("a blocked save keeps the user on the record", async () => {
     const a = record("a", "first");
     const b = record("b", "second");
-    // The record moved under the editor, so the save stops at the staleness
-    // check and puts its own conflict dialog on screen: "blocked".
+    // The buffer was emptied, so the save refuses and puts the cursor back in
+    // the box: "blocked". (Near duplicates no longer block — they light up the
+    // panel below the editor instead.)
     const h = await mount({ answer: "save", records: { a, b } });
-    await editing(h, a);
-    h.store.a = { ...a, updated: "T9", body: "someone else's edit" };
+    await editing(h, a, "   ");
 
     await h.pane.selectPrompt("b");
 
-    assert.equal(h.calls.update.length, 0, "a stale record is never overwritten");
-    assert.equal(h.pane.getBuffer().body, "an edited body", "the conflict dialog keeps its record");
+    assert.equal(h.calls.create.length, 0, "an empty prompt is never written");
+    assert.equal(h.pane.getBuffer().body, "   ", "and the user is left where they were");
     const restored = h.calls.state.filter((p) => "currentId" in p).pop();
     assert.deepEqual(restored, { currentId: "a" });
   });
@@ -188,7 +190,7 @@ describe("the unsaved-changes gate", () => {
     const h = await mount({
       answer: "save",
       records: { a, b },
-      api: { update: async () => { throw new Error("server said no"); } },
+      api: { create: async () => { throw new Error("server said no"); } },
     });
     await editing(h, a);
 

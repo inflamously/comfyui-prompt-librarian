@@ -244,7 +244,9 @@ export function wireShell() {
       // can be seen.
       if (root.dataset.w === "narrow") setPane("edit");
       Promise.resolve()
-        .then(() => save(false))
+        // `true` = save as new. Ctrl+S never overwrites the record in the
+        // editor; that is the inspector's `Update` button.
+        .then(() => save(true))
         .catch((err) => console.error(`${NS} Ctrl+S save failed`, err));
       return;
     }

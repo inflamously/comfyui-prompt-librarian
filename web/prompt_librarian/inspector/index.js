@@ -275,7 +275,9 @@ export function mountInspector(el, ctx) {
   function renderActions() {
     const hasRec = !!(pane.current && pane.current.id);
     els.delBtn.disabled = !hasRec || pane.saving;
-    els.saveBtn.disabled = pane.saving;
+    // `Update` overwrites the selected record — nothing to overwrite without
+    // one, and it is never the default path (see inspector/save.js).
+    els.saveBtn.disabled = !hasRec || pane.saving;
     els.saveNewBtn.disabled = pane.saving;
     els.newBtn.disabled = pane.saving;
     els.diffLink.disabled = !diffOk() || !hasRec;
@@ -420,7 +422,9 @@ export function mountInspector(el, ctx) {
     if (!pane.buf.body.trim() && !curId) return true;
     if (typeof ctx.choiceDialog !== "function") { pane.saveDraft(); return true; }
 
-    const asNew = !curId;
+    // Always a create: leaving an edit behind is exactly where an accidental
+    // overwrite hurts most. Overwriting stays on the `Update` button.
+    const asNew = true;
     const label = rec ? D.labelOf(rec) || rec.id : "";
     let answer = "cancel";
     try {
@@ -432,7 +436,7 @@ export function mountInspector(el, ctx) {
         cancelLabel: "Keep editing",
         cancelValue: "cancel",
         choices: [
-          { value: "save", label: asNew ? "Save as new" : "Save", primary: true },
+          { value: "save", label: "Save as new", primary: true },
           { value: "discard", label: "Discard", danger: true },
         ],
       });

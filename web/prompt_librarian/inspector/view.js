@@ -158,14 +158,17 @@ export function buildView(pane) {
 
   // No `Load into node` button: the box and the node's `text` widget are two
   // views of one value (modal/binding.js), so every keystroke is already there.
-  const saveBtn = h("button", { className: "pl-btn pl-btn-primary", type: "button", title: "Save (Ctrl+S)", onclick: () => pane.save(false) }, "Save");
-  const saveNewBtn = h("button", { className: "pl-btn", type: "button", onclick: () => pane.save(true) }, "Save as new");
+  // Saving CREATES by default — see inspector/save.js. Overwriting the record
+  // in the editor is the secondary, opt-in action, so the primary button is
+  // the one that can never cost you an existing prompt.
+  const saveNewBtn = h("button", { className: "pl-btn pl-btn-primary", type: "button", title: "Save as new (Ctrl+S)", onclick: () => pane.save(true) }, "Save as new");
+  const saveBtn = h("button", { className: "pl-btn", type: "button", title: "Overwrite the selected prompt", onclick: () => pane.save(false) }, "Update");
   const delBtn = h("button", { className: "pl-btn pl-btn-danger", type: "button", onclick: () => pane.remove() }, "Delete");
   const actionsEl = h(
     "div",
     { className: "pl-actions" },
-    saveBtn,
     saveNewBtn,
+    saveBtn,
     h("span", { className: "pl-spacer" }),
     delBtn
   );

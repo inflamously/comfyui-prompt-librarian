@@ -159,8 +159,10 @@ describe("New prompt", () => {
 
     await h.click();
 
-    assert.equal(h.calls.update.length, 1);
-    assert.equal(h.calls.update[0].body, "worth keeping");
+    // "Save as new": the gate never overwrites the record being left behind.
+    assert.equal(h.calls.create.length, 1);
+    assert.equal(h.calls.create[0].body, "worth keeping");
+    assert.equal(h.calls.update.length, 0);
     assert.equal(h.pane.getBuffer().body, "", "and then the box is empty");
   });
 });

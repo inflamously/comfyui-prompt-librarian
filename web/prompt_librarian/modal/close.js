@@ -78,7 +78,9 @@ export function attemptClose() {
   it.closing = true;
   setClosingBusy(true);
   Promise.resolve()
-    .then(() => save(false))
+    // `true` = save as new: closing must never silently overwrite a stored
+    // prompt. Identical text is adopted rather than duplicated (save.js).
+    .then(() => save(true))
     .then((status) => {
       if (status === "saved" || status === "clean") closeModal();
     })

@@ -1,10 +1,10 @@
 /* ==========================================================================
    Saving something the library already contains, character for character
 
-   The gate treats every match the same: it asks. But a 1.00 match is not a
-   question — the two records would be the same text, so "keep both" means
-   "keep two copies of one prompt" and "merge" means merging a thing into
-   itself. There is nothing to write.
+   A near match no longer stops a save — it lights up the duplicate panel and
+   the write goes through. A 1.00 match is different in kind: the two records
+   would be the same text, so writing it adds a copy of a prompt the library
+   already has, and there is nothing there to decide later either.
 
    So an exact match on the CREATE path adopts the stored record instead:
    no second record, the panel switches to the one that exists, and the save
@@ -122,16 +122,19 @@ describe("an exact match on create", () => {
     env.assertNoErrors();
   });
 
-  test("the score is only a hint — a body that turns out to differ still gates", async () => {
+  test("the score is only a hint — a body that turns out to differ is written", async () => {
     // The score was computed against a snapshot; `get` is the second opinion.
+    // When it disagrees there is nothing to adopt, so the save is an ordinary
+    // one: near matches report through the panel, they do not stop it.
     const pane = await makePane({
       matches: [{ id: "a", label: "a_label", score: 1 }],
       stored: "not actually the same text at all",
     });
 
-    assert.equal(await pane.save(false), "blocked");
-    assert.equal(pane.calls.create, 0);
-    assert.equal(pane.calls.layers.length, 1, "the normal duplicate dialog");
+    assert.equal(await pane.save(false), "saved");
+    assert.equal(pane.calls.create, 1, "written, not adopted");
+    assert.deepEqual(pane.calls.adopted, ["new1"], "the record it adopts is the one it just wrote");
+    assert.equal(pane.calls.layers.length, 0, "and no dialog stands in the way");
     env.assertNoErrors();
   });
 
@@ -147,8 +150,12 @@ describe("an exact match on create", () => {
     const rec = { id: "r1", updated: "T0", body: "older text", tags: [] };
     const pane = await makePane({ matches: [{ id: "a", label: "a_label", score: 1 }], record: rec });
 
-    assert.equal(await pane.save(false), "blocked", "an update still asks");
-    assert.equal(pane.calls.adopted.length, 0);
+    // Adoption is a create-only shortcut: an update is a deliberate write to
+    // a record the user has open, and must never be turned into "select that
+    // other one instead".
+    assert.equal(await pane.save(false), "saved", "an update writes");
+    assert.equal(pane.calls.update, 1);
+    assert.deepEqual(pane.calls.adopted, ["r1"], "it adopts its own write, never the match");
     env.assertNoErrors();
   });
 });

@@ -5,19 +5,32 @@
 
        NEVER A SILENT OVERWRITE
 
-   The save path is deliberately paranoid and deliberately self-contained:
-     1. not dirty and not "save as new"       -> stop, say so
+   SAVING CREATES BY DEFAULT. Ctrl+S, the primary button and every save-on-
+   leave path pass `asNew` — they mint a new record. Overwriting is plan B:
+   the inspector's secondary `Update` button for the record in the editor, and
+   the `merge` / `overwrite` rows of the duplicate panel's `revise` dialog
+   (inspector/dupes.js) for anything else.
+
+   NEAR DUPLICATES NO LONGER BLOCK A SAVE. There used to be a "Possible
+   duplicate — nothing saved yet" dialog in the middle of this path; it is
+   gone. Creating is now the default, so a near match costs an extra record
+   rather than someone else's text, and the standing duplicate panel below the
+   editor — amber, with `revise` on it — is where that gets resolved, on the
+   user's own clock. What survives here is the EXACT-copy shortcut, which is
+   not a decision anyone would want to be asked about.
+
+   The save path:
+     1. not dirty, with a record loaded       -> stop, say so
      2. staleness check (someone else edited) -> conflict UI, stop
-     3. dupe gate, always re-run on save      -> resolve UI, stop
-        ...unless a match is the SAME text and we are creating: then there is
-        nothing to write, so the stored record is adopted and the save ends
-        "clean" rather than asking about a copy of itself
+     3. exact-copy check: a 1.00 match while creating means there is nothing
+        to write, so the stored record is adopted and the save ends "clean"
      4. commit (create | update+expect_updated); 409 re-enters step 2
      5. adopt the server's record as both `current` and `baseline`
 
-   Steps 2-3 build their dialogs INLINE via the pane's own layer host rather
-   than through compare/. The gate is the safety property; it must still work
-   on an install where compare/ failed to load.
+   Step 2 builds its dialog INLINE via the pane's own layer host rather than
+   through compare/: refusing a silent overwrite is the safety property left
+   on this path, and it must still work on an install where compare/ failed
+   to load.
 
    SAVE STATUS — what `save()` returns. Ctrl+S ignores it; the close path in
    modal/close.js needs it, because "I put a dialog on screen" and "I wrote the
@@ -25,8 +38,8 @@
 
      "saved"    committed; the buffer is now clean
      "clean"    nothing to write — already matches what is stored
-     "blocked"  a decision is on screen (conflict / duplicate) or the body is
-                empty. The modal must stay open.
+     "blocked"  the conflict dialog is on screen, or the body is empty. The
+                modal must stay open.
      "failed"   the write or its pre-flight errored; a toast says why
      "busy"     a save is already in flight, or the pane is disposed
 
@@ -37,7 +50,7 @@
    ========================================================================== */
 
 import { LDQUO, MDASH, MIDDOT, RDQUO } from "./constants.js";
-import { ensureOk, errMsg, isConflict, matchesOf, pct, unwrapRecord } from "./records.js";
+import { ensureOk, errMsg, isConflict, matchesOf, unwrapRecord } from "./records.js";
 
 /**
  * A similarity at or above this is "the same text", not "similar text": the
@@ -61,7 +74,12 @@ export function createSave(pane) {
     if (pane.disposed || pane.saving) return "busy";
     const isUpdate = !asNew && !!(pane.current && pane.current.id);
 
-    if (isUpdate && !pane.isDirty()) { pane.toast("no changes"); return "clean"; }
+    // Nothing typed since the record was loaded: there is nothing to write,
+    // whichever mode we are in. This matters more now that "save as new" is
+    // the default — without it, Ctrl+S on an untouched record would go and ask
+    // the backend whether it is a duplicate of itself, and a dupe-check outage
+    // (which saves anyway, by design) would fork the record for no reason.
+    if (!pane.isDirty() && pane.current && pane.current.id) { pane.toast("no changes"); return "clean"; }
     // The body is the only thing a record needs. There is nothing else to
     // ask the user for before saving — the handle is derived from this text.
     if (!pane.buf.body.trim()) { pane.toast("prompt text is empty", "error"); pane.focusBody(); return "blocked"; }
@@ -84,12 +102,18 @@ export function createSave(pane) {
         }
       }
 
-      // ---- 3. dupe gate -------------------------------------------------
+      // ---- 3. exact-copy check ------------------------------------------
+      // NOT a gate any more: near matches do not stop a save, they light up
+      // the duplicate panel below the editor, whose `revise` button owns
+      // merge / overwrite. Only a 1.00 match is acted on here, because that is
+      // not a decision — it is the same text, and writing it would add a
+      // second identical record for nothing.
+      //
       // Deliberately NOT through ctx.lanes.dupe: a keystroke landing mid-save
-      // must not be able to abort the gate. Freshly run every time, whatever
+      // must not be able to abort the check. Freshly run every time, whatever
       // the live panel happens to be showing.
       const t = pane.threshold();
-      let gate = [];
+      let near = 0;
       let exact = null;
       try {
         const r = await ctx.API.dupes({
@@ -100,25 +124,22 @@ export function createSave(pane) {
           limit: 10,
         });
         if (r !== ctx.ABORTED) {
-          // `m.ignored` is the "keep both" decision, and THIS is the one place
-          // it applies: the gate must not re-ask a question the user answered.
-          // Every other surface — the panel below, the list's badge, the
-          // duplicate accordion — still reports the match, because a muted
-          // duplicate is a duplicate the library still contains.
+          // `m.ignored` is the "keep both" decision taken elsewhere (compare/),
+          // and it still applies: a muted pair must not resurface as an
+          // adoption. The record in the editor is only "not a match" when we
+          // are about to update it — creating from an edited copy of it, it is
+          // the most relevant match there is.
+          const curId = pane.current && pane.current.id;
           const found = matchesOf(ensureOk(r)).filter(
-            (m) => !m.ignored && m.id !== (pane.current && pane.current.id)
+            (m) => !m.ignored && !(isUpdate && m.id === curId)
           );
-          gate = found.filter((m) => m.score >= t);
-          // A 1.00 match is not a *possible* duplicate, it is the same text.
-          // Asking about it is asking the user to choose between two identical
-          // records — see the create branch below.
+          near = found.filter((m) => m.score >= t).length;
           exact = found.find((m) => m.score >= EXACT) || null;
         }
       } catch (err) {
-        // A dupe-check outage must not become an unsaveable library; warn and
-        // proceed, since the backend's own constraints still apply.
-        pane.toast("duplicate check unavailable — saving without it", "error");
-        gate = [];
+        // An outage here costs the exact-copy shortcut, nothing more: the save
+        // goes ahead and the panel below will say what it finds next time.
+        near = 0;
       }
       if (pane.disposed) return "busy";
       // An exact copy of something already stored, with nothing of our own to
@@ -129,10 +150,20 @@ export function createSave(pane) {
         const kept = await adoptExact(exact);
         if (kept) return "clean";
       }
-      if (gate.length) { openResolve(gate, asNew); return "blocked"; }
 
       // ---- 5. commit ----------------------------------------------------
-      return (await commit(asNew)) ? "saved" : "failed";
+      const rec = await commit(asNew);
+      if (!rec) return "failed";
+      // Near matches are reported, never blocking: `commit` has already
+      // re-run the live check, so the panel below is amber with a `revise`
+      // button on it. This line is only so the outcome is not silent.
+      if (near) {
+        pane.toast(
+          "saved " + MDASH + " " + D.fmtInt(near) + " near match" + (near === 1 ? "" : "es") +
+            ", see the duplicate panel"
+        );
+      }
+      return "saved";
     } finally {
       setSaving(false);
     }
@@ -303,175 +334,6 @@ export function createSave(pane) {
     return layer;
   }
 
-  /* ---- Resolve UI (step 3) ----------------------------------------- *
-   * Built inline, on purpose: the gate is the safety property of this   *
-   * feature and must survive compare/ being absent. There is NO primary *
-   * Save here — every path is an explicit decision, and `save anyway`   *
-   * is a ghost button.                                                  *
-   *                                                                     *
-   * `save anyway` IS THE LAST DIALOG. Clicking it used to open a second *
-   * confirm and then leave every pair flagged, so the next save — and   *
-   * save-on-close is a save — re-opened this same dialog for the same   *
-   * matches, forever. One decision, taken once: it commits immediately  *
-   * and mutes every pair it just listed, exactly like `keep both` does  *
-   * for the one row it sits on.                                         *
-   * ------------------------------------------------------------------ */
-
-  function openResolve(matches, asNew) {
-    const dlg = h("div", { className: "pl-dialog", role: "dialog", "aria-modal": "true", "aria-label": "Possible duplicate" });
-    let layer = null;
-    const close = () => { if (layer) layer.close(); };
-    const busy = (on) => { for (const b of dlg.querySelectorAll("button")) b.disabled = !!on; };
-
-    const body = h("div", { className: "pl-dialog-body" });
-    body.appendChild(
-      h(
-        "p",
-        null,
-        "This text is at least " + Math.round(pane.threshold() * 100) + "% similar to " +
-          D.fmtInt(matches.length) + " existing prompt" + (matches.length === 1 ? "" : "s") +
-          ". Pick what should happen — nothing is written until you do."
-      )
-    );
-
-    for (const m of matches) {
-      const acts = h(
-        "div",
-        { className: "pl-dupe-acts" },
-        h("button", { className: "pl-btn pl-btn-sm", type: "button", onclick: () => pane.compareWith(m) }, "compare"),
-        h(
-          "button",
-          {
-            className: "pl-btn pl-btn-sm pl-btn-accent",
-            type: "button",
-            onclick: async () => { busy(true); try { await mergeInto(m, { close }); } finally { busy(false); } },
-          },
-          "merge into this"
-        ),
-        h(
-          "button",
-          {
-            className: "pl-btn pl-btn-sm",
-            type: "button",
-            title: "Save anyway and stop flagging this pair",
-            onclick: async () => { busy(true); try { await keepBoth(m, asNew, close); } finally { busy(false); } },
-          },
-          "keep both"
-        ),
-        h(
-          "button",
-          {
-            className: "pl-btn pl-btn-sm",
-            type: "button",
-            onclick: async () => { busy(true); try { await overwriteMatch(m, close); } finally { busy(false); } },
-          },
-          "overwrite that one"
-        )
-      );
-      body.appendChild(
-        h(
-          "div",
-          { className: "pl-dupe" },
-          h("div", { className: "pl-score" }, pct(m.score)),
-          h("div", { className: "pl-dupe-name" }, m.label),
-          h("div", { className: "pl-dupe-why" }, m.summary ? "differs: " + m.summary : ""),
-          acts
-        )
-      );
-    }
-
-    const acts = h(
-      "div",
-      { className: "pl-dialog-acts" },
-      // Secondary ghost, never a primary: saving a duplicate must feel like
-      // the deliberate exception it is. It is not, however, a decision worth
-      // asking about twice — this dialog already named every match.
-      h(
-        "button",
-        {
-          className: "pl-btn pl-btn-ghost",
-          type: "button",
-          title:
-            "Save alongside " + (matches.length === 1 ? "this match" : "all " + D.fmtInt(matches.length) + " matches") +
-            " and stop flagging " + (matches.length === 1 ? "the pair" : "those pairs"),
-          onclick: async () => { busy(true); try { await keepAll(matches, asNew, close); } finally { busy(false); } },
-        },
-        "save anyway"
-      ),
-      h("button", { className: "pl-btn", type: "button", onclick: () => close() }, "cancel")
-    );
-
-    dlg.appendChild(
-      h("div", { className: "pl-dialog-title" }, "Possible duplicate " + MDASH + " nothing saved yet")
-    );
-    dlg.appendChild(body);
-    dlg.appendChild(acts);
-    layer = pane.openLayer(dlg, { closeOnOutside: false });
-    return layer;
-  }
-
-  /**
-   * "keep both" / "save anyway": go through with what the user asked for
-   * (create for `save as new` / a brand-new record, update otherwise) and then
-   * record the pair(s) in `ignored` so those exact comparisons stop nagging.
-   *
-   * MUTING IS THE POINT, not a nicety. Without it the very next save re-runs
-   * the gate, finds the same matches and re-opens the same dialog — and
-   * closing the modal is a save. A decision the user has taken has to stick.
-   *
-   * DEVIATION from the letter of the brief ("proceeds as create"): when the
-   * user is updating an existing record, creating instead would silently
-   * fork their prompt into two. "Keep both" means "keep this record and that
-   * record" — the ignorePair call is the part that matters.
-   *
-   * @param {Array<object>} matches the rows to mute against what we just saved
-   */
-  async function keepAll(matches, asNew, close) {
-    if (close) close();
-    setSaving(true);
-    let rec = null;
-    try {
-      rec = await commit(asNew);
-    } finally {
-      setSaving(false);
-    }
-    if (!rec || !rec.id) return; // commit already said why
-    const ids = (matches || []).map((m) => m && m.id).filter((id) => id && String(id) !== String(rec.id));
-    if (!ids.length) return;
-
-    // Best effort, and never fatal: the record IS saved by now. A pair that
-    // could not be muted is a nag, not a data loss, so it gets one honest
-    // toast rather than an error per id.
-    let failed = 0;
-    for (const id of ids) {
-      try {
-        ensureOk(await ctx.API.ignorePair(rec.id, id));
-      } catch (_) {
-        failed++;
-      }
-    }
-    if (failed) {
-      pane.toast(
-        "saved, but " + D.fmtInt(failed) + " of " + D.fmtInt(ids.length) + " pair" +
-          (ids.length === 1 ? "" : "s") + " could not be muted — they will keep being flagged",
-        "error"
-      );
-      return;
-    }
-    pane.toast(
-      "saved " + MDASH + " " + (ids.length === 1 ? "this pair" : "these " + D.fmtInt(ids.length) + " pairs") +
-        " will stop being flagged"
-    );
-    // The panel is still showing the matches the gate found; now that they are
-    // muted the backend will not return them, so ask again.
-    pane.scheduleDupes.cancel();
-    pane.runDupes(false);
-  }
-
-  /** "keep both" — the per-row button: mute exactly the pair it sits on. */
-  function keepBoth(m, asNew, close) {
-    return keepAll(m ? [m] : [], asNew, close);
-  }
 
   /** "merge into this" / the live panel's `merge` — the match wins. */
   async function mergeInto(m, opts = {}) {
@@ -579,9 +441,6 @@ export function createSave(pane) {
   pane.commit = commit;
   pane.adoptExact = adoptExact;
   pane.openConflict = openConflict;
-  pane.openResolve = openResolve;
-  pane.keepBoth = keepBoth;
-  pane.keepAll = keepAll;
   pane.mergeInto = mergeInto;
   pane.overwriteMatch = overwriteMatch;
 }

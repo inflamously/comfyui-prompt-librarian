@@ -106,9 +106,9 @@ export function updateRow(row, item, index, state, view) {
   const pct = item.match_pct;
   if (typeof pct === "number" && pct > 0) {
     p.match.textContent = `${Math.round(pct)}% match`;
-    p.match.hidden = false;
+    p.match.visibility = false;
   } else {
-    p.match.hidden = true;
+    p.match.visibility = true;
     p.match.textContent = "";
   }
 
@@ -126,9 +126,11 @@ export function updateRow(row, item, index, state, view) {
   p.twisty.hidden = !header;
   if (header) {
     p.twisty.textContent = open ? TWISTY_OPEN : TWISTY_SHUT;
+    p.twisty.visibility = "shown"
     row.setAttribute("aria-expanded", open ? "true" : "false");
   } else {
     p.twisty.textContent = "";
+    p.twisty.visibility = "hidden";
     row.removeAttribute("aria-expanded");
   }
 

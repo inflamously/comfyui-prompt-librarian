@@ -68,6 +68,12 @@
 
   /* metrics — --pl-row-h is read back by list.js so CSS and JS cannot drift */
   --pl-row-h: 96px;
+  /* Row-name type metrics, hoisted because .pl-row-check centres itself on the
+     name's line box. Keep these two in step with .pl-row-name. */
+  --pl-row-name-fs: 13.5px;
+  --pl-row-name-lh: calc(var(--pl-row-name-fs) * 1.45);
+  --pl-check-size: 20px;
+  --pl-twisty-size: calc(15px * 1.5); /* accordion arrow matches the check */
   --pl-radius: 8px;
   --pl-radius-sm: 6px;
   --pl-gap: 12px;
@@ -676,18 +682,26 @@
   background: var(--pl-accent);
 }
 
-.pl-row-check {
+/* Typed selector on purpose: the `.pl-root input { margin: 0 }` form reset
+   above is more specific than a bare `.pl-row-check`, and would otherwise eat
+   the centring margin below. */
+.pl-row input.pl-row-check {
   grid-area: check;
   align-self: start;
-  width: 13px;
-  height: 13px;
-  margin: 2px 0 0;
+  width: var(--pl-check-size);
+  height: var(--pl-check-size);
+  /* The check spans all three grid rows, so `start` pins it to the top of the
+     name row — which is taller than the name itself whenever a dupe badge sits
+     beside it. Centre it on the NAME's line box instead, so the alignment is
+     the same with and without the badge. */
+  margin: calc((var(--pl-row-name-lh) - var(--pl-check-size)) / 2) 0 0;
   accent-color: var(--pl-accent);
   cursor: pointer;
   /* Hidden until bulk mode / row hover; markup keeps it in the DOM so the
      grid columns never reflow when it appears. */
   opacity: 0;
   transition: opacity var(--pl-fast) ease;
+  margin-top: 1px;
 }
 
 .pl-row:hover .pl-row-check,
@@ -704,7 +718,10 @@
   gap: 7px;
   min-width: 0;
   font-family: var(--pl-mono);
-  font-size: 13.5px;
+  /* No explicit line-height: the inherited --pl-lh ratio already produces
+     --pl-row-name-lh here, and pinning a length would inflate the half-leading
+     of the smaller baseline-aligned spans (match count, twisty). */
+  font-size: var(--pl-row-name-fs);
   font-weight: 700;
   letter-spacing: 0.01em;
   color: var(--pl-text);
@@ -731,17 +748,38 @@
    the whole list out of register. Nesting is shown with indent and a rule,
    never with height.
    -------------------------------------------------------------------------- */
+/* Same box as the row's checkbox, so the two controls in the row's left gutter
+   read as one column. `align-self: center` opts out of the name flex's baseline
+   alignment: the glyph wants centring on the name's line box (like the check),
+   and a baseline-aligned inline-flex box would drag the line box taller. */
 .pl-row-twisty {
   flex: 0 0 auto;
-  width: 10px;
-  font-size: 10px;
-  line-height: inherit;
+  display: inline-flex;
+  align-content: start;
+  justify-content: center;
+  width: var(--pl-twisty-size);
+  height: calc(var(--pl-twisty-size));
+  font-size: 20px;
+  line-height: 1;
   color: var(--pl-warn);
   user-select: none;
 }
 
+/* `hidden` must win over `display:inline-flex` — attribute selector, not
+   !important. Without this, a row with no dupes still shows an empty,
+   hoverable twisty box. */
+.pl-row-twisty[hidden] {
+  display: none;
+}
+
+.pl-row-twisty:hover {
+  border: 1px solid var(--pl-star);
+}
+
+/* Indented by exactly one twisty column, so a member's label sits under its
+   header's label rather than under the header's arrow. */
 .pl-row.is-member {
-  padding-left: 34px;
+  padding-left: calc(14px + var(--pl-twisty-size) + 7px);
 }
 
 /* The rule the members hang off. Inside the row's padding, so it cannot shift

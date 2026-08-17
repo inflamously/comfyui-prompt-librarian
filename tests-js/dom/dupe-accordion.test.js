@@ -255,11 +255,21 @@ describe("the rail folds duplicate clusters", () => {
     env.assertNoErrors();
   });
 
-  test("clicking an already-open header does not close it under the user", async () => {
-    const { el } = await mountRail();
+  test("clicking an open header folds it back up — the whole row is the accordion", async () => {
+    const { el, state } = await mountRail();
     rows(el)[0].__parts.twisty.click();
     rows(el)[0].click();
-    assert.equal(rows(el).length, 5, "still open");
+    assert.equal(rows(el).length, 2, "folded");
+    assert.equal(state.currentId, "d4", "and the header is still the selected record");
+    env.assertNoErrors();
+  });
+
+  test("any part of the header folds it, not just the twisty", async () => {
+    const { el } = await mountRail();
+    rows(el)[0].__parts.body.click();
+    assert.equal(rows(el).length, 5, "opened from the preview text");
+    rows(el)[0].__parts.meta.click();
+    assert.equal(rows(el).length, 2, "and folded again from the meta line");
     env.assertNoErrors();
   });
 });

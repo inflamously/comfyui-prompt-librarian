@@ -226,8 +226,9 @@ export function mountList(el, ctx) {
 
     if (ev.target === row.__parts.check) return; // handled by "change"
 
-    // The twisty is the one control that ONLY folds, so it is also the only
-    // way to close a group without leaving the record you were looking at.
+    // The twisty ONLY folds — it is the way to open or close a cluster without
+    // leaving the record you were looking at. The rest of the header row folds
+    // *and* selects (below).
     if (ev.target === row.__parts.twisty) {
       ev.preventDefault();
       toggleGroup(index);
@@ -246,9 +247,11 @@ export function mountList(el, ctx) {
     activeIndex = index;
     ctx.setState({ anchorIndex: index }, { silent: true });
     ctx.selectPrompt(id);
-    // Selecting a cluster's header opens it: you asked about a prompt the
-    // library has four of, and the other three are the answer.
-    toggleGroup(index, true);
+    // The whole header row IS the accordion: clicking it opens the cluster —
+    // you asked about a prompt the library has four of, and the other three
+    // are the answer — and clicking it again folds it back up. A no-op on any
+    // row that is not a cluster header (see GroupedView.toggle).
+    toggleGroup(index);
     vlist.repaint();
   });
 

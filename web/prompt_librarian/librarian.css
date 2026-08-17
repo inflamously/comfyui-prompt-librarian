@@ -1159,6 +1159,13 @@
   border-bottom-color: transparent;
 }
 
+/* `display: flex` above outranks the UA `[hidden]` rule, so the draft bar
+   would never hide — restore/discard looked dead and a stale bar rode along
+   from record to record. Same override as .pl-edited / .pl-dupes. */
+.pl-ta-foot[hidden] {
+  display: none;
+}
+
 .pl-ta-foot .pl-sep {
   color: var(--pl-text-mute);
 }

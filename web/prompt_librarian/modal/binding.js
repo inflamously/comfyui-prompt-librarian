@@ -29,7 +29,7 @@ import { bindNode, poll as pollNode, readNodeText, writeNodeText } from "../node
 import { BROKEN, LINKED } from "./glyphs.js";
 import { hostApp } from "./host.js";
 import { inst, setState, writeLinkPref } from "./state.js";
-import { resolveTarget } from "./target.js";
+import { noteUsage, resolveTarget } from "./target.js";
 
 export function isLinked() {
   return inst().state.link !== false;
@@ -65,6 +65,10 @@ function onNodeText(body) {
  * Outbound: push the panel's text (and optionally a record link) to the node.
  * A no-op when unlinked — every caller may call it unconditionally.
  *
+ * Reports `unchanged` when the node already holds exactly this — the same
+ * equality check `loadIntoNode` uses, so a caller can tell a real load from a
+ * re-selection of what is already in the node and toast accordingly.
+ *
  * @param {string} body
  * @param {string} [id] only written when passed; omitting it leaves the link
  *   alone, which is what a plain keystroke should do.
@@ -76,7 +80,23 @@ export function pushToNode(body, id) {
   const values = { body: body == null ? "" : String(body) };
   if (id !== undefined) values.id = id == null ? "" : String(id);
   try {
-    return writeNodeText(node, values, { canvas: hostApp() && hostApp().canvas });
+    const cur = readNodeText(node);
+    if (
+      cur &&
+      String(cur.body) === values.body &&
+      (values.id === undefined || String(cur.id || "") === values.id)
+    ) {
+      return { ok: true, unchanged: true };
+    }
+  } catch (_) {
+    /* fall through and write — a failed compare must never block the push */
+  }
+  try {
+    const res = writeNodeText(node, values, { canvas: hostApp() && hostApp().canvas });
+    // An id is only ever passed on a record push (a row the user picked), so
+    // this is the selection half of usage counting; keystrokes never count.
+    if (res && res.ok && values.id) noteUsage(values.id, values.body);
+    return res;
   } catch (err) {
     warnOnce("bind-outbound", "could not push the panel's text to the node", err);
     return { ok: false, reason: "write_failed" };

@@ -101,6 +101,29 @@ export function mountInspector(el, ctx) {
     } catch (_) { /* a toast failing must never break a flow */ }
   }
 
+  /**
+   * The "loaded into the node" notice, at most one on screen.
+   *
+   * Arrow-keying down the list is a load per row, and four seconds of toast
+   * each would stack a column of them faster than they expire. Superseding the
+   * previous one keeps the feedback truthful (it always names the prompt that
+   * is in the node now) without turning browsing into a wall of chrome.
+   */
+  let lastLoadToast = null;
+  function loadToast(label) {
+    try {
+      if (lastLoadToast && lastLoadToast.parentNode) lastLoadToast.parentNode.removeChild(lastLoadToast);
+    } catch (_) { /* already gone */ }
+    lastLoadToast = null;
+    try {
+      if (typeof ctx.toast !== "function") return;
+      lastLoadToast = ctx.toast("loaded " + LDQUO + label + RDQUO + " into the node", {
+        kind: "success",
+        ms: 2500,
+      });
+    } catch (_) { /* a toast failing must never break a selection */ }
+  }
+
   /** Only an explicit `false` disables a control; unknown caps stay enabled. */
   function capOk(name) {
     const caps = (ctx && ctx.caps) || S().caps || {};
@@ -306,7 +329,15 @@ export function mountInspector(el, ctx) {
     pane.lastInbound = null;
     pushBody.cancel();
     try {
-      ctx.pushToNode(String(rec.body == null ? "" : rec.body), String(rec.id == null ? "" : rec.id));
+      const res = ctx.pushToNode(
+        String(rec.body == null ? "" : rec.body),
+        String(rec.id == null ? "" : rec.id)
+      );
+      // Picking a row moves the node's prompt out from under the user, so say
+      // so — every time, since a selection is always deliberate. `unchanged`
+      // means the node already held this record and nothing moved; a silent
+      // no-op there beats a toast claiming a load that did not happen.
+      if (res && res.ok && !res.unchanged) loadToast(D.labelOf(rec) || rec.id);
     } catch (_) { /* never block a selection on the binding */ }
   }
 

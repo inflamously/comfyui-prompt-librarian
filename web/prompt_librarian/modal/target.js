@@ -148,12 +148,27 @@ export function loadIntoNode(record) {
     /* purely cosmetic */
   }
 
-  if (id) {
-    // Fire and forget: a usage-tracking failure must never block the load.
-    Promise.resolve()
-      .then(() => API.usage(id, { body }))
-      .catch(() => {});
-    invalidateMeta([id]);
-  }
+  noteUsage(id, body);
   return { ok: true };
+}
+
+/**
+ * Count one use of a record.
+ *
+ * Shared with modal/binding.js so that BOTH ways a record reaches the node —
+ * `Load into node` and picking a row in the sidebar — count once and only
+ * once. They used to disagree: selection wrote the record silently while only
+ * the button counted, so pressing Enter on the row you had just clicked was
+ * the only thing that registered.
+ *
+ * No-op without an id: an unsaved buffer has nothing to count against.
+ */
+export function noteUsage(id, body) {
+  const rid = id == null ? "" : String(id);
+  if (!rid) return;
+  // Fire and forget: a usage-tracking failure must never block the load.
+  Promise.resolve()
+    .then(() => API.usage(rid, { body: body == null ? "" : String(body) }))
+    .catch(() => {});
+  invalidateMeta([rid]);
 }

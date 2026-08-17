@@ -59,6 +59,52 @@ function usageCalls() {
   return env.api.calls.filter((c) => c.method === "POST" && /usage/.test(c.path));
 }
 
+describe("pushToNode — the sidebar-selection path", () => {
+  test("a record push counts usage once, and a re-push counts nothing", async () => {
+    const node = fakeNode();
+    await setup(node);
+    const binding = await imp(M + "binding.js");
+    env.api.route("/prompt_librarian/usage", { ok: true });
+
+    const first = binding.pushToNode("a cat", "abc");
+    assert.equal(first.ok, true);
+    assert.notEqual(first.unchanged, true);
+
+    const second = binding.pushToNode("a cat", "abc");
+    assert.equal(second.unchanged, true);
+
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(usageCalls().length, 1);
+  });
+
+  test("a plain keystroke push never counts usage", async () => {
+    const node = fakeNode();
+    await setup(node);
+    const binding = await imp(M + "binding.js");
+    env.api.route("/prompt_librarian/usage", { ok: true });
+
+    binding.pushToNode("typed text");
+
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(usageCalls().length, 0);
+    assert.equal(node.widgets[0].value, "typed text");
+  });
+
+  test("selecting then pressing Enter on the same row counts once", async () => {
+    const node = fakeNode();
+    const target = await setup(node);
+    const binding = await imp(M + "binding.js");
+    env.api.route("/prompt_librarian/usage", { ok: true });
+
+    binding.pushToNode("a cat", "abc"); // the row click
+    const res = target.loadIntoNode({ id: "abc", body: "a cat" }); // Enter on it
+
+    assert.equal(res.unchanged, true);
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(usageCalls().length, 1);
+  });
+});
+
 describe("loadIntoNode idempotence", () => {
   test("loading the same record twice writes and pings only once", async () => {
     const node = fakeNode();

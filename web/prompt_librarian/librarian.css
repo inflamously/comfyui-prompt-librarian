@@ -937,9 +937,15 @@
 
 .pl-idrow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
   align-items: center;
   min-width: 0;
+}
+
+/* `New prompt` never wraps: the readout beside it is the elastic half. */
+.pl-new {
+  white-space: nowrap;
 }
 
 /* The selected record's derived handle. A READOUT, not a field: it is

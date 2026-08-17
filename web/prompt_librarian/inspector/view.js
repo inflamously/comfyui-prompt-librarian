@@ -34,6 +34,20 @@ export function buildView(pane) {
     title: "Derived from the prompt text — search finds prompts, names do not",
   });
 
+  // Sits beside the readout because that row is where "which prompt am I
+  // editing" is answered — "none yet, I am writing one" is an answer to the
+  // same question, so the control that gets you there belongs next to it.
+  const newBtn = h(
+    "button",
+    {
+      className: "pl-btn pl-btn-sm pl-new",
+      type: "button",
+      title: "Start a new prompt (clears the editor)",
+      onclick: () => pane.newPrompt(),
+    },
+    "New prompt"
+  );
+
   const tagsRow = h("div", { className: "pl-tags" });
 
   const draftText = h("span", { className: "pl-edited" }, "unsaved draft found");
@@ -144,7 +158,7 @@ export function buildView(pane) {
   );
 
   el.appendChild(h("div", { className: "pl-lbl" }, "// SELECTED"));
-  el.appendChild(h("div", { className: "pl-idrow" }, labelEl));
+  el.appendChild(h("div", { className: "pl-idrow" }, labelEl, newBtn));
   el.appendChild(tagsRow);
   el.appendChild(draftBar);
   el.appendChild(textHead);
@@ -155,7 +169,7 @@ export function buildView(pane) {
   el.appendChild(actionsEl);
 
   const els = {
-    labelEl, tagsRow,
+    labelEl, newBtn, tagsRow,
     draftText, draftBar,
     charsEl, tokensEl, editedEl,
     mirror, ta, taWrap,

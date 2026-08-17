@@ -277,6 +277,7 @@ export function mountInspector(el, ctx) {
     els.delBtn.disabled = !hasRec || pane.saving;
     els.saveBtn.disabled = pane.saving;
     els.saveNewBtn.disabled = pane.saving;
+    els.newBtn.disabled = pane.saving;
     els.diffLink.disabled = !diffOk() || !hasRec;
     els.versLink.disabled = !capOk("versions") || !hasRec;
     els.versV.disabled = !capOk("versions") || !hasRec;
@@ -643,6 +644,48 @@ export function mountInspector(el, ctx) {
   }
 
   /* ------------------------------------------------------------------ *
+   * New prompt.                                                         *
+   * ------------------------------------------------------------------ */
+
+  /**
+   * Empty the editor and start an unsaved prompt.
+   *
+   * Deselecting is the whole trick: with `current`/`baseline` gone, the pane is
+   * in exactly the state it has before anything is picked, so Save becomes a
+   * create and the dupe panel, stats and draft bar all reset themselves.
+   *
+   * It goes through the same unsaved-changes gate a row click does — clearing
+   * the box is a way of leaving the record too, and the one thing this button
+   * must never do is throw away an edit the user has not saved.
+   */
+  async function newPrompt() {
+    if (pane.disposed || pane.leaving) return;
+    pane.leaving = true;
+    let mayLeave;
+    try {
+      mayLeave = await confirmLeave("");
+    } finally {
+      pane.leaving = false;
+    }
+    if (!mayLeave || pane.disposed) return;
+
+    pane.pendingId = null;
+    pane.dupeSeq++; // any in-flight dupe answer is about the old body
+    // Not silent: the sidebar highlight follows `current`, and it has to let
+    // go of the row whose text is no longer in the editor.
+    adoptRecord(null, { silent: false });
+    try {
+      if (typeof ctx.setState === "function") ctx.setState({ currentId: null });
+    } catch (_) { /* the highlight is cosmetic; never block on it */ }
+    pane.publishDupes([], false);
+    // The node's textarea is the same value seen from the canvas, so it clears
+    // with this one. setBody() is the only path that pushes, which is why the
+    // adoptRecord() above (deliberately push-free) cannot do it.
+    setBody("");
+    focusBody();
+  }
+
+  /* ------------------------------------------------------------------ *
    * Public surface.                                                     *
    * ------------------------------------------------------------------ */
 
@@ -696,6 +739,7 @@ export function mountInspector(el, ctx) {
     onStarKey,
     rate,
     remove,
+    newPrompt,
     setBody,
     focusBody,
   });

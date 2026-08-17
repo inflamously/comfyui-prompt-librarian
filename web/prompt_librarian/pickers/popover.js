@@ -50,7 +50,8 @@ function mountTarget(ctx) {
  *   scroll or resize.
  *
  * @param {object} opts
- * @param {HTMLElement} opts.anchor
+ * @param {HTMLElement|(() => HTMLElement)} opts.anchor an element, or a getter
+ *   for callers whose anchor is re-created by a re-render (see `resolveAnchor`)
  * @param {(el: HTMLElement, handle: object) => any} [opts.render]
  * @param {string} [opts.placement] "bottom-start" | "bottom-end" | "top-start" | "top-end"
  * @param {string} [opts.className] extra class(es) on the popover
@@ -81,7 +82,32 @@ export function openPopover({
 
   let closed = false;
   let layerHandle = null;
+  let placedOnce = false;
   const offs = [];
+
+  /**
+   * The live anchor at call time.
+   *
+   * A picker that stays open across a re-render (the tag picker toggles several
+   * tags in one visit, and each pick re-renders the chips row) is holding an
+   * element that is no longer in the document. A detached node measures as an
+   * all-zero rect, which used to place the popover in the top-left corner. So:
+   * a function anchor is re-read on every reposition, and a detached element
+   * anchor is reported as unusable rather than measured.
+   */
+  function resolveAnchor() {
+    let node = anchor;
+    if (isFn(node)) {
+      try {
+        node = node();
+      } catch (_) {
+        return null;
+      }
+    }
+    if (!node || !isFn(node.getBoundingClientRect)) return null;
+    if (node.isConnected === false) return null;
+    return node;
+  }
 
   const handle = {
     el,
@@ -128,12 +154,17 @@ export function openPopover({
 
   function reposition() {
     if (closed) return;
-    if (!place(el, anchor, placement)) {
-      // No usable anchor. Park it in the top-left corner rather than leaving it
-      // at the off-screen measuring position, where it would be invisible.
-      el.style.top = `${EDGE}px`;
-      el.style.left = `${EDGE}px`;
+    if (place(el, resolveAnchor(), placement)) {
+      placedOnce = true;
+      return;
     }
+    // No usable anchor. If we were placed before, the anchor has just gone
+    // away under a re-render — keep the position we already have instead of
+    // jumping to the corner. Only an anchor that was never usable parks at the
+    // edge, so the popover is visible rather than left off-screen.
+    if (placedOnce) return;
+    el.style.top = `${EDGE}px`;
+    el.style.left = `${EDGE}px`;
   }
 
   // ---- mount --------------------------------------------------------------
@@ -156,7 +187,8 @@ export function openPopover({
       const t = e && e.target;
       if (!t) return;
       if (el.contains(t)) return;
-      if (anchor && isFn(anchor.contains) && anchor.contains(t)) return;
+      const a = resolveAnchor();
+      if (a && isFn(a.contains) && a.contains(t)) return;
       close();
     };
     document.addEventListener("pointerdown", onDown, true);
@@ -226,6 +258,9 @@ function place(el, anchor, placement) {
     return null;
   }
   if (!rect) return null;
+  // A collapsed rect means the anchor is detached or hidden; measuring it would
+  // place us against the viewport origin.
+  if (!rect.width && !rect.height && !rect.top && !rect.left) return null;
 
   const { vw, vh } = viewport();
   const wantTop = typeof placement === "string" && placement.indexOf("top") === 0;

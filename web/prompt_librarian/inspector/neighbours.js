@@ -38,7 +38,13 @@ export function createNeighbours(pane) {
       const fn = mod.openTagPicker || mod.tagPicker;
       if (typeof fn === "function") {
         try {
-          fn(ctx, { anchor: els.tagsRow.lastChild, value: pane.buf.tags.slice(), onPick: pane.addTag });
+          // A getter, not the node: picking a tag re-renders the chips row, and
+          // the old "+ tag" button would then measure as a detached zero rect.
+          fn(ctx, {
+            anchor: () => els.tagsRow.lastChild,
+            value: pane.buf.tags.slice(),
+            onPick: pane.addTag,
+          });
           return;
         } catch (err) { /* fall through */ }
       }

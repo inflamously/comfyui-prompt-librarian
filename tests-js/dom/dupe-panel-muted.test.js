@@ -6,9 +6,10 @@
    library with four copies of one prompt quietly reported one near-duplicate
    and offered no way to find out why.
 
-   Now the panel LISTS a muted pair, marks it, and can un-mute it. The only
-   thing the flag still changes is whether the save gate stops you, which is
-   covered next door in dupe-gate.test.js.
+   Now a muted pair is LISTED, marked, and can be un-muted — in `revise`,
+   which is where matches are listed at all: the inline panel is a heading and
+   nothing else. The only thing the flag still changes is whether the save gate
+   stops you, which is covered next door in dupe-gate.test.js.
    ========================================================================== */
 
 import { test, describe, beforeEach, afterEach } from "node:test";
@@ -43,7 +44,7 @@ async function makePanel(matches, over = {}) {
   const { buildView } = await imp(I + "view.js");
   const { createDupes } = await imp(I + "dupes.js");
 
-  const calls = { ignorePair: [], dupes: 0, toasts: [] };
+  const calls = { ignorePair: [], dupes: 0, toasts: [], layers: [] };
   let served = matches;
 
   const ctx = {
@@ -82,7 +83,13 @@ async function makePanel(matches, over = {}) {
     toast: (m) => calls.toasts.push(String(m)),
     compareWith() {},
     mergeInto() {},
+    overwriteMatch() {},
     openLocalPopover() {},
+    openLayer(node) {
+      const layer = { el: node, closed: false, close: () => { layer.closed = true; } };
+      calls.layers.push(layer);
+      return layer;
+    },
   };
   pane.els = buildView(pane).els ?? pane.els;
   createDupes(pane);
@@ -90,9 +97,15 @@ async function makePanel(matches, over = {}) {
   return pane;
 }
 
-/** Rows currently in the panel body. */
+/**
+ * Rows for the matches the panel is holding — i.e. what `revise` shows, since
+ * that is now the only surface that lists them. Re-opened on every call so a
+ * row read after an action reflects the re-check, not a stale dialog.
+ */
 function rows(pane) {
-  return [...pane.els.dupesBody.querySelectorAll(".pl-dupe")];
+  pane.els.reviseBtn.click();
+  const layer = pane.calls.layers[pane.calls.layers.length - 1];
+  return layer ? [...layer.el.querySelectorAll(".pl-dupe")] : [];
 }
 
 function button(el, label) {

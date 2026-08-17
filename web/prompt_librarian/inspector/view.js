@@ -119,7 +119,20 @@ export function buildView(pane) {
     h("span", null, "threshold 90%"),
     h("span", { "aria-hidden": "true" }, CARET)
   );
-  const dupesHead = h("div", { className: "pl-dupes-head" }, dupesTitle, threshBtn);
+  // The panel below shows the closest match only; this is the way to the rest.
+  // Hidden while there is nothing to revise, so a clean check stays quiet.
+  const reviseBtn = h(
+    "button",
+    {
+      className: "pl-btn pl-btn-sm",
+      type: "button",
+      hidden: true,
+      title: "Work through every near match",
+      onclick: () => pane.openRevise(),
+    },
+    "revise"
+  );
+  const dupesHead = h("div", { className: "pl-dupes-head" }, dupesTitle, reviseBtn, threshBtn);
   const dupesBody = h("div");
   const dupesPanel = h("section", { className: "pl-dupes", hidden: true, "aria-label": "Duplicate check" }, dupesHead, dupesBody);
 
@@ -174,7 +187,7 @@ export function buildView(pane) {
     charsEl, tokensEl, editedEl,
     mirror, ta, taWrap,
     diffLink, wildLink, snipLink, versLink,
-    dupesTitle, threshBtn, dupesHead, dupesBody, dupesPanel,
+    dupesTitle, threshBtn, reviseBtn, dupesHead, dupesBody, dupesPanel,
     usedV, lastV, versV, starsEl,
     saveBtn, saveNewBtn, delBtn,
   };

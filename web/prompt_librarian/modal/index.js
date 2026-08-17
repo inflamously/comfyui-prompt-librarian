@@ -84,7 +84,15 @@ export async function openModal(opts = {}) {
   // Capabilities first — panes read ctx.caps while mounting.
   try {
     const ping = await API.ping();
-    setState({ caps: { ...caps }, rev: (ping && Number(ping.rev)) || it.state.rev });
+    // `/ping` carries the persisted dupe threshold. Ignoring it is why the
+    // picker looked inert: the panel booted at 90 % however the store was set.
+    const patch = { caps: { ...caps }, rev: (ping && Number(ping.rev)) || it.state.rev };
+    let t = ping ? Number(ping.threshold) : NaN;
+    if (Number.isFinite(t) && t > 0) {
+      if (t > 1) t = t / 100; // tolerate a percent-shaped value
+      patch.dupes = { ...it.state.dupes, threshold: t };
+    }
+    setState(patch);
   } catch (err) {
     warnOnce("ping-failed", "ping failed; assuming every capability is present", err && err.message);
   }

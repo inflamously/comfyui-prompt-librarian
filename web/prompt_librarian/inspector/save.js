@@ -9,6 +9,9 @@
      1. not dirty and not "save as new"       -> stop, say so
      2. staleness check (someone else edited) -> conflict UI, stop
      3. dupe gate, always re-run on save      -> resolve UI, stop
+        ...unless a match is the SAME text and we are creating: then there is
+        nothing to write, so the stored record is adopted and the save ends
+        "clean" rather than asking about a copy of itself
      4. commit (create | update+expect_updated); 409 re-enters step 2
      5. adopt the server's record as both `current` and `baseline`
 
@@ -35,6 +38,13 @@
 
 import { LDQUO, MDASH, MIDDOT, RDQUO } from "./constants.js";
 import { ensureOk, errMsg, isConflict, matchesOf, pct, unwrapRecord } from "./records.js";
+
+/**
+ * A similarity at or above this is "the same text", not "similar text": the
+ * backend scores on normalized bodies, so 1.00 means the two normalize to the
+ * same string. Just under 1 to stay clear of float noise.
+ */
+const EXACT = 0.9999;
 
 /** @param {object} pane */
 export function createSave(pane) {
@@ -80,6 +90,7 @@ export function createSave(pane) {
       // the live panel happens to be showing.
       const t = pane.threshold();
       let gate = [];
+      let exact = null;
       try {
         const r = await ctx.API.dupes({
           body: pane.buf.body,
@@ -94,9 +105,14 @@ export function createSave(pane) {
           // Every other surface — the panel below, the list's badge, the
           // duplicate accordion — still reports the match, because a muted
           // duplicate is a duplicate the library still contains.
-          gate = matchesOf(ensureOk(r)).filter(
-            (m) => m.score >= t && !m.ignored && m.id !== (pane.current && pane.current.id)
+          const found = matchesOf(ensureOk(r)).filter(
+            (m) => !m.ignored && m.id !== (pane.current && pane.current.id)
           );
+          gate = found.filter((m) => m.score >= t);
+          // A 1.00 match is not a *possible* duplicate, it is the same text.
+          // Asking about it is asking the user to choose between two identical
+          // records — see the create branch below.
+          exact = found.find((m) => m.score >= EXACT) || null;
         }
       } catch (err) {
         // A dupe-check outage must not become an unsaveable library; warn and
@@ -105,6 +121,14 @@ export function createSave(pane) {
         gate = [];
       }
       if (pane.disposed) return "busy";
+      // An exact copy of something already stored, with nothing of our own to
+      // update: writing it would add a second identical record and nothing
+      // else. Adopt the one that exists instead — the buffer ends up clean, so
+      // this counts as saved and the modal may close.
+      if (exact && !isUpdate) {
+        const kept = await adoptExact(exact);
+        if (kept) return "clean";
+      }
       if (gate.length) { openResolve(gate, asNew); return "blocked"; }
 
       // ---- 5. commit ----------------------------------------------------
@@ -156,6 +180,37 @@ export function createSave(pane) {
     pane.scheduleDupes.cancel();
     pane.runDupes(false);
     return rec;
+  }
+
+  /**
+   * The "you already have this" path: select the stored record instead of
+   * creating a copy of it.
+   *
+   * Deliberately NOT a silent no-op — the panel switches to the record that
+   * matched, so the user can see the thing their text turned out to be, and
+   * the node ends up pointing at a real id (`push`) rather than at nothing.
+   *
+   * @returns {Promise<boolean>} false when the record could not be loaded, in
+   *   which case the caller falls through to the normal duplicate dialog.
+   */
+  async function adoptExact(m) {
+    let rec = null;
+    try {
+      rec = unwrapRecord(ensureOk(await ctx.API.get(m.id)));
+    } catch (_) {
+      rec = null;
+    }
+    if (!rec || !rec.id || pane.disposed) return false;
+    // Only when it really is identical: `get` is a second opinion on a score
+    // that was computed against a snapshot of the corpus.
+    if (String(rec.body || "").trim() !== String(pane.buf.body || "").trim()) return false;
+    pane.clearDraft(rec.id);
+    if (pane.current && pane.current.id) pane.clearDraft(pane.current.id);
+    pane.adoptRecord(rec, { silent: false, push: true });
+    pane.toast("already saved as " + LDQUO + D.labelOf(rec) + RDQUO + " " + MDASH + " nothing added", "success");
+    pane.scheduleDupes.cancel();
+    pane.runDupes(false);
+    return true;
   }
 
   /* ---- Conflict UI (step 2) ---------------------------------------- */
@@ -522,6 +577,7 @@ export function createSave(pane) {
   pane.setSaving = setSaving;
   pane.save = save;
   pane.commit = commit;
+  pane.adoptExact = adoptExact;
   pane.openConflict = openConflict;
   pane.openResolve = openResolve;
   pane.keepBoth = keepBoth;

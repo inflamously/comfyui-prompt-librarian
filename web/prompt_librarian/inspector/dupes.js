@@ -8,7 +8,7 @@
    whatever this panel happens to be showing.
    ========================================================================== */
 
-import { MDASH } from "./constants.js";
+import { LDQUO, MDASH, RDQUO } from "./constants.js";
 import { ensureOk, matchesOf, pct } from "./records.js";
 
 /** Threshold options for the `threshold 90% ▾` popover. */
@@ -53,6 +53,7 @@ export function createDupes(pane) {
     const loading = !!st.loading;
     const t = threshold();
     els.threshBtn.firstChild.textContent = "threshold " + Math.round(t * 100) + "%";
+    if (els.reviseBtn) els.reviseBtn.hidden = !list.length;
 
     D.clearEl(els.dupesBody);
 
@@ -98,7 +99,59 @@ export function createDupes(pane) {
       (list.length === 1 ? "" : "es") +
       (muted ? " (" + D.fmtInt(muted) + " muted)" : "");
 
-    list.forEach((m, i) => els.dupesBody.appendChild(dupeRow(m, i === 0 && !m.ignored)));
+    // The heading IS the panel. No rows: a list of matches inside the editor
+    // is a list of decisions the user did not ask for yet, and every one of
+    // them needs the context (what is kept, what is thrown away) that only the
+    // `revise` dialog has room for. The body stays empty on purpose.
+  }
+
+  /**
+   * `revise` — the only place matches are listed, because it is the only place
+   * that can say what picking one would DO. Each row names what survives and
+   * what does not, so "merge" is never a guess.
+   */
+  function openRevise() {
+    const list = matchesOf((pane.S().dupes || {}).matches || []);
+    if (!list.length) return null;
+    const dlg = h("div", {
+      className: "pl-dialog",
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-label": "Near matches",
+    });
+    let layer = null;
+    const close = () => { if (layer) layer.close(); };
+
+    const body = h("div", { className: "pl-dialog-body" });
+    body.appendChild(
+      h(
+        "p",
+        null,
+        D.fmtInt(list.length) + " prompt" + (list.length === 1 ? " is" : "s are") + " at least " +
+          Math.round(threshold() * 100) + "% similar to this text. Nothing here is written until you pick something."
+      )
+    );
+    list.forEach((m, i) => {
+      const row = reviseRow(m, i === 0 && !m.ignored);
+      // Acting on a match takes over the screen (compare, merge, a confirm);
+      // leaving this dialog stacked underneath would strand it.
+      for (const b of row.querySelectorAll("button")) {
+        b.addEventListener("click", () => close());
+      }
+      body.appendChild(row);
+    });
+
+    dlg.appendChild(h("div", { className: "pl-dialog-title" }, "Near matches"));
+    dlg.appendChild(body);
+    dlg.appendChild(
+      h(
+        "div",
+        { className: "pl-dialog-acts" },
+        h("button", { className: "pl-btn", type: "button", onclick: () => close() }, "close")
+      )
+    );
+    layer = pane.openLayer(dlg, { closeOnOutside: true });
+    return layer;
   }
 
   function setPanelTone(warn) {
@@ -132,12 +185,50 @@ export function createDupes(pane) {
     runDupes(pane.dupePaused);
   }
 
-  function dupeRow(m, top) {
+  /**
+   * One match, as an OUTCOME rather than an entry.
+   *
+   * A row that says "97 % — differs: two words" tells the user what the
+   * backend noticed; it does not tell them what happens if they press a
+   * button, which is the only thing they are actually deciding. So each row
+   * spells out what survives and what is thrown away, in the two shapes this
+   * pane can produce them:
+   *
+   *   merge     the MATCH survives (id, usage count, version history) and
+   *             takes this text as its body; the record being edited is
+   *             absorbed and removed — or, if nothing has been saved yet,
+   *             there is nothing to remove.
+   *   overwrite the match keeps everything and only its TEXT is replaced;
+   *             the old text is recoverable from its own version history.
+   */
+  function reviseRow(m, top) {
+    const mine = pane.current && pane.current.id ? String(pane.current.id) : null;
+    const mineLabel = mine ? LDQUO + (D.labelOf(pane.current) || mine) + RDQUO : "this draft";
+
     const acts = h(
       "div",
       { className: "pl-dupe-acts" },
       h("button", { className: "pl-btn pl-btn-sm", type: "button", onclick: () => pane.compareWith(m) }, "compare"),
-      h("button", { className: "pl-btn pl-btn-sm pl-btn-accent", type: "button", onclick: () => pane.mergeInto(m) }, "merge")
+      h(
+        "button",
+        {
+          className: "pl-btn pl-btn-sm pl-btn-accent",
+          type: "button",
+          title: "Keep " + m.label + ", give it this text, and drop " + mineLabel,
+          onclick: () => pane.mergeInto(m),
+        },
+        "merge"
+      ),
+      h(
+        "button",
+        {
+          className: "pl-btn pl-btn-sm",
+          type: "button",
+          title: "Replace the text of " + m.label + " and keep both records",
+          onclick: () => pane.overwriteMatch(m),
+        },
+        "overwrite"
+      )
     );
     // Muting used to be a one-way trapdoor: nothing in the panel said a pair
     // was muted and nothing could take it back, so a library quietly stopped
@@ -169,6 +260,18 @@ export function createDupes(pane) {
       // The `differs: ` prefix belongs to the UI. The backend's `summary` is
       // just the change list, so do not expect it in the payload.
       h("div", { className: "pl-dupe-why" }, m.summary ? "differs: " + m.summary : ""),
+      h(
+        "div",
+        { className: "pl-dupe-why" },
+        "merge keeps " + LDQUO + m.label + RDQUO + " (id, usage, history) with this text " + MDASH + " " +
+          (mine ? "throws away " + mineLabel : "nothing else is created")
+      ),
+      h(
+        "div",
+        { className: "pl-dupe-why" },
+        "overwrite keeps both records " + MDASH + " throws away the current text of " + LDQUO + m.label + RDQUO +
+          " (kept in its version history)"
+      ),
       acts
     );
   }
@@ -202,9 +305,10 @@ export function createDupes(pane) {
             id: pane.current && pane.current.id ? pane.current.id : null,
             exclude_id: pane.current && pane.current.id ? pane.current.id : null,
             threshold: threshold(),
-            // Only the <=3 rows this panel renders, and summaries only for
-            // those — the expensive part of the endpoint.
-            limit: 3,
+            // The panel renders one row, but `revise` lists everything this
+            // call returned — so the fetch has to cover the dialog, not the
+            // row. 10 matches the save gate's own limit.
+            limit: 10,
             summaries: true,
           },
           signal
@@ -247,6 +351,21 @@ export function createDupes(pane) {
         renderDupes();
         pane.scheduleDupes.cancel();
         runDupes(pane.dupePaused);
+        // The knob used to be session-local AND panel-local: the list's
+        // duplicate counts kept using the stored value, and reopening the
+        // modal reverted to it — which is what "the threshold does nothing"
+        // looked like from the outside. Persist it, then re-ask the list.
+        try {
+          if (ctx.API && typeof ctx.API.settings === "function") {
+            Promise.resolve()
+              .then(() => ctx.API.settings({ dupe_threshold: t }))
+              .catch(() => pane.toast("threshold not saved (using it for this session)", "error"));
+          }
+        } catch (_) {}
+        try {
+          if (ctx.list && typeof ctx.list.refresh === "function") ctx.list.refresh({ reset: true });
+          else if (typeof ctx.refreshAll === "function") ctx.refreshAll();
+        } catch (_) {}
       },
       { selected: cur }
     );
@@ -259,6 +378,7 @@ export function createDupes(pane) {
   pane.runDupes = runDupes;
   pane.publishDupes = publishDupes;
   pane.openThreshold = openThreshold;
+  pane.openRevise = openRevise;
   pane.scheduleDupes = scheduleDupes;
 
   return { scheduleDupes };

@@ -432,8 +432,8 @@ export function mountInspector(el, ctx) {
         cancelLabel: "Keep editing",
         cancelValue: "cancel",
         choices: [
-          { value: "discard", label: "Discard", danger: true },
           { value: "save", label: asNew ? "Save as new" : "Save", primary: true },
+          { value: "discard", label: "Discard", danger: true },
         ],
       });
     } catch (_) { answer = "cancel"; }

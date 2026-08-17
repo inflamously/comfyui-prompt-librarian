@@ -15,7 +15,18 @@ import { inst } from "./state.js";
 
 /**
  * Push a layer (popover, sub-dialog) onto `.pl-layers`.
- * @param {{el: HTMLElement, onClose?: () => void, closeOnOutside?: boolean}} opts
+ *
+ * Every layer gets its own scrim appended just before it, so whatever is
+ * underneath — the card, and any layer already on the stack — cannot register
+ * clicks while this one is up. A closeOnOutside layer is still dismissed by a
+ * click on its scrim (the pointerdown handler in modal/shell.js), but the
+ * click stops there instead of also pressing a button on the card behind it.
+ * Pass `scrim: false` for a layer that must let the page beneath it stay live.
+ *
+ * The scrim of a dialog (closeOnOutside:false) is tinted, so the layer beneath
+ * visibly recedes; a popover's is clear. `dim` forces either way.
+ *
+ * @param {{el: HTMLElement, onClose?: () => void, closeOnOutside?: boolean, scrim?: boolean, dim?: boolean}} opts
  * @returns {object} handle for popLayer()
  */
 export function pushLayer(opts) {
@@ -25,9 +36,17 @@ export function pushLayer(opts) {
     el: opts.el,
     onClose: typeof opts.onClose === "function" ? opts.onClose : null,
     closeOnOutside: opts.closeOnOutside !== false,
+    scrim: null,
     restoreFocus: typeof document !== "undefined" ? document.activeElement : null,
   };
   it.layers.push(handle);
+  if (opts.scrim !== false) {
+    // Dialogs tint what they cover; popovers only block it. `dim` overrides
+    // that default either way.
+    const dim = typeof opts.dim === "boolean" ? opts.dim : !handle.closeOnOutside;
+    handle.scrim = h("div", { className: "pl-layer-scrim" + (dim ? " is-dim" : "") });
+    it.els.layers.appendChild(handle.scrim);
+  }
   it.els.layers.appendChild(opts.el);
   const first = focusables(opts.el)[0];
   if (first) {
@@ -50,6 +69,7 @@ export function popLayer(handle) {
   it.layers.splice(i, 1);
   try {
     if (target.el && target.el.parentNode) target.el.parentNode.removeChild(target.el);
+    if (target.scrim && target.scrim.parentNode) target.scrim.parentNode.removeChild(target.scrim);
   } catch (_) {
     /* ignore */
   }

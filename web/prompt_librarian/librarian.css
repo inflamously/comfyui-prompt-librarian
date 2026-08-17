@@ -1510,6 +1510,21 @@
   display: none;
 }
 
+/* One per layer, sitting immediately under it: while a layer is up, nothing
+   beneath it — the card, or a layer pushed earlier — can be clicked. */
+.pl-layer-scrim {
+  position: absolute;
+  inset: 0;
+}
+
+/* A dialog dims what it sits on top of — lighter than .pl-backdrop, which is
+   already behind it, so the two stack without going black. A popover's scrim
+   stays clear: it blocks clicks, it does not announce itself. */
+.pl-layer-scrim.is-dim {
+  background: rgba(4, 6, 14, 0.42);
+  animation: pl-fade-in var(--pl-slow) ease-out;
+}
+
 .pl-popover {
   position: fixed;
   min-width: 180px;

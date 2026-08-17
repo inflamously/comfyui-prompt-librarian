@@ -40,11 +40,15 @@ from typing import Any
 # decision, so it has to be inspectable and patchable from a test).
 # --------------------------------------------------------------------------
 
-LABEL_TERMS = 3          # distinctive terms to pick, before adjacency merging
-LABEL_CHARS = 64         # hard cap on the rendered label
+# Three terms fit a combo line but read as a fragment in a sidebar list: too
+# little of the prompt to recognise it by. Eight gives a handle of roughly
+# five to ten words once adjacent picks merge into phrases, which is what a
+# row needs to be scannable, and the char cap keeps it to one line.
+LABEL_TERMS = 8          # distinctive terms to pick, before adjacency merging
+LABEL_CHARS = 96         # hard cap on the rendered label
 LABEL_SEP = " · "   # " · "
 MIN_TERM_CHARS = 3       # ...for purely alphabetic terms; "8k" and "4k" survive
-HEAD_CHARS = 64          # cap on the body-head fallback
+HEAD_CHARS = 96          # cap on the body-head fallback
 ELLIPSIS = "…"
 
 # Bodies are capped at 100 000 characters and a label is drawn from a handful

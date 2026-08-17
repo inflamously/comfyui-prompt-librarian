@@ -23,14 +23,20 @@ def corpus():
     """Two near-identical bodies plus an outsider.
 
     The first two share every opening word, which is the case a body-head
-    label cannot tell apart and a corpus-derived one can.
+    label cannot tell apart and a corpus-derived one can. All three carry the
+    same tail of boilerplate, so there are more candidate terms than
+    ``LABEL_TERMS`` and the corpus has to actually choose between them.
     """
+    boiler = (", cinematic lighting, highly detailed, sharp focus, "
+              "masterpiece quality, trending artstation")
     return [
         rec("ruined", "a lone ballerina drifting through a ruined theatre, "
-                      "volumetric haze, 35mm", ["dance"]),
+                      "cracked marble columns, dust motes swirling, "
+                      "volumetric haze, 35mm" + boiler, ["dance"]),
         rec("sunlit", "a lone ballerina drifting through a sunlit field, "
-                      "volumetric haze, 35mm", ["dance"]),
-        rec("fruit", "a bowl of fruit on a wooden table, north light"),
+                      "tall summer grasses, pollen glinting, "
+                      "volumetric haze, 35mm" + boiler, ["dance"]),
+        rec("fruit", "a bowl of fruit on a wooden table, north light" + boiler),
     ]
 
 

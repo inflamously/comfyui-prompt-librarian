@@ -85,7 +85,7 @@ export function firstLine(str, n) {
 }
 
 /** Cap on a derived label — mirrors `labels.LABEL_CHARS` on the backend. */
-export const LABEL_CHARS = 64;
+export const LABEL_CHARS = 96;
 
 /**
  * A body's opening words, cut on a word boundary. The client half of a label.

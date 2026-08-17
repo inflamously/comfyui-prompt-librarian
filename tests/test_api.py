@@ -327,7 +327,8 @@ def test_a_label_moves_when_the_library_around_it_does(call, store):
     """It is derived, and derived from the *corpus* — so it is not stable and
     nothing may key off it. Saving an unrelated prompt that happens to share
     these words is enough to change what this one is called."""
-    rec = store.create(body="a lone ballerina drifting through a ruined theatre at dusk")
+    rec = store.create(body="a lone ballerina drifting through a ruined theatre at dusk, "
+                            "cracked marble columns, dust motes swirling, volumetric haze")
     before = ok(call("get", "/prompt", {"id": rec["id"]}))["label"]
     assert "ballerina" in before
 

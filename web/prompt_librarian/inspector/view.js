@@ -40,7 +40,7 @@ export function buildView(pane) {
   const newBtn = h(
     "button",
     {
-      className: "pl-btn pl-btn-sm pl-new",
+      className: "pl-btn pl-btn-m pl-new",
       type: "button",
       title: "Start a new prompt (clears the editor)",
       onclick: () => pane.newPrompt(),

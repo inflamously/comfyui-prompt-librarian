@@ -52,6 +52,14 @@
   --pl-accent-soft: #313122;
   --pl-star: #ffdc11;
 
+  /* buttons — the blue surfaces nudged a few percent toward the yellow accent,
+     so a button reads as a button before you hover it. Deliberately tiny: at
+     this weight it is a warmth, not a colour. `-soft` is the same nudge as a
+     translucent overlay, for the variants that must stay see-through. */
+  --pl-btn-tint: #1c202e;
+  --pl-btn-tint-hover: #262b3d;
+  --pl-btn-tint-soft: rgba(206, 200, 128, 0.05);
+
   /* warn */
   --pl-warn: #e8a33d;
   --pl-warn-bg: #1e1f29;
@@ -140,11 +148,21 @@
   user-select: text;
 }
 
-.pl-root button,
-.pl-node-card button {
-  background: none;
-  border: 0;
-  padding: 0;
+/* Button base.
+   --------------------------------------------------------------------------
+   Wrapped in :where() so the whole rule has ZERO specificity. That matters: as
+   a plain `.pl-root button` (0,1,1) this reset outranked every class rule
+   below it — `.pl-btn`'s own `padding: 10px 18px` is only (0,1,0) — so every
+   button in the panel rendered with `padding: 0`. With :where() the base is a
+   floor that any class can lift, which is what it was always meant to be.
+
+   The floor itself: a real 2px of padding, so no button is a bare glyph with
+   nothing around it to hit, and the faint tint below. */
+:where(.pl-root, .pl-node-card) :where(button) {
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: var(--pl-btn-tint);
   text-align: inherit;
   cursor: pointer;
 }
@@ -307,7 +325,7 @@
   padding: 5px 10px;
   border: 1px solid var(--pl-border);
   border-radius: 999px;
-  background: var(--pl-bg-pane);
+  background: var(--pl-btn-tint);
   font-family: var(--pl-mono);
   font-size: 11.5px;
   letter-spacing: 0.02em;
@@ -339,7 +357,7 @@
   padding: 5px 10px;
   border: 1px solid var(--pl-border);
   border-radius: 999px;
-  background: var(--pl-bg-pane);
+  background: var(--pl-btn-tint);
   font-family: var(--pl-mono);
   font-size: 11.5px;
   letter-spacing: 0.02em;
@@ -376,7 +394,7 @@
   height: 22px;
   border: 1px solid var(--pl-border-soft);
   border-radius: 5px;
-  background: var(--pl-bg-pane);
+  background: var(--pl-btn-tint);
   color: var(--pl-text-dim);
   font-size: 13px;
   line-height: 1;
@@ -513,7 +531,7 @@
   padding: 5px 11px;
   border: 1px solid var(--pl-border-mute);
   border-radius: 999px;
-  background: transparent;
+  background: var(--pl-btn-tint-soft);
   font-family: var(--pl-mono);
   font-size: 11.5px;
   letter-spacing: 0.02em;
@@ -562,8 +580,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 12px;
-  height: 12px;
+  /* Opts out of the 2px base floor: this is a 14px glyph box inside a chip
+     that already carries the padding around it. */
+  width: 14px;
+  height: 14px;
+  padding: 0;
   border-radius: 50%;
   font-size: 11px;
   line-height: 1;
@@ -592,7 +613,7 @@
   flex: 0 0 auto;
   padding: 0 0 3px;
   border-bottom: 1px solid transparent;
-  background: transparent;
+  background: var(--pl-btn-tint-soft);
   font-family: var(--pl-mono);
   font-size: 12.5px;
   letter-spacing: 0.02em;
@@ -1117,9 +1138,9 @@
 }
 
 .pl-link {
-  background: none;
+  background: var(--pl-btn-tint-soft);
   border: 0;
-  padding: 0;
+  padding: 2px 4px;
   font: inherit;
   color: var(--pl-text-dim);
   cursor: pointer;
@@ -1186,7 +1207,7 @@
   padding: 3px 8px;
   border: 1px solid transparent;
   border-radius: 5px;
-  background: transparent;
+  background: var(--pl-btn-tint-soft);
   font-family: var(--pl-mono);
   font-size: 11.5px;
   font-weight: 400;
@@ -1366,7 +1387,7 @@
   padding: 10px 18px;
   border: 1px solid var(--pl-border);
   border-radius: var(--pl-radius-sm);
-  background: var(--pl-bg-pane);
+  background: var(--pl-btn-tint);
   color: var(--pl-text);
   font-size: 13.5px;
   font-weight: 600;
@@ -1378,7 +1399,7 @@
 }
 
 .pl-btn:hover {
-  background: var(--pl-bg-hover);
+  background: var(--pl-btn-tint-hover);
   border-color: var(--pl-border);
 }
 
@@ -1395,13 +1416,13 @@
 
 .pl-btn[disabled]:hover,
 .pl-btn[aria-disabled="true"]:hover {
-  background: var(--pl-bg-pane);
+  background: var(--pl-btn-tint);
 }
 
 /* The pane's committing action (`Save`, versions' `Restore`) — solid accent
    fill, dark ink, weight 600 (spec). */
 .pl-btn-primary {
-  background: var(--pl-accent);
+  background: var(--pl-accent-soft);
   border-color: var(--pl-accent);
   color: var(--pl-accent-ink);
   font-weight: 700;
@@ -1420,7 +1441,7 @@
 
 /* Accent outline — the dupe panel's `merge`. */
 .pl-btn-accent {
-  background: transparent;
+  background: var(--pl-btn-tint-soft);
   border-color: var(--pl-accent);
   color: var(--pl-accent);
 }
@@ -1433,7 +1454,7 @@
 
 /* `Delete` — transparent with a danger outline (spec). */
 .pl-btn-danger {
-  background: transparent;
+  background: var(--pl-btn-tint-soft);
   border-color: var(--pl-danger-border);
   color: var(--pl-danger);
   margin-left: auto;
@@ -1453,7 +1474,7 @@
 }
 
 .pl-btn-ghost {
-  background: transparent;
+  background: var(--pl-btn-tint-soft);
   border-color: transparent;
   color: var(--pl-text-dim);
   font-weight: 400;
@@ -1547,7 +1568,7 @@
   min-width: 0;
   padding: 7px 9px;
   border-radius: 4px;
-  background: transparent;
+  background: var(--pl-btn-tint-soft);
   font-family: var(--pl-mono);
   font-size: 12.5px;
   letter-spacing: 0.01em;
@@ -1756,7 +1777,7 @@
   flex: 1 1 0;
   min-width: 0;
   padding: 7px 10px;
-  background: transparent;
+  background: var(--pl-btn-tint-soft);
   font-family: var(--pl-mono);
   font-size: 12px;
   letter-spacing: 0.02em;

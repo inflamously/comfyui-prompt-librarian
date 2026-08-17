@@ -745,6 +745,47 @@ def _as_index(source: Any, rev: int | None = None) -> SearchIndex:
 # search()
 # --------------------------------------------------------------------------
 
+#: Members shipped with one collapsed cluster. `group_size` reports the real
+#: size regardless, so a truncated group is visible rather than silent.
+GROUP_MEMBER_CAP = 50
+
+
+def _fold_groups(scored: list[tuple[Doc, float]],
+                 groups: Iterable[Iterable[str]]
+                 ) -> tuple[list[tuple[Doc, float]], dict[str, list[tuple[Doc, float]]]]:
+    """Collapse each near-duplicate cluster down to one representative row.
+
+    The representative is whichever member comes FIRST in the already-sorted
+    list, which is the only choice that needs no sort rules of its own: the
+    cluster lands exactly where its best member would have, under relevance,
+    recency, usage or A-Z alike.
+
+    Members of a cluster that the query filtered out are simply not here, so a
+    cluster with one surviving member folds to a plain row (``members == []``)
+    rather than a one-item accordion.
+    """
+    gid: dict[str, int] = {}
+    for i, members in enumerate(groups or ()):
+        for pid in members or ():
+            gid[str(pid)] = i
+
+    rep_at: dict[int, str] = {}
+    members_of: dict[str, list[tuple[Doc, float]]] = {}
+    out: list[tuple[Doc, float]] = []
+    for entry in scored:
+        g = gid.get(entry[0].pid)
+        if g is None:
+            out.append(entry)
+            continue
+        rep = rep_at.get(g)
+        if rep is None:
+            rep_at[g] = entry[0].pid
+            members_of[entry[0].pid] = []
+            out.append(entry)
+        else:
+            members_of[rep].append(entry)
+    return out, members_of
+
 
 def search(  # noqa: C901 - the query pipeline reads better as one function
     source: Any,
@@ -761,6 +802,7 @@ def search(  # noqa: C901 - the query pipeline reads better as one function
     dupe_ids: Iterable[str] | None = None,
     dupe_count_fn: Callable[[list[str]], dict[str, int]] | None = None,
     match_fn: Callable[[list[str]], dict[str, float]] | None = None,
+    groups: Iterable[Iterable[str]] | None = None,
 ) -> dict[str, Any]:
     """Run a search.
 
@@ -778,9 +820,19 @@ def search(  # noqa: C901 - the query pipeline reads better as one function
     ``dupes_only`` is requested without it the filter is skipped and
     ``dupes_partial`` comes back True.
 
+    ``groups`` -- the connected components of the near-duplicate graph, as
+    ``dedupe.dupe_counts()['groups']`` -- turns the result into one row per
+    *cluster* instead of one row per record.  Passed as plain id lists so this
+    module still never imports :mod:`.dedupe`.
+
     Returns::
 
-        {rev, total, offset, limit, threshold, took_ms, dupes_partial, hits[]}
+        {rev, total, record_total, offset, limit, threshold, took_ms,
+         dupes_partial, hits[], groups{rep_id: hit[]}}
+
+    ``total`` counts rows the caller will page over -- clusters and singletons
+    once folding is on -- and ``record_total`` counts the records behind them.
+    Without ``groups`` they are equal and ``groups{}`` is empty.
     """
     t0 = time.perf_counter()
     index = _as_index(source, rev)
@@ -851,12 +903,31 @@ def search(  # noqa: C901 - the query pipeline reads better as one function
 
     _sort_scored(scored, sort)
 
+    # Folding happens on the FULL sorted list, before the page slice: a
+    # cluster's members are scattered all over it, and collapsing after
+    # slicing would leave a page whose length nobody can predict.
+    record_total = len(scored)
+    members_of: dict[str, list[tuple[Doc, float]]] = {}
+    if groups:
+        scored, members_of = _fold_groups(scored, groups)
+
     total = len(scored)
     offset = max(0, int(offset or 0))
     limit = max(0, int(limit if limit is not None else 50))
     page = scored[offset:offset + limit] if limit else []
 
+    # Members ride along with the page they belong to, capped: one pathological
+    # cluster must not be able to turn a 200-row page into a 20 000-row one.
+    # `group_size` still reports the truth, so the UI can say "+N more".
+    shown_members = {
+        doc.pid: (members_of.get(doc.pid) or ())[:GROUP_MEMBER_CAP]
+        for doc, _ in page
+        if members_of.get(doc.pid)
+    }
+
     pids = [d.pid for d, _ in page]
+    for shown in shown_members.values():
+        pids.extend(d.pid for d, _ in shown)
     counts: dict[str, int] = {}
     matches: dict[str, float] = {}
     if pids:
@@ -874,11 +945,10 @@ def search(  # noqa: C901 - the query pipeline reads better as one function
             except Exception:
                 matches = {}
 
-    hits: list[dict[str, Any]] = []
-    for doc, sc in page:
+    def _hit(doc, sc, group_size):
         rec = index.records.get(doc.pid, {})
         m = matches.get(doc.pid)
-        hits.append({
+        return {
             "id": doc.pid,
             "label": index.label_of(doc.pid),
             "preview": preview(rec.get("body") or ""),
@@ -892,16 +962,27 @@ def search(  # noqa: C901 - the query pipeline reads better as one function
             "score": round(sc, 6),
             "dupe_count": int(counts.get(doc.pid, 0) or 0),
             "match_pct": (int(round(m * 100)) if isinstance(m, (int, float)) else None),
-        })
+            "group_size": int(group_size),
+        }
+
+    hits: list[dict[str, Any]] = []
+    group_rows: dict[str, list[dict[str, Any]]] = {}
+    for doc, sc in page:
+        shown = shown_members.get(doc.pid) or ()
+        hits.append(_hit(doc, sc, 1 + len(members_of.get(doc.pid) or ())))
+        if shown:
+            group_rows[doc.pid] = [_hit(d, s, 1) for d, s in shown]
 
     return {
         "rev": index.rev if rev is None else rev,
         "total": total,
+        "record_total": record_total,
         "offset": offset,
         "limit": limit,
         "threshold": threshold,
         "took_ms": round((time.perf_counter() - t0) * 1000.0, 3),
         "dupes_partial": dupes_partial,
         "hits": hits,
+        "groups": group_rows,
         "fallback": fallback_used,
     }

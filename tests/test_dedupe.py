@@ -156,7 +156,7 @@ def test_canonical_pair_found_by_find_similar(records):
     # the api attaches it on the way out rather than have a cached match hold
     # a string that goes stale when an unrelated record is saved.
     assert set(hit) == {"id", "score", "pct", "summary", "preview",
-                        "used", "updated"}
+                        "used", "updated", "ignored"}
     assert hit["pct"] == 89
     assert hit["summary"] == '“toward” → “towards”, + volumetric haze'
 
@@ -237,12 +237,30 @@ def test_exclude_id_prevents_self_matching_at_100(records):
     assert [h["id"] for h in without] == []
 
 
-def test_ignored_pairs_are_excluded(records):
+def test_ignored_pairs_are_flagged_not_dropped(records):
+    """A mute annotates a match; it never makes one disappear.
+
+    Dropping it here is what made a library of four identical prompts report
+    "1 near-dupe" per row: every surface that counted inherited the save
+    dialog's opinion about what the user had already agreed to.
+    """
     idx = D.build_dupe_index(records, rev=1)
-    assert D.find_similar(idx, pid="b1", exclude_id="b1", threshold=0.90)
-    quiet = D.find_similar(idx, pid="b1", exclude_id="b1", threshold=0.90,
+    loud = D.find_similar(idx, pid="b1", exclude_id="b1", threshold=0.90)
+    assert [h["id"] for h in loud] == ["b2"]
+    assert loud[0]["ignored"] is False
+
+    muted = D.find_similar(idx, pid="b1", exclude_id="b1", threshold=0.90,
                            ignored=[("b2", "b1")])       # order-insensitive
-    assert quiet == []
+    assert [h["id"] for h in muted] == ["b2"]
+    assert muted[0]["ignored"] is True
+
+
+def test_ignored_needs_a_self_id_to_mean_anything(records):
+    """A body with no id yet (an unsaved draft) has no pairs to mute."""
+    idx = D.build_dupe_index(records, rev=1)
+    hits = D.find_similar(idx, text=records[2]["body"], threshold=0.90,
+                          ignored=[("b1", "b2")])
+    assert hits and all(h["ignored"] is False for h in hits)
 
 
 def test_with_summary_false_skips_the_diff(records):
@@ -358,15 +376,31 @@ def test_dupe_counts_clusters_transitively():
     assert res["counts"]["solo"] == 0
 
 
-def test_dupe_counts_honours_ignored(records):
-    res = D.dupe_counts(records, 0.90, rev=1, ignored=[("b1", "b2")])
-    assert res["counts"]["b1"] == 0 and res["groups"] == []
+def test_counting_does_not_take_an_ignored_set(records):
+    """The counting functions do not accept "keep both" at all.
+
+    Not "accept it and ignore it" — the parameter is gone, so a caller that
+    still believes muting shrinks the library fails loudly instead of quietly
+    reporting a number nobody can reconcile with what is on screen.
+    """
+    with pytest.raises(TypeError):
+        D.dupe_counts(records, 0.90, rev=1, ignored=[("b1", "b2")])
+    with pytest.raises(TypeError):
+        D.page_dupe_counts(records, ["b1"], 0.90, ignored=[("b1", "b2")])
+
+
+def test_four_identical_records_each_count_three(records):
+    """The shape of the bug this rule exists for."""
+    same = [mk(f"same{i}", "a dancer in the rain") for i in range(4)]
+    res = D.dupe_counts(same, 0.90, rev=1)
+    assert res["counts"] == {f"same{i}": 3 for i in range(4)}
+    assert res["groups"] == [["same0", "same1", "same2", "same3"]]
+    assert D.page_dupe_counts(same, ["same0"], 0.90) == {"same0": 3}
 
 
 def test_page_dupe_counts_only_touches_requested_ids(records):
     counts = D.page_dupe_counts(records, ["b1", "c1"], 0.90)
     assert counts == {"b1": 1, "c1": 0}
-    assert D.page_dupe_counts(records, ["b1"], 0.90, ignored=[("b1", "b2")]) == {"b1": 0}
     assert D.page_dupe_counts(records, ["nope"], 0.90) == {"nope": 0}
 
 

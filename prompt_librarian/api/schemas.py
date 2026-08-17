@@ -121,9 +121,15 @@ class SearchHit(_Schema):
     version_count: int
     score: float
     dupe_count: int
-    """Near-duplicates of this record, counted for this page only."""
+    """Near-duplicates of this record, counted for this page only. Counts every
+    one of them: a "keep both" mute silences the save dialog, it does not make
+    a duplicate stop existing."""
     match_pct: int | None
     """Similarity to ``match_id``; null when below the threshold, or unasked."""
+    group_size: int
+    """Records in this row's near-duplicate cluster, itself included. Always 1
+    unless ``group`` was asked for. When it exceeds the members listed under
+    ``groups[id]``, the rest were capped away — the count is still the truth."""
 
 
 @dataclass
@@ -151,6 +157,10 @@ class DupeMatch(_Schema):
     preview: str
     used: int
     updated: str
+    ignored: bool
+    """True when this pair carries a "keep both" decision. The match is still
+    reported — muting is the save gate's business, not a claim that the
+    duplicate went away — and it is the caller that acts on the flag."""
 
 
 @dataclass
@@ -262,7 +272,11 @@ class SearchQuery(_Schema):
     """Alias of ``q``, so a stored selector round-trips unchanged."""
     tags: list[str] = field(default_factory=list)
     dupes_only: bool = False
-    """The one search shape that pays for the all-pairs scan."""
+    """Filter to records that have at least one near-duplicate."""
+    group: bool = False
+    """Fold each near-duplicate cluster into a single row, its members returned
+    under ``groups``. Together with ``dupes_only`` these are the two search
+    shapes that pay for the all-pairs scan."""
     sort: Literal["relevance", "recent", "most_used", "az"] = "relevance"
     mode: Literal["all", "any"] = "all"
     offset: int = 0
@@ -276,6 +290,8 @@ class SearchQuery(_Schema):
 @dataclass
 class SearchResponse(Envelope):
     total: int
+    """Rows to page over: clusters and singletons when ``group`` is on, records
+    otherwise. This is what ``offset`` counts in."""
     offset: int
     limit: int
     threshold: float
@@ -285,6 +301,14 @@ class SearchResponse(Envelope):
     fallback: bool
     """True when the query missed and the infix/edit-1 vocabulary scan ran."""
     hits: list[SearchHit]
+    record_total: int
+    """Records behind those rows. Equal to ``total`` unless ``group`` folded
+    clusters — that is the number a "select all filtered" bulk op will act on."""
+    groups: dict[str, list[SearchHit]]
+    """``{representative id: the rest of its cluster}``, for the hits on this
+    page that have any. A flat sibling map rather than members nested inside
+    the hit, because a self-referential ``SearchHit`` is not something the
+    OpenAPI generator can render."""
 
 
 @dataclass
@@ -345,11 +369,15 @@ class DupesAllResponse(Envelope):
     threshold: float
     exhaustive: bool
     counts: dict[str, int]
-    """Near-duplicates per record id."""
+    """Near-duplicates per record id. Every one of them — see ``ignored``."""
     groups: list[list[str]]
     """Connected clusters of ids."""
     pairs: dict[str, list[str]]
     """Each id's partners, both directions present."""
+    ignored: list[list[str]]
+    """The "keep both" pairs, reported ALONGSIDE the counts rather than
+    subtracted from them, so a client can mark a muted pair without having to
+    guess why a number came back smaller than the library looks."""
 
 
 @dataclass

@@ -8,11 +8,10 @@
 * ``/dupes/ignore`` — the decision that stops the other three from nagging.
 """
 
-import asyncio
-
 from ... import dedupe
 from ...store import STORE, NotFoundError
 from .. import schemas
+from ..queries import _all_pairs
 from ..utils import (
     _body,
     _bool,
@@ -34,7 +33,7 @@ from ..utils import (
         query=schemas.DupesAllQuery, returns=schemas.DupesAllResponse)
 async def dupes_all(request):
     params = _query(request)
-    result = await _dupes_all(_threshold(params.get("threshold")),
+    result = await _all_pairs(_threshold(params.get("threshold")),
                               _bool(params.get("exhaustive")))
     return _json({
         "threshold": result.get("threshold"),
@@ -42,54 +41,8 @@ async def dupes_all(request):
         "counts": result.get("counts", {}),
         "groups": result.get("groups", []),
         "pairs": result.get("pairs", {}),
+        "ignored": [list(pair) for pair in _ignored()],
     })
-
-
-# -- /dupes/all coalescing --------------------------------------------------- #
-# Concurrent callers on the same (rev, threshold, exhaustive) await one
-# computation instead of stampeding the executor with n identical 0.5-2 s
-# scans. The dict is only ever touched from the event loop, so it needs no lock.
-
-_all_inflight = {}
-
-
-async def _dupes_all(threshold, exhaustive):
-    # `ignored_pairs()` calls `ensure_loaded()`, which bumps `rev` when the file
-    # changed underneath us. Do it *before* computing the key, or the leader can
-    # register under a rev that later callers no longer compute — which silently
-    # un-coalesces the stampede this function exists to prevent.
-    ignored = _ignored()
-    key = (_rev(), float(threshold), bool(exhaustive))
-    entry = _all_inflight.get(key)
-    if entry is not None:
-        event, box = entry
-        await event.wait()
-        if "error" in box:
-            raise box["error"]
-        if "result" in box:
-            return box["result"]
-        # The leader vanished without a result; fall through and compute.
-    event = asyncio.Event()
-    box = {}
-    _all_inflight[key] = (event, box)
-    # Publish the marker, then yield once before starting the work. Under
-    # eagerly-started tasks (3.12+ eager factories, 3.14's gather) a leader
-    # whose executor future resolves without suspending would otherwise run to
-    # completion — marker set *and* torn down — before a single peer got to
-    # look, and the stampede this function prevents would happen anyway.
-    await asyncio.sleep(0)
-    try:
-        box["result"] = await _offload(
-            dedupe.dupe_counts, STORE, threshold,
-            rev=key[0], exhaustive=exhaustive, ignored=ignored,
-        )
-    except Exception as exc:
-        box["error"] = exc
-        raise
-    finally:
-        _all_inflight.pop(key, None)
-        event.set()
-    return box["result"]
 
 
 @_route("post", "/dupes", op="findSimilar",

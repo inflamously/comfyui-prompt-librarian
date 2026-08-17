@@ -196,6 +196,84 @@ def test_search_dupes_only(call, store):
     assert all(hit["dupe_count"] >= 1 for hit in payload["hits"])
 
 
+def test_a_write_re_keys_every_cached_threshold(call, store):
+    """Grouped search cannot start without an all-pairs result.
+
+    Patching only the persisted threshold leaves any other one stranded at the
+    old rev, which is a full rescan on the next keystroke rather than a missed
+    optimisation.
+    """
+    store.create(body="make him dance ballet toward the camera")
+    ok(call("get", "/search", {"group": "1", "threshold": "0.9"}))
+    ok(call("get", "/search", {"group": "1", "threshold": "0.8"}))
+    assert sorted(t for t, _ in dedupe.cached_all_settings()) == [0.8, 0.9]
+
+    rev_before = dedupe.cached_all_settings(_rev_of(store))
+    assert len(rev_before) == 2
+
+    store_rev = _rev_of(store)
+    ok(call("post", "/create", body={"body": "a completely different subject"}))
+    after = _rev_of(store)
+    assert after != store_rev
+    assert sorted(t for t, _ in dedupe.cached_all_settings(after)) == [0.8, 0.9]
+
+
+def _rev_of(store):
+    return store.rev()
+
+
+def test_search_group_folds_a_duplicate_cluster(call, store):
+    """Four copies of one prompt are one row, not four."""
+    ids = [store.create(body="a dancer in the rain")["id"] for _ in range(4)]
+    store.create(body="a bowl of fruit on a table")
+
+    flat = ok(call("get", "/search", {}))
+    assert flat["total"] == 5 and flat["record_total"] == 5
+    assert all(h["group_size"] == 1 for h in flat["hits"])
+
+    grouped = ok(call("get", "/search", {"group": "1"}))
+    assert grouped["total"] == 2            # the cluster + the bowl of fruit
+    assert grouped["record_total"] == 5
+    rep = next(h for h in grouped["hits"] if h["group_size"] > 1)
+    assert rep["group_size"] == 4
+    members = grouped["groups"][rep["id"]]
+    assert sorted([rep["id"]] + [m["id"] for m in members]) == sorted(ids)
+
+
+def test_keep_both_does_not_shrink_the_badge(call, store):
+    """The regression: muting a pair used to subtract it from every count.
+
+    Four identical prompts with four of their six pairs muted reported
+    "1 near-dupe" per row — a number matching nothing the user could see.
+    """
+    ids = [store.create(body="a dancer in the rain")["id"] for _ in range(4)]
+    for a, b in ((0, 1), (0, 2), (1, 3), (2, 3)):
+        ok(call("post", "/dupes/ignore", body={"a": ids[a], "b": ids[b]}))
+
+    payload = ok(call("get", "/search", {}))
+    assert {h["dupe_count"] for h in payload["hits"]} == {3}
+
+    meta = ok(call("post", "/meta", body={"ids": ids}))
+    assert {m["near_dupes"] for m in meta["meta"].values()} == {3}
+
+    scan = ok(call("get", "/dupes/all", {}))
+    assert sorted(scan["groups"][0]) == sorted(ids)
+    assert set(scan["counts"][pid] for pid in ids) == {3}
+    # The mutes are reported alongside, so a client can still mark them.
+    assert len(scan["ignored"]) == 4
+
+
+def test_bulk_selectors_never_fold_clusters(call, store):
+    """"Everything currently filtered" is records, not one per cluster."""
+    for _ in range(3):
+        store.create(body="a dancer in the rain")
+    payload = ok(call("post", "/bulk/retag", body={
+        "query": {"q": "", "group": True},
+        "add": ["seen"],
+    }))
+    assert len(payload["ids"]) == 3 and payload["count"] == 3
+
+
 def test_search_match_id_populates_match_pct(call, store):
     first = store.create(body="make him dance ballet toward the camera")
     store.create(body="make him dance ballet towards the camera")
@@ -320,7 +398,7 @@ def test_dupes_all_coalesces_concurrent_callers(call, store, monkeypatch):
 
     async def _race():
         return await asyncio.gather(
-            *[api.routes.dupes._dupes_all(0.9, False) for _ in range(5)])
+            *[api.queries._all_pairs(0.9, False) for _ in range(5)])
 
     results = asyncio.run(_race())
     assert len(results) == 5
@@ -540,7 +618,8 @@ def test_dupes_by_text(call, store):
     assert len(payload["matches"]) == 1
     match = payload["matches"][0]
     assert set(match) == {"id", "label", "score", "pct", "summary", "preview",
-                          "used", "updated"}
+                          "used", "updated", "ignored"}
+    assert match["ignored"] is False
     assert match["pct"] >= 90
     assert match["summary"]
     assert match["label"]
@@ -570,14 +649,21 @@ def test_dupes_ignore_round_trip(call, store):
     assert payload["changed"] is True and payload["ignored"] is True
     assert store.is_ignored(first["id"], second["id"])
 
+    # Still reported, now flagged: /dupes describes the library, and the save
+    # gate is what acts on the flag.
     payload = ok(call("post", "/dupes", body={"id": first["id"],
                                               "exclude_id": first["id"]}))
-    assert payload["matches"] == []
+    assert [m["id"] for m in payload["matches"]] == [second["id"]]
+    assert payload["matches"][0]["ignored"] is True
 
     payload = ok(call("post", "/dupes/ignore", body={"a": first["id"],
                                                      "b": second["id"],
                                                      "unignore": True}))
     assert payload["ignored"] is False
+
+    payload = ok(call("post", "/dupes", body={"id": first["id"],
+                                              "exclude_id": first["id"]}))
+    assert payload["matches"][0]["ignored"] is False
     assert not store.is_ignored(first["id"], second["id"])
 
 

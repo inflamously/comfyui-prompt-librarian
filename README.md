@@ -71,6 +71,13 @@ Click **Open Librarian** on the node. The panel is a full-screen overlay:
   chips, a `dupes only` toggle, `relevance | recent | most used | a–z` sorting, and a virtualised
   list. Each row shows its near-dupe count and, when you have a prompt selected, its `% match`
   against it — so duplicates are visible *before* you open anything.
+
+  **Near-duplicates are folded into one row.** Four copies of a prompt are a single row badged
+  `4 copies`, not four rows that each claim three near-duplicates; click the row (or its ▸) to open
+  the cluster in place, ← / → on the keyboard. The cluster keeps the position its best member would
+  have had under the current sort, so folding never reorders anything. Ticking a collapsed cluster
+  ticks every prompt in it — open it first to act on just one. The hit count stays in *records*, so
+  it always agrees with what a bulk action will touch.
 - **Right pane** — the derived label, tags, the prompt text with char and token counts, the
   duplicate check panel, four stat tiles (used / last run / versions / rating), and the action bar.
 
@@ -116,6 +123,13 @@ one, or `save anyway`. There is no default "just save".
 pair it just listed, so the same matches never re-open this gate. (Closing the modal saves, so
 without that the dialog came back on every close.) Muting is per pair — a genuinely new
 near-duplicate still stops the save.
+
+**A mute silences this dialog and nothing else.** It is not a claim that the duplicate went away,
+so the list still folds the cluster, the badge still counts it, and the duplicate panel still lists
+it — marked `muted`, with an `un-mute` button that hands the pair back to the gate. Subtracting
+muted pairs from the counts is what used to make a library of four identical prompts report
+`1 near-dupe` on every one of them: a number that corresponded to nothing on screen, arrived at by
+four `keep both` clicks nobody could see or undo.
 
 Saves also carry the record's `updated` timestamp, so if another browser tab changed the same
 prompt underneath you, the write is rejected with a conflict dialog rather than clobbering it.
@@ -357,14 +371,22 @@ library's first prompt would be the only one that never got a real label. `term_
 surface word exactly as `search.normalize` does, splits included, and a word that splits is scored
 by its rarest piece.
 
-**`prompt_librarian/dedupe.py`** (758 lines) — near-duplicate detection and diffing, also stdlib-only.
+**`prompt_librarian/dedupe.py`** — near-duplicate detection and diffing, also stdlib-only.
 `sim_norm` produces the normalized comparison text (capped at `SIM_MAX_CHARS = 4000`), `length_ok`
 is the cheap length prefilter, `ratio` is the cascaded `difflib` real-quick/quick/full ladder.
 `DupeIndex` / `build_dupe_index` provide the rare-token blocking index (`RARE_TOKENS`, `DF_ABS`,
 `DF_FRAC`, `OVERLAP_FRAC`) that keeps a large library fast, backed by three LRU caches with
 `invalidate(rev)` and `cache_stats()`. Public surface: `find_similar` (one vs N), `dupe_counts` and
-`page_dupe_counts` (N vs N, plus connected-component clustering via `_components`), `dupe_ids`, and
-`patch` for incremental updates after a single-record write. The diff half is `diff_tokens`
+`page_dupe_counts` (N vs N, plus connected-component clustering via `_components` — the clusters the
+browse accordion folds on), `dupe_ids`, `cached_all_settings`, and `patch` for incremental updates
+after a single-record write.
+
+Only `find_similar` takes the store's "keep both" set, and even there it only *annotates*: a muted
+match comes back with `ignored: True` and the caller decides. The counting functions do not accept
+the set at all — a mute is a decision about a dialog, not a claim about the library, and one that
+shrinks a count produces numbers (`1 near-dupe` on one of four identical prompts) that correspond to
+nothing a user can see. Dropping the parameter also made every all-pairs result cacheable, which is
+what lets `group=true` sit on the search hot path at all. The diff half is `diff_tokens`
 (word-level opcodes, capped), `diff_summary` (the readable `"toward" → "towards", + volumetric haze`
 line, using real curly quotes and arrows since the UI renders the payload verbatim) and `compare`.
 
@@ -524,9 +546,13 @@ panel. The guard only ever calls `stopPropagation`, never `preventDefault`, beca
 IME composition are default actions rather than listeners; the two sanctioned exceptions both live in
 `shell.js`, where Escape and Ctrl+S prevent a browser default that is not text entry.
 
-**`browse/`** (8 files, 1249 lines) — the left rail: search box with live hit count, filter chips,
+**`browse/`** (9 files) — the left rail: search box with live hit count, filter chips,
 `dupes only`, sort tabs, the virtualised list and the footer/bulk bar. `paged-source.js` handles
-200-record pages and the skeleton rows for holes, `virtual-list.js` the recycled window (and
+200-record pages and the skeleton rows for holes, `grouped-source.js` the duplicate accordion —
+`virtual-list.js` places every row at `i * --pl-row-h`, so an opened cluster is *one row plus N
+ordinary rows*, never one taller row, and this file is the flat-index mapping that makes that true
+while clusters open and close (it also self-heals a remembered index whose record moved out from
+under it). `virtual-list.js` is the recycled window (and
 `compare/versions.js` reuses it for long histories), `rows.js` the row markup and its textContent-only
 paint, `selection.js` the two modes — explicit ids, or the abstract "all filtered", which stores the
 QUERY rather than 1 284 ids because that is the only shape that scales and exactly what the bulk
@@ -621,7 +647,10 @@ defeats the whole point.)
 | `unit/text-format.test.js` | 44 | Grapheme safety (both the `Intl.Segmenter` and `Array.from` branches), label derivation, `relTime` with `now` injected, `escapeQuery` round-tripping. |
 | `unit/tokenize-timing.test.js` | 22 | The wildcard grammar against its Python counterpart, including the two deliberate divergences; `debounce`/`rafThrottle` including `cancel()`, which `closeModal()` relies on. |
 | `dom/close-save.test.js` | 18 | **Save-on-close.** The five-status matrix (`saved`/`clean` close; `blocked`/`failed`/`busy` stay open), the `it.closing` re-entry latch against Esc-mashing, the close button disabled for the round trip, all three close routes, the drag-to-backdrop that must *not* close, and full teardown. |
-| `dom/dupe-gate.test.js` | 7 | **Getting back out of the duplicate gate**, `createSave()` driven with a hand-built pane: the gate blocks and writes nothing, `save anyway` is the *last* dialog (one click, no second confirm) and mutes every pair it listed, an update stays an update rather than forking, a failed mute still leaves the record saved and complains once, and `keep both` mutes only its own row. |
+| `dom/dupe-gate.test.js` | 10 | **Getting back out of the duplicate gate**, `createSave()` driven with a hand-built pane: the gate blocks and writes nothing, `save anyway` is the *last* dialog (one click, no second confirm) and mutes every pair it listed, an update stays an update rather than forking, a failed mute still leaves the record saved and complains once, and `keep both` mutes only its own row. Plus the split that keeps a mute honest: an already-muted match does not gate the save, but its score is untouched, so every counting surface still sees it. |
+| `dom/dupe-accordion.test.js` | 17 | **The duplicate accordion**, both tiers. `updateRow`'s three row kinds (cluster header badged `N copies`, quiet indented member, ordinary row keeping its near-dupe badge — and a view-less call painting flat, which is how `compare/` reuses the renderer); then the real rail against a stubbed `/search`: four copies are one row, the twisty opens and closes it in place, clicking a header opens *and* selects, ticking a collapsed cluster ticks all four, and "all filtered" counts records rather than rows. |
+| `dom/dupe-panel-muted.test.js` | 9 | **A muted pair is shown, not swallowed.** The live panel lists it marked, counts it in the heading (`3 near matches (2 muted)`), drops the amber when nothing is left to warn about, and un-mutes it back into the gate — including the failure path, and the unsaved draft that has no pair to un-mute in the first place. |
+| `unit/grouped-source.test.js` | 20 | `browse/grouped-source.js` against a fake `PagedSource`: rows vs records, the index shift an open cluster imposes on everything below it, what a row *stands for* when ticked (a collapsed cluster is its whole cluster), ranges loaded in top-level indices, and a stale span self-healing rather than shifting the list by two forever. |
 | `dom/shortcuts.test.js` | 9 | Ctrl/Cmd+S: fires once, `e.repeat` guarded, skipped while a layer is open, narrow mode brings the editor forward, `preventDefault` for the chord but never for a plain letter. |
 | `dom/key-isolation.test.js` | 9 | The pack's stated top hazard, against a simulated ComfyUI that registers document-capture listeners first: nothing inside `.pl-root` escapes, everything outside still works, typing is never `preventDefault`-ed, and closing removes **both** layers. |
 

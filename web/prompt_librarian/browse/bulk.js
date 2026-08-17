@@ -33,7 +33,11 @@ export function createBulkBar({ ctx, el, source, selection }) {
     el.appendChild(
       h("span", null, `${fmtInt(n)} selected${mode === "filter" ? " (all filtered)" : ""}`)
     );
-    if (mode !== "filter" && source.total > n) {
+    // Against RECORDS, not rows: with duplicate clusters folded a selection of
+    // four can outnumber the rows on screen, and "select all filtered" would
+    // vanish exactly when the library has the most to select.
+    const reachable = source.recordTotal == null ? source.total : source.recordTotal;
+    if (mode !== "filter" && reachable > n) {
       el.appendChild(
         h(
           "button",

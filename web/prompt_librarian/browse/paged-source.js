@@ -22,6 +22,10 @@ export class PagedSource {
     this.pages = new Map(); // pageIndex -> item[]
     this.inflight = new Map(); // pageIndex -> Promise
     this.total = 0;
+    // Rows and records part company once duplicate clusters are folded: one
+    // row can stand for four prompts. `total` is what this pages over;
+    // `recordTotal` is what a bulk op over the same query would touch.
+    this.recordTotal = 0;
     this.known = false; // has any page landed?
     this.epoch = 0;
   }
@@ -32,6 +36,7 @@ export class PagedSource {
     this.pages.clear();
     this.inflight.clear();
     this.total = 0;
+    this.recordTotal = 0;
     this.known = false;
   }
 
@@ -74,6 +79,7 @@ export class PagedSource {
         const hits = (res && Array.isArray(res.hits) && res.hits) || [];
         this.pages.set(p, hits);
         this.total = Number(res && res.total) || hits.length;
+        this.recordTotal = Number(res && res.record_total) || this.total;
         this.known = true;
         this.onChange();
       })

@@ -22,7 +22,7 @@ export function createSelection({ ctx, source, onChange }) {
     if (typeof onChange === "function") onChange();
   };
 
-  function toggleId(id, on) {
+  function toggleIds(ids, on) {
     const state = st();
     const sel = state.selection;
     if (state.selectionMode === "filter") {
@@ -30,10 +30,30 @@ export function createSelection({ ctx, source, onChange }) {
       ctx.setState({ selectionMode: "ids" }, { silent: true });
       sel.clear();
     }
-    if (on) sel.add(id);
-    else sel.delete(id);
+    for (const id of ids) {
+      if (on) sel.add(id);
+      else sel.delete(id);
+    }
     ctx.setState({ selection: sel, selectionMode: "ids" });
     changed();
+  }
+
+  function toggleId(id, on) {
+    toggleIds([id], on);
+  }
+
+  /**
+   * Toggle whatever the ROW at `index` stands for.
+   *
+   * A collapsed duplicate cluster stands for all of its members, so ticking it
+   * ticks the cluster. Prefer this over `toggleId` anywhere a list index is
+   * what the user actually clicked.
+   */
+  function toggleRow(index, on) {
+    const ids = typeof source.idsAt === "function"
+      ? source.idsAt(index)
+      : [String((source.peek(index) || {}).id || "")].filter(Boolean);
+    if (ids.length) toggleIds(ids, on);
   }
 
   async function selectRange(index) {
@@ -85,7 +105,11 @@ export function createSelection({ ctx, source, onChange }) {
 
   function count() {
     const state = st();
-    return state.selectionMode === "filter" ? source.total : state.selection.size;
+    if (state.selectionMode !== "filter") return state.selection.size;
+    // RECORDS, not rows. "Everything filtered" re-runs the query ungrouped on
+    // the server, so a folded list must not promise to touch fewer prompts
+    // than the bulk op is about to.
+    return source.recordTotal == null ? source.total : source.recordTotal;
   }
 
   /** First five labels, for the confirm text. Loaded pages only, by design. */
@@ -113,6 +137,8 @@ export function createSelection({ ctx, source, onChange }) {
 
   return {
     toggleId,
+    toggleIds,
+    toggleRow,
     selectRange,
     clear,
     selectAllFiltered,

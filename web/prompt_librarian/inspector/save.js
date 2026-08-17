@@ -89,8 +89,13 @@ export function createSave(pane) {
           limit: 10,
         });
         if (r !== ctx.ABORTED) {
+          // `m.ignored` is the "keep both" decision, and THIS is the one place
+          // it applies: the gate must not re-ask a question the user answered.
+          // Every other surface — the panel below, the list's badge, the
+          // duplicate accordion — still reports the match, because a muted
+          // duplicate is a duplicate the library still contains.
           gate = matchesOf(ensureOk(r)).filter(
-            (m) => m.score >= t && m.id !== (pane.current && pane.current.id)
+            (m) => m.score >= t && !m.ignored && m.id !== (pane.current && pane.current.id)
           );
         }
       } catch (err) {

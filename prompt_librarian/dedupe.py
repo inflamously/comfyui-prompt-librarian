@@ -12,8 +12,22 @@ Public API
 ``DupeIndex`` / ``build_dupe_index(records, rev=None)``
 ``find_similar(source, *, text, pid, exclude_id, threshold, limit,
                with_summary, ignored, rev)``
-``dupe_counts(source, threshold, *, rev, exhaustive, ignored)``
-``page_dupe_counts(source, pids, threshold, *, ignored)``
+``dupe_counts(source, threshold, *, rev, exhaustive)``
+``page_dupe_counts(source, pids, threshold)``
+
+WHAT ``ignored`` DOES, AND WHERE
+-------------------------------
+``ignored`` -- the store's "keep both" pair set -- reaches exactly one function
+here: :func:`find_similar`, and even there it only *annotates*. A muted match
+comes back like any other, carrying ``ignored: True``; it is the caller that
+decides what that means, and only one caller does anything with it (the save
+gate, which drops them so it stops re-asking a question the user has answered).
+
+The counting functions do not take the set at all. A mute is a decision about a
+*dialog*, not a claim about the library: four identical prompts are four
+identical prompts however many times you clicked "keep both", and a list that
+subtracts muted pairs from its badge reports numbers -- ``1 near-dupe`` for one
+of four copies -- that correspond to nothing a user can see.
 ``dupe_ids(result)``
 ``patch(old_rec, new_rec, threshold, *, old_rev, new_rev, source)``
 ``invalidate(rev=None)``
@@ -276,6 +290,20 @@ def cache_stats() -> dict[str, int]:
         return dict(_stats)
 
 
+def cached_all_settings(rev: int | None = None) -> list[tuple[float, bool]]:
+    """``(threshold, exhaustive)`` of every cached all-pairs result.
+
+    What :func:`patch` should be re-keying after a write.  A caller that
+    patches only its *default* threshold quietly strands every other one at the
+    old rev, and since a grouped search cannot start without an all-pairs
+    result, that stranding is a full rescan on the next keystroke rather than a
+    missed optimisation.
+    """
+    with _lock:
+        return [(k[1], k[2]) for k in _all_cache
+                if rev is None or k[0] == int(rev)]
+
+
 def invalidate(rev: int | None = None) -> None:
     """Drop cached results.  ``rev=None`` clears everything."""
     with _lock:
@@ -374,15 +402,18 @@ def find_similar(  # noqa: C901 - one scoring pass, kept inline on purpose
 ) -> list[dict[str, Any]]:
     """Records similar to ``text`` (or to record ``pid``'s body).
 
-    Returns ``[{id, score, pct, summary, preview, used, updated}]``
+    Returns ``[{id, score, pct, summary, preview, used, updated, ignored}]``
     sorted by score descending.  Carries no display label: what a record is
     called is derived from the corpus by :mod:`.labels`, and the api attaches
     it on the way out rather than have this module -- and its caches -- hold a
     string that changes when an unrelated record does.  ``exclude_id`` is how
-    the save flow stops a
-    record matching itself at 100%.  ``ignored`` is the store's "keep both"
-    pair set; a pair is dropped when ``exclude_id``/``pid`` and the candidate
-    appear in it.
+    the save flow stops a record matching itself at 100%.
+
+    ``ignored`` is the store's "keep both" pair set.  It does NOT remove
+    matches: a pair the user muted comes back with ``ignored: True`` and the
+    caller decides.  Dropping them here would make a muted duplicate
+    indistinguishable from one that does not exist, which is how a library
+    ends up quietly under-reporting itself -- see the module docstring.
 
     The returned list is the cached object when a cache hit occurs -- treat
     it as read-only.
@@ -419,10 +450,6 @@ def find_similar(  # noqa: C901 - one scoring pass, kept inline on purpose
     for cid in cand:
         if self_id and cid == self_id:
             continue
-        if ign and self_id:
-            pair = (self_id, cid) if self_id <= cid else (cid, self_id)
-            if pair in ign:
-                continue
         r = ratio(probe, idx.norms.get(cid, ""), threshold)
         if r >= threshold and r > 0.0:
             scored.append((r, cid))
@@ -437,6 +464,10 @@ def find_similar(  # noqa: C901 - one scoring pass, kept inline on purpose
     for r, cid in scored:
         rec = idx.records.get(cid, {})
         body = rec.get("body") or ""
+        muted = False
+        if ign and self_id:
+            pair = (self_id, cid) if self_id <= cid else (cid, self_id)
+            muted = pair in ign
         out.append({
             "id": cid,
             "score": round(r, 6),
@@ -445,6 +476,7 @@ def find_similar(  # noqa: C901 - one scoring pass, kept inline on purpose
             "preview": _preview(body),
             "used": int(rec.get("used") or 0),
             "updated": str(rec.get("updated") or ""),
+            "ignored": muted,
         })
 
     if cache_key is not None:
@@ -455,15 +487,16 @@ def find_similar(  # noqa: C901 - one scoring pass, kept inline on purpose
 
 def page_dupe_counts(source: Any, pids: Sequence[str],
                      threshold: float = DEFAULT_THRESHOLD,
-                     *, ignored: Iterable[Any] = (),
-                     rev: int | None = None) -> dict[str, int]:
+                     *, rev: int | None = None) -> dict[str, int]:
     """Near-duplicate counts for a handful of ids only (one search page).
 
     This is what ``search.search(dupe_count_fn=...)`` should be
     handed: it never pays the all-pairs cost.
+
+    Counts every near-duplicate.  "Keep both" is not consulted -- see the
+    module docstring.
     """
     idx = _resolve(source, rev)
-    ign = _norm_ignored(ignored)
     out: dict[str, int] = {}
     for pid in pids or ():
         norm = idx.norms.get(pid)
@@ -475,9 +508,6 @@ def page_dupe_counts(source: Any, pids: Sequence[str],
         n = 0
         for cid in cand:
             if cid == pid:
-                continue
-            pair = (pid, cid) if pid <= cid else (cid, pid)
-            if pair in ign:
                 continue
             if ratio(norm, idx.norms.get(cid, ""), threshold) >= threshold:
                 n += 1
@@ -528,8 +558,8 @@ def _finish(pairs: dict[str, dict[str, float]], threshold: float,
 
 
 def dupe_counts(source: Any, threshold: float = DEFAULT_THRESHOLD, *,
-                rev: int | None = None, exhaustive: bool = False,
-                ignored: Iterable[Any] = ()) -> dict[str, Any]:
+                rev: int | None = None,
+                exhaustive: bool = False) -> dict[str, Any]:
     """All-pairs near-duplicate scan.
 
     Returns::
@@ -539,14 +569,18 @@ def dupe_counts(source: Any, threshold: float = DEFAULT_THRESHOLD, *,
          groups: [[pid, ...], ...],          # connected components, size >= 2
          pairs:  {pid: {other: score}}}      # adjacency, used by patch()
 
+    ``groups`` is what the browse list's duplicate accordion folds on, so it
+    counts every near-duplicate: "keep both" is not consulted here (see the
+    module docstring).  That is also why every result is cacheable -- there is
+    no longer a per-call pair set to key on.
+
     ``exhaustive=True`` skips blocking entirely (guaranteed-complete, O(n^2)
     cascades) for anyone willing to pay for it.
     """
     idx = _resolve(source, rev)
-    ign = _norm_ignored(ignored)
 
     cache_key = None
-    if idx.rev is not None and not ign:
+    if idx.rev is not None:
         cache_key = (int(idx.rev), float(threshold), bool(exhaustive))
         with _lock:
             _stats["all_calls"] += 1
@@ -570,10 +604,6 @@ def dupe_counts(source: Any, threshold: float = DEFAULT_THRESHOLD, *,
             cand = [c for c in idx.candidates(toks, len(na), threshold, exclude=(a,))
                     if pos.get(c, -1) > i]
         for b in cand:
-            if ign:
-                pair = (a, b) if a <= b else (b, a)
-                if pair in ign:
-                    continue
             r = ratio(na, idx.norms.get(b, ""), threshold)
             if r >= threshold and r > 0.0:
                 pairs[a][b] = r

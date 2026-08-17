@@ -722,6 +722,41 @@
   color: var(--pl-warn);
 }
 
+/* --------------------------------------------------------------------------
+   Duplicate-cluster accordion
+   --------------------------------------------------------------------------
+   A cluster is ONE row until it is opened; opening it inserts its members as
+   ordinary rows below. Every row here is still exactly --pl-row-h tall — the
+   virtual list places rows arithmetically, so a taller "group row" would put
+   the whole list out of register. Nesting is shown with indent and a rule,
+   never with height.
+   -------------------------------------------------------------------------- */
+.pl-row-twisty {
+  flex: 0 0 auto;
+  width: 10px;
+  font-size: 10px;
+  line-height: inherit;
+  color: var(--pl-warn);
+  user-select: none;
+}
+
+.pl-row.is-member {
+  padding-left: 34px;
+}
+
+/* The rule the members hang off. Inside the row's padding, so it cannot shift
+   the grid or disagree with --pl-row-h. */
+.pl-row.is-member::before {
+  content: "";
+  position: absolute;
+  left: 20px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--pl-border-soft);
+  pointer-events: none;
+}
+
 .pl-badge-dupe {
   grid-area: badge;
   align-self: start;
@@ -1143,6 +1178,26 @@
 .pl-dupe.is-top {
   background: rgba(255, 255, 255, 0.03);
   border-color: var(--pl-warn-border);
+}
+
+/* A pair the user answered "keep both" about. Still listed — the duplicate is
+   still there — but visibly settled, and never the row that gets the
+   attention-grabbing `is-top` treatment. */
+.pl-dupe.is-muted {
+  opacity: 0.62;
+}
+
+.pl-dupe-muted {
+  margin-left: 7px;
+  padding: 1px 6px;
+  border: 1px solid var(--pl-border-soft);
+  border-radius: 4px;
+  font-family: var(--pl-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--pl-text-mute);
+  white-space: nowrap;
 }
 
 .pl-dupe:hover {

@@ -26,8 +26,12 @@ export const API = {
   },
 
   /**
-   * @param {object} params {q, tags[], dupes_only, sort, offset,
+   * @param {object} params {q, tags[], dupes_only, group, sort, offset,
    *                         limit, threshold, match_id}
+   *
+   * With `group`, a row is a near-duplicate CLUSTER: `total` counts rows,
+   * `record_total` counts the records behind them, and `groups[repId]` holds
+   * the members the representative stands for.
    */
   search(params, signal) {
     return req("search", { query: params || {}, signal });
@@ -127,8 +131,16 @@ export const API = {
     });
   },
 
-  ignorePair(a, b) {
-    return req("dupes/ignore", { method: "POST", body: { a, b } });
+  /**
+   * "Keep both" — mute this pair in the SAVE GATE. It does not change any
+   * count: the pair still shows up in the list, the badge and the duplicate
+   * panel, marked as muted. Pass `unignore` to take the decision back.
+   */
+  ignorePair(a, b, unignore) {
+    return req("dupes/ignore", {
+      method: "POST",
+      body: unignore ? { a, b, unignore: true } : { a, b },
+    });
   },
 
   compare({ a_id, a_text, b_id, b_text } = {}, signal) {

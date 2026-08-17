@@ -89,11 +89,16 @@ export function createDupes(pane) {
     }
 
     els.dupesPanel.hidden = false;
-    setPanelTone(true);
+    const muted = list.filter((m) => m.ignored).length;
+    // Amber only for matches that would still stop a save. An all-muted panel
+    // is information, not a warning — the user already decided.
+    setPanelTone(muted < list.length);
     els.dupesTitle.textContent =
-      "Duplicate check " + MDASH + " " + D.fmtInt(list.length) + " near match" + (list.length === 1 ? "" : "es");
+      "Duplicate check " + MDASH + " " + D.fmtInt(list.length) + " near match" +
+      (list.length === 1 ? "" : "es") +
+      (muted ? " (" + D.fmtInt(muted) + " muted)" : "");
 
-    list.forEach((m, i) => els.dupesBody.appendChild(dupeRow(m, i === 0)));
+    list.forEach((m, i) => els.dupesBody.appendChild(dupeRow(m, i === 0 && !m.ignored)));
   }
 
   function setPanelTone(warn) {
@@ -108,6 +113,25 @@ export function createDupes(pane) {
     }
   }
 
+  /**
+   * Take back a "keep both". The pair starts blocking saves again, which is
+   * the only thing muting ever changed — so the panel below does not move and
+   * only the save gate behaves differently next time.
+   */
+  async function unmute(m) {
+    const mine = pane.current && pane.current.id ? String(pane.current.id) : null;
+    if (!mine || !m || !m.id) return;
+    try {
+      ensureOk(await ctx.API.ignorePair(mine, m.id, true));
+    } catch (err) {
+      pane.toast("could not un-mute this pair", "error");
+      return;
+    }
+    pane.toast("un-muted " + MDASH + " this pair will be flagged again when you save");
+    pane.scheduleDupes.cancel();
+    runDupes(pane.dupePaused);
+  }
+
   function dupeRow(m, top) {
     const acts = h(
       "div",
@@ -115,11 +139,33 @@ export function createDupes(pane) {
       h("button", { className: "pl-btn pl-btn-sm", type: "button", onclick: () => pane.compareWith(m) }, "compare"),
       h("button", { className: "pl-btn pl-btn-sm pl-btn-accent", type: "button", onclick: () => pane.mergeInto(m) }, "merge")
     );
+    // Muting used to be a one-way trapdoor: nothing in the panel said a pair
+    // was muted and nothing could take it back, so a library quietly stopped
+    // flagging duplicates its owner could still see.
+    if (m.ignored) {
+      acts.appendChild(
+        h(
+          "button",
+          {
+            className: "pl-btn pl-btn-sm",
+            type: "button",
+            title: "flag this pair again when saving",
+            onclick: () => unmute(m),
+          },
+          "un-mute"
+        )
+      );
+    }
     return h(
       "div",
-      { className: "pl-dupe" + (top ? " is-top" : "") },
+      { className: "pl-dupe" + (top ? " is-top" : "") + (m.ignored ? " is-muted" : "") },
       h("div", { className: "pl-score" }, pct(m.score)),
-      h("div", { className: "pl-dupe-name" }, m.label),
+      h(
+        "div",
+        { className: "pl-dupe-name" },
+        m.label,
+        m.ignored ? h("span", { className: "pl-dupe-muted" }, "muted") : null
+      ),
       // The `differs: ` prefix belongs to the UI. The backend's `summary` is
       // just the change list, so do not expect it in the payload.
       h("div", { className: "pl-dupe-why" }, m.summary ? "differs: " + m.summary : ""),

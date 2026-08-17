@@ -21,6 +21,7 @@ import { debounce } from "../shared/timing.js";
 import { labelOf, truncate } from "../shared/text.js";
 import { fmtInt } from "../shared/format.js";
 import { PAGE_SIZE, PagedSource } from "./paged-source.js";
+import { GroupedView, attachMembers } from "./grouped-source.js";
 import { OVERSCAN, VirtualList } from "./virtual-list.js";
 import { createRow, updateRow } from "./rows.js";
 import { createSelection } from "./selection.js";
@@ -124,31 +125,40 @@ export function mountList(el, ctx) {
       syncTotal();
       vlist.repaint();
       paintHits();
-      // Page 0 doubles as the state's `hits` snapshot for the inspector.
+      // Page 0 doubles as the state's `hits` snapshot for the inspector. The
+      // totals beside it are RECORDS — a row can stand for a whole cluster.
       const first = source.pages.get(0);
-      if (first) ctx.setState({ hits: first, hitsTotal: source.total, total: st().total || source.total });
+      if (first) {
+        const n = source.recordTotal || source.total;
+        ctx.setState({ hits: first, hitsTotal: n, total: st().total || n });
+      }
     },
   });
+
+  // Everything downstream of here — the list, selection, the bulk bar — talks
+  // to the VIEW, not the PagedSource: with duplicate clusters folded, a list
+  // index is a row and a row is not a record.
+  const view = new GroupedView(source);
 
   const vlist = new VirtualList({
     viewport,
     spacer,
     win,
     overscan: OVERSCAN,
-    source,
+    source: view,
     createRow,
-    updateRow: (row, item, index) => updateRow(row, item, index, st()),
+    updateRow: (row, item, index) => updateRow(row, item, index, st(), view),
   });
 
   const selection = createSelection({
     ctx,
-    source,
+    source: view,
     onChange: () => {
       bulk.paint();
       vlist.repaint();
     },
   });
-  const bulk = createBulkBar({ ctx, el: bulkbar, source, selection });
+  const bulk = createBulkBar({ ctx, el: bulkbar, source: view, selection });
   const chips = createChips({ ctx, el: chipsEl, setQuery });
 
   async function fetchPage(offset, limit) {
@@ -157,6 +167,10 @@ export function mountList(el, ctx) {
       q: q.q || "",
       tags: q.tags && q.tags.length ? q.tags : null,
       dupes_only: q.dupesOnly ? true : null,
+      // Always grouped. Four copies of one prompt are one thing the user has
+      // four of, and four rows that each claim three near-duplicates is how
+      // the list used to describe that.
+      group: true,
       sort: q.sort || "relevance",
       offset,
       limit,
@@ -165,13 +179,15 @@ export function mountList(el, ctx) {
     };
     const res = await ctx.API.search(params);
     if (res && res.rev != null) ctx.setState({ rev: res.rev }, { silent: true });
-    return res || { hits: [], total: 0 };
+    if (!res) return { hits: [], total: 0, record_total: 0 };
+    attachMembers(res);
+    return res;
   }
 
   function syncTotal() {
-    const total = source.known ? source.total : source.busy ? SKELETON_ROWS : 0;
+    const total = view.known ? view.total : view.busy ? SKELETON_ROWS : 0;
     vlist.setTotal(total);
-    const isEmpty = source.known && source.total === 0;
+    const isEmpty = view.known && view.total === 0;
     empty.hidden = !isEmpty;
     empty.textContent = st().query.q
       ? `no prompts match "${truncate(st().query.q, 40)}"`
@@ -179,11 +195,27 @@ export function mountList(el, ctx) {
   }
 
   function paintHits() {
-    const n = source.known ? source.total : 0;
+    // Records, not rows: "37 hits" that folds into 34 rows is still 37 prompts,
+    // and it is the number every other count in the panel agrees with.
+    const n = view.known ? view.recordTotal : 0;
     hits.textContent = `${fmtInt(n)} hit${n === 1 ? "" : "s"}`;
   }
 
   /* ---- row interaction (delegated) --------------------------------------- */
+
+  /**
+   * Open or close the duplicate cluster at `index`, keeping the caret where
+   * the user left it. `force` pins the direction (keyboard Left/Right).
+   */
+  function toggleGroup(index, force) {
+    const open = view.isOpen((view.peek(index) || {}).id);
+    if (force === true && open) return false;
+    if (force === false && !open) return false;
+    if (!view.toggle(index)) return false;
+    syncTotal();
+    vlist.render();
+    return true;
+  }
 
   win.addEventListener("click", (ev) => {
     const row = ev.target && ev.target.closest ? ev.target.closest(".pl-row") : null;
@@ -194,18 +226,29 @@ export function mountList(el, ctx) {
 
     if (ev.target === row.__parts.check) return; // handled by "change"
 
+    // The twisty is the one control that ONLY folds, so it is also the only
+    // way to close a group without leaving the record you were looking at.
+    if (ev.target === row.__parts.twisty) {
+      ev.preventDefault();
+      toggleGroup(index);
+      return;
+    }
+
     if (ev.shiftKey) {
       ev.preventDefault();
       selection.selectRange(index);
       return;
     }
     if (ev.ctrlKey || ev.metaKey) {
-      selection.toggleId(id, !st().selection.has(id));
+      selection.toggleRow(index, !st().selection.has(id));
       return;
     }
     activeIndex = index;
     ctx.setState({ anchorIndex: index }, { silent: true });
     ctx.selectPrompt(id);
+    // Selecting a cluster's header opens it: you asked about a prompt the
+    // library has four of, and the other three are the answer.
+    toggleGroup(index, true);
     vlist.repaint();
   });
 
@@ -214,8 +257,10 @@ export function mountList(el, ctx) {
     if (!box || !box.classList || !box.classList.contains("pl-row-check")) return;
     const row = box.closest(".pl-row");
     if (!row || !row.dataset.id) return;
-    ctx.setState({ anchorIndex: Number(row.dataset.index) }, { silent: true });
-    selection.toggleId(row.dataset.id, !!box.checked);
+    const index = Number(row.dataset.index);
+    ctx.setState({ anchorIndex: index }, { silent: true });
+    // A collapsed cluster's checkbox ticks the whole cluster — see idsAt().
+    selection.toggleRow(index, !!box.checked);
   });
 
   win.addEventListener("dblclick", (ev) => {
@@ -252,6 +297,14 @@ export function mountList(el, ctx) {
       case "PageUp":
         next = Math.max(0, Math.max(0, activeIndex) - Math.max(1, vlist.visibleCount() - 4));
         break;
+      case "ArrowRight":
+        // Opens a cluster; on anything else it is simply not a key this list
+        // uses, so it falls through to the browser rather than eating it.
+        if (toggleGroup(activeIndex, true)) ev.preventDefault();
+        return;
+      case "ArrowLeft":
+        if (toggleGroup(activeIndex, false)) ev.preventDefault();
+        return;
       case "Enter":
         ev.preventDefault();
         activate(activeIndex);
@@ -259,8 +312,8 @@ export function mountList(el, ctx) {
       case " ":
       case "Spacebar": {
         ev.preventDefault(); // or the page scrolls under us
-        const rec = source.peek(activeIndex);
-        if (rec && rec.id) selection.toggleId(String(rec.id), !st().selection.has(String(rec.id)));
+        const rec = view.peek(activeIndex);
+        if (rec && rec.id) selection.toggleRow(activeIndex, !st().selection.has(String(rec.id)));
         return;
       }
       default:
@@ -274,7 +327,7 @@ export function mountList(el, ctx) {
     activeIndex = index;
     vlist.scrollToIndex(index, "auto");
     ctx.setState({ anchorIndex: index }, { silent: true });
-    const rec = source.peek(index);
+    const rec = view.peek(index);
     if (rec && rec.id) ctx.selectPrompt(String(rec.id));
     vlist.repaint();
     const row = vlist.live.get(index);
@@ -283,7 +336,7 @@ export function mountList(el, ctx) {
 
   /** Enter / double-click: push the record into the target node. */
   async function activate(index) {
-    const rec = source.peek(index);
+    const rec = view.peek(index);
     if (!rec || !rec.id) return;
     try {
       // The list only carries a preview, so the full body has to be fetched.
@@ -339,14 +392,14 @@ export function mountList(el, ctx) {
 
   async function refresh(opts = {}) {
     if (opts.reset !== false) {
-      source.reset();
+      view.reset();
       activeIndex = -1;
     }
     ctx.setState({ loading: true }, { silent: true });
     syncTotal();
     paintHits();
     try {
-      await source.load(0);
+      await view.load(0);
     } finally {
       ctx.setState({ loading: false }, { silent: true });
       syncTotal();
@@ -372,8 +425,10 @@ export function mountList(el, ctx) {
 
   const handle = {
     refresh,
-    reset: () => source.reset(),
-    source,
+    reset: () => view.reset(),
+    source: view,
+    pagedSource: source,
+    view,
     vlist,
     selection,
     scrollToIndex: (i, align) => vlist.scrollToIndex(i, align),

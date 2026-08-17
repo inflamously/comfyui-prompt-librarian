@@ -338,16 +338,19 @@ def test_unknown_sort_falls_back_to_relevance(records):
 
 def test_result_envelope_and_hit_shape(records):
     res = S.search(records, "ballet", limit=2, offset=1, threshold=0.85, rev=7)
-    assert set(res) >= {"rev", "total", "offset", "limit", "threshold",
-                        "took_ms", "dupes_partial", "hits"}
+    assert set(res) >= {"rev", "total", "record_total", "offset", "limit",
+                        "threshold", "took_ms", "dupes_partial", "hits", "groups"}
     assert res["rev"] == 7 and res["offset"] == 1 and res["limit"] == 2
     assert res["threshold"] == 0.85
     assert isinstance(res["took_ms"], float)
     assert len(res["hits"]) == 2
+    # Ungrouped: the two totals agree and every row is a cluster of one.
+    assert res["record_total"] == res["total"] and res["groups"] == {}
     h = res["hits"][0]
     assert set(h) == {"id", "label", "preview", "tags", "rating",
                       "used", "last_run", "updated", "chars", "version_count",
-                      "score", "dupe_count", "match_pct"}
+                      "score", "dupe_count", "match_pct", "group_size"}
+    assert h["group_size"] == 1
 
 
 def test_chars_and_version_count(records):
@@ -474,3 +477,99 @@ def test_empty_source_is_safe():
     res = S.search([], "ballet")
     assert res["total"] == 0 and res["hits"] == []
     assert S.search(None, "")["total"] == 0
+
+
+# --------------------------------------------------------------------------
+# Duplicate clustering (`groups`)
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def cluster_records():
+    """Four copies of one prompt, plus two records that belong to nobody.
+
+    The shape the browse accordion exists for: `dupe_counts()` reduces these
+    four to a single connected component, and the list should show one row,
+    not four rows that each claim to have three near-duplicates.
+    """
+    return [
+        mk("d1", "a dancer in the rain", used=1, updated="2026-03-01T00:00:00Z"),
+        mk("d2", "a dancer in the rain", used=9, updated="2026-03-02T00:00:00Z"),
+        mk("d3", "a dancer in the rain", used=4, updated="2026-03-03T00:00:00Z"),
+        mk("d4", "a dancer in the rain", used=2, updated="2026-03-04T00:00:00Z"),
+        mk("solo", "a dancer in the snow", used=7, updated="2026-03-05T00:00:00Z"),
+        mk("other", "a bowl of fruit on a table", used=0, updated="2026-03-06T00:00:00Z"),
+    ]
+
+
+DANCERS = [["d1", "d2", "d3", "d4"]]
+
+
+def test_groups_fold_a_cluster_into_one_row(cluster_records):
+    res = S.search(cluster_records, "", sort="recent", limit=50, groups=DANCERS)
+    assert res["total"] == 3            # one cluster + solo + other
+    assert res["record_total"] == 6     # the records behind those rows
+    ids = [h["id"] for h in res["hits"]]
+    assert ids.count("d4") == 1
+    assert set(ids) == {"d4", "solo", "other"}
+    rep = next(h for h in res["hits"] if h["id"] == "d4")
+    assert rep["group_size"] == 4
+    assert [m["id"] for m in res["groups"]["d4"]] == ["d3", "d2", "d1"]
+    # Every row still reports its own true near-duplicate count.
+    assert all(m["group_size"] == 1 for m in res["groups"]["d4"])
+
+
+def test_the_representative_is_whichever_member_sorts_first(cluster_records):
+    """No sort rules of its own: the cluster lands where its best member would."""
+    by_recent = S.search(cluster_records, "", sort="recent", limit=50, groups=DANCERS)
+    assert [h["id"] for h in by_recent["hits"]] == ["other", "solo", "d4"]
+    assert by_recent["hits"][2]["group_size"] == 4   # d4 is the newest member
+
+    by_used = S.search(cluster_records, "", sort="most_used", limit=50, groups=DANCERS)
+    rep = next(h for h in by_used["hits"] if h["group_size"] == 4)
+    assert rep["id"] == "d2"                        # used=9, the most-used member
+    assert sorted(m["id"] for m in by_used["groups"]["d2"]) == ["d1", "d3", "d4"]
+
+
+def test_a_cluster_the_query_thinned_to_one_is_a_plain_row(cluster_records):
+    """Filtering can leave a group with a single survivor. That is not an accordion."""
+    thinned = [r for r in cluster_records if r["id"] != "d2"]
+    res = S.search(thinned, "", limit=50, groups=[["d1", "d2"]])
+    rep = next(h for h in res["hits"] if h["id"] == "d1")
+    assert rep["group_size"] == 1
+    assert "d1" not in res["groups"]
+
+
+def test_folding_happens_before_the_page_slice(cluster_records):
+    """A cluster's members are scattered through the sorted list.
+
+    Collapsing after slicing would hand back a page of unpredictable length —
+    here, a limit of 2 that returned 4 rows or 1.
+    """
+    res = S.search(cluster_records, "", sort="recent", limit=2, groups=DANCERS)
+    assert len(res["hits"]) == 2
+    assert res["total"] == 3 and res["record_total"] == 6
+    tail = S.search(cluster_records, "", sort="recent", limit=2, offset=2, groups=DANCERS)
+    assert len(tail["hits"]) == 1
+    seen = [h["id"] for h in res["hits"]] + [h["id"] for h in tail["hits"]]
+    assert len(set(seen)) == 3
+
+
+def test_group_members_are_capped_but_the_size_is_not(monkeypatch):
+    monkeypatch.setattr(S, "GROUP_MEMBER_CAP", 2)
+    recs = [mk(f"c{i}", "a dancer in the rain") for i in range(6)]
+    res = S.search(recs, "", limit=50, groups=[[r["id"] for r in recs]])
+    rep = res["hits"][0]
+    assert rep["group_size"] == 6            # the truth, so the UI can say "+3 more"
+    assert len(res["groups"][rep["id"]]) == 2
+
+
+def test_grouping_composes_with_filters_and_dupe_counts(cluster_records):
+    counts = {"d1": 3, "d2": 3, "d3": 3, "d4": 3, "solo": 0, "other": 0}
+    res = S.search(cluster_records, "dancer", limit=50, groups=DANCERS,
+                   dupe_count_fn=lambda pids: {p: counts[p] for p in pids})
+    ids = {h["id"] for h in res["hits"]}
+    assert "other" not in ids               # the query still filters
+    rep = next(h for h in res["hits"] if h["group_size"] == 4)
+    assert rep["dupe_count"] == 3           # not 1, and not 0
+    assert all(m["dupe_count"] == 3 for m in res["groups"][rep["id"]])

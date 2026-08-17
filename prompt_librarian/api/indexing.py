@@ -35,12 +35,26 @@ def _on_change(op):
 
 
 def _patch_dupes(old_rec, new_rec, old_rev):
-    """Incrementally re-key the all-pairs cache after a single-record write."""
+    """Incrementally re-key the all-pairs cache after a single-record write.
+
+    EVERY cached threshold, not just the persisted one. A grouped search cannot
+    start until it has an all-pairs result, so a threshold left stranded at the
+    old rev is not a lost optimisation — it is a 0.5-2 s rescan on the next
+    keystroke, for as long as the user keeps that threshold selected.
+    """
+    new_rev = _rev()
+    settings = dedupe.cached_all_settings(old_rev)
+    if not settings:
+        settings = [(_threshold(None), False)]
     try:
-        result = dedupe.patch(old_rec, new_rec, _threshold(None),
-                              old_rev=old_rev, new_rev=_rev(), source=STORE)
-        if result is None:
-            dedupe.invalidate()
+        for threshold, exhaustive in settings:
+            result = dedupe.patch(old_rec, new_rec, threshold,
+                                  old_rev=old_rev, new_rev=new_rev,
+                                  source=STORE, exhaustive=exhaustive)
+            if result is None:
+                # Nothing cached to patch at this threshold; the next caller
+                # computes it from scratch and there is nothing stale to drop.
+                continue
     except Exception:  # pragma: no cover - fall back to the safe path
         log.debug("[prompt-librarian] dupe patch failed; invalidating", exc_info=True)
         dedupe.invalidate()

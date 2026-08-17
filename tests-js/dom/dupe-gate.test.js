@@ -226,3 +226,37 @@ describe("keep both", () => {
     env.assertNoErrors();
   });
 });
+
+describe("a muted pair stops the dialog, and nothing else", () => {
+  test("an already-muted match does not gate the save", async () => {
+    // The decision has been taken; re-asking is the loop this dialog's
+    // muting exists to break.
+    const pane = await makePane({ matches: [{ ...match("a"), ignored: true }] });
+
+    assert.equal(await pane.save(false), "saved");
+    assert.equal(pane.calls.layers.length, 0, "no dialog");
+    assert.equal(pane.calls.create, 1);
+    env.assertNoErrors();
+  });
+
+  test("one muted match among live ones is dropped from the dialog, not the library", async () => {
+    const pane = await makePane({
+      matches: [{ ...match("muted") , ignored: true }, match("live")],
+    });
+
+    assert.equal(await pane.save(false), "blocked");
+    const rows = [...pane.calls.layers[0].el.querySelectorAll(".pl-dupe")];
+    assert.equal(rows.length, 1, "only the pair that has not been decided");
+    assert.match(rows[0].textContent, /live_label/);
+    env.assertNoErrors();
+  });
+
+  test("muting is what the gate reads — the score is unchanged", async () => {
+    // A muted match is still a 97% match. If the flag ever came to mean
+    // "not similar", the badge and the accordion would go wrong with it.
+    const pane = await makePane({ matches: [{ ...match("a", 0.97), ignored: true }] });
+    await pane.save(false);
+    assert.equal(pane.calls.create, 1);
+    env.assertNoErrors();
+  });
+});

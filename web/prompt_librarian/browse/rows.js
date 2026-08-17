@@ -30,6 +30,10 @@ export function createRow() {
     h(
       "div",
       { className: "pl-row-name" },
+      // Inside `.pl-row-name` (a flex box) rather than as a grid child: the
+      // row's `grid-template-areas` is load-bearing for its height, and a
+      // fourth column would have meant re-tuning every area.
+      h("span", { className: "pl-row-twisty", hidden: true, "aria-hidden": "true" }),
       h("span", { className: "pl-row-nm" }),
       h("span", { className: "pl-row-match", hidden: true })
     ),
@@ -48,8 +52,9 @@ export function createRow() {
   row.style.top = "0";
   row.__parts = {
     check: row.children[1],
-    label: row.children[2].children[0],
-    match: row.children[2].children[1],
+    twisty: row.children[2].children[0],
+    label: row.children[2].children[1],
+    match: row.children[2].children[2],
     badge: row.children[3],
     body: row.children[4],
     meta: row.children[5],
@@ -57,16 +62,25 @@ export function createRow() {
   return row;
 }
 
+const TWISTY_OPEN = String.fromCharCode(0x25be); // "▾"
+const TWISTY_SHUT = String.fromCharCode(0x25b8); // "▸"
+
 /**
  * Paint one row. `state` is the modal state — passed in rather than read from
- * a closure so this stays a pure function of (row, item, index, state).
+ * a closure so this stays a pure function of (row, item, index, state, view).
+ *
+ * `view` is the GroupedView, and it is what decides whether this index is a
+ * duplicate-cluster header, a member inside an opened one, or an ordinary row.
+ * Omit it and every row paints flat, which is exactly what the compare dialog's
+ * reuse of this renderer wants.
  */
-export function updateRow(row, item, index, state) {
+export function updateRow(row, item, index, state, view) {
   const p = row.__parts;
   row.dataset.index = String(index);
 
   if (!item) {
     row.classList.add("pl-row-skel");
+    row.classList.remove("is-member", "is-group");
     row.removeAttribute("data-id");
     row.setAttribute("aria-selected", "false");
     p.label.textContent = "";
@@ -74,6 +88,7 @@ export function updateRow(row, item, index, state) {
     p.meta.textContent = "";
     p.match.hidden = true;
     p.badge.hidden = true;
+    p.twisty.hidden = true;
     p.check.checked = false;
     return;
   }
@@ -97,8 +112,31 @@ export function updateRow(row, item, index, state) {
     p.match.textContent = "";
   }
 
+  // Three row kinds, and the badge says which: a cluster header counts the
+  // whole cluster, a member inside an open one says nothing (its header just
+  // did), an ordinary row keeps the near-dupe badge.
+  const size = Number(item.group_size) || 1;
+  const member = !!view && view.isMember(index);
+  const header = !!view && !member && size > 1;
+  const open = header && view.isOpen(id);
+
+  row.classList.toggle("is-member", member);
+  row.classList.toggle("is-group", header);
+
+  p.twisty.hidden = !header;
+  if (header) {
+    p.twisty.textContent = open ? TWISTY_OPEN : TWISTY_SHUT;
+    row.setAttribute("aria-expanded", open ? "true" : "false");
+  } else {
+    p.twisty.textContent = "";
+    row.removeAttribute("aria-expanded");
+  }
+
   const dupes = Number(item.dupe_count) || 0;
-  if (dupes > 0) {
+  if (header) {
+    p.badge.textContent = `${size} copies`;
+    p.badge.hidden = false;
+  } else if (!member && dupes > 0) {
     p.badge.textContent = `${dupes} near-dupe${dupes === 1 ? "" : "s"}`;
     p.badge.hidden = false;
   } else {

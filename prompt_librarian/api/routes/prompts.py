@@ -14,7 +14,6 @@ from ..indexing import _patch_dupes
 from ..utils import (
     _body,
     _bool,
-    _ignored,
     _int,
     _json,
     _labelled,
@@ -49,7 +48,7 @@ async def meta(request):
     ids = [_str(pid) for pid in (data.get("ids") or []) if _str(pid)]
     records = STORE.get_many(ids)
     counts = dedupe.page_dupe_counts(STORE, list(records), _threshold(data.get("threshold")),
-                                     ignored=_ignored(), rev=_rev())
+                                     rev=_rev())
     # The same rev-keyed index `/search` labels its rows from, so a node face
     # and the list row above it can never disagree about what a record is
     # called.

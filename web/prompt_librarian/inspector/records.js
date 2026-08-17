@@ -60,11 +60,17 @@ export function frac(v) {
 
 export const pct = (v) => Math.round(frac(v) * 100) + "%";
 
-/** Normalise a dupe response into sorted `{id, label, score, summary, body}`.
+/** Normalise a dupe response into sorted
+ * `{id, label, score, summary, body, ignored}`.
  *
  * `label` is the backend's derived handle for the match; it falls back to the
  * preview and then to the id, because a row has to say *something* and the id
  * is the only thing every match is guaranteed to have.
+ *
+ * `ignored` marks a pair the user has already answered "keep both" about. The
+ * backend still reports it — muting is a decision about the save DIALOG, not a
+ * claim that the duplicate went away — so it is the caller that drops it (the
+ * save gate) or draws it differently (the panel).
  */
 export function matchesOf(r) {
   const arr = Array.isArray(r) ? r : (r && (r.matches || r.dupes)) || [];
@@ -78,6 +84,7 @@ export function matchesOf(r) {
       score: frac(m.score != null ? m.score : m.ratio),
       summary: m.summary == null ? "" : String(m.summary),
       body: typeof m.body === "string" ? m.body : null,
+      ignored: !!m.ignored,
     });
   }
   out.sort((a, b) => b.score - a.score);

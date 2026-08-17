@@ -154,13 +154,6 @@
   min-width: 0; /* see the min-size note below */
 }
 
-/* Focus ring — one definition, used everywhere. */
-.pl-root :focus-visible,
-.pl-node-card :focus-visible {
-  outline: 2px solid var(--pl-accent);
-  outline-offset: 1px;
-}
-
 /* --------------------------------------------------------------------------
    Scrollbars — descendant-scoped so we never restyle ComfyUI's own scrollers.
    -------------------------------------------------------------------------- */

@@ -247,7 +247,14 @@ export function createSave(pane) {
    * Built inline, on purpose: the gate is the safety property of this   *
    * feature and must survive compare/ being absent. There is NO primary *
    * Save here — every path is an explicit decision, and `save anyway`   *
-   * is a ghost button behind a confirm that names every match.          *
+   * is a ghost button.                                                  *
+   *                                                                     *
+   * `save anyway` IS THE LAST DIALOG. Clicking it used to open a second *
+   * confirm and then leave every pair flagged, so the next save — and   *
+   * save-on-close is a save — re-opened this same dialog for the same   *
+   * matches, forever. One decision, taken once: it commits immediately  *
+   * and mutes every pair it just listed, exactly like `keep both` does  *
+   * for the one row it sits on.                                         *
    * ------------------------------------------------------------------ */
 
   function openResolve(matches, asNew) {
@@ -317,31 +324,17 @@ export function createSave(pane) {
       "div",
       { className: "pl-dialog-acts" },
       // Secondary ghost, never a primary: saving a duplicate must feel like
-      // the deliberate exception it is.
+      // the deliberate exception it is. It is not, however, a decision worth
+      // asking about twice — this dialog already named every match.
       h(
         "button",
         {
           className: "pl-btn pl-btn-ghost",
           type: "button",
-          onclick: async () => {
-            let ok = false;
-            try {
-              ok = await ctx.confirmDialog({
-                title: "Save a duplicate?",
-                message:
-                  "This will be saved alongside: " +
-                  matches.map((m) => LDQUO + m.label + RDQUO + " (" + pct(m.score) + ")").join(", ") +
-                  ". They will keep being flagged as duplicates.",
-                confirmLabel: "Save anyway",
-                cancelLabel: "Back",
-                danger: false,
-              });
-            } catch (_) { ok = false; }
-            if (!ok || pane.disposed) return;
-            close();
-            setSaving(true);
-            try { await commit(asNew); } finally { setSaving(false); }
-          },
+          title:
+            "Save alongside " + (matches.length === 1 ? "this match" : "all " + D.fmtInt(matches.length) + " matches") +
+            " and stop flagging " + (matches.length === 1 ? "the pair" : "those pairs"),
+          onclick: async () => { busy(true); try { await keepAll(matches, asNew, close); } finally { busy(false); } },
         },
         "save anyway"
       ),
@@ -358,17 +351,23 @@ export function createSave(pane) {
   }
 
   /**
-   * "keep both": go through with what the user asked for (create for
-   * `save as new` / a brand-new record, update otherwise) and then record the
-   * pair in `ignored` so this exact comparison stops nagging.
+   * "keep both" / "save anyway": go through with what the user asked for
+   * (create for `save as new` / a brand-new record, update otherwise) and then
+   * record the pair(s) in `ignored` so those exact comparisons stop nagging.
+   *
+   * MUTING IS THE POINT, not a nicety. Without it the very next save re-runs
+   * the gate, finds the same matches and re-opens the same dialog — and
+   * closing the modal is a save. A decision the user has taken has to stick.
    *
    * DEVIATION from the letter of the brief ("proceeds as create"): when the
    * user is updating an existing record, creating instead would silently
    * fork their prompt into two. "Keep both" means "keep this record and that
    * record" — the ignorePair call is the part that matters.
+   *
+   * @param {Array<object>} matches the rows to mute against what we just saved
    */
-  async function keepBoth(m, asNew, close) {
-    close();
+  async function keepAll(matches, asNew, close) {
+    if (close) close();
     setSaving(true);
     let rec = null;
     try {
@@ -376,14 +375,42 @@ export function createSave(pane) {
     } finally {
       setSaving(false);
     }
-    if (!rec || !rec.id || !m.id) return;
-    try {
-      ensureOk(await ctx.API.ignorePair(rec.id, m.id));
-    } catch (err) {
-      pane.toast("saved, but could not mute this pair: " + errMsg(err), "error");
+    if (!rec || !rec.id) return; // commit already said why
+    const ids = (matches || []).map((m) => m && m.id).filter((id) => id && String(id) !== String(rec.id));
+    if (!ids.length) return;
+
+    // Best effort, and never fatal: the record IS saved by now. A pair that
+    // could not be muted is a nag, not a data loss, so it gets one honest
+    // toast rather than an error per id.
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        ensureOk(await ctx.API.ignorePair(rec.id, id));
+      } catch (_) {
+        failed++;
+      }
+    }
+    if (failed) {
+      pane.toast(
+        "saved, but " + D.fmtInt(failed) + " of " + D.fmtInt(ids.length) + " pair" +
+          (ids.length === 1 ? "" : "s") + " could not be muted — they will keep being flagged",
+        "error"
+      );
       return;
     }
-    pane.toast("kept both " + MDASH + " this pair will stop being flagged");
+    pane.toast(
+      "saved " + MDASH + " " + (ids.length === 1 ? "this pair" : "these " + D.fmtInt(ids.length) + " pairs") +
+        " will stop being flagged"
+    );
+    // The panel is still showing the matches the gate found; now that they are
+    // muted the backend will not return them, so ask again.
+    pane.scheduleDupes.cancel();
+    pane.runDupes(false);
+  }
+
+  /** "keep both" — the per-row button: mute exactly the pair it sits on. */
+  function keepBoth(m, asNew, close) {
+    return keepAll(m ? [m] : [], asNew, close);
   }
 
   /** "merge into this" / the live panel's `merge` — the match wins. */
@@ -493,6 +520,7 @@ export function createSave(pane) {
   pane.openConflict = openConflict;
   pane.openResolve = openResolve;
   pane.keepBoth = keepBoth;
+  pane.keepAll = keepAll;
   pane.mergeInto = mergeInto;
   pane.overwriteMatch = overwriteMatch;
 }

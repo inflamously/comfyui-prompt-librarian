@@ -110,7 +110,12 @@ back to its own opening words.)
 Saving runs a fresh duplicate check regardless of what the panel currently shows. If anything
 scores at or above the threshold, the save **stops** and you get an explicit choice — compare,
 merge into that one, keep both (which also stops that pair being flagged again), overwrite that
-one, or `save anyway` behind a confirm that names every match. There is no default "just save".
+one, or `save anyway`. There is no default "just save".
+
+`save anyway` is the *last* dialog, not the first of several: it writes the record and mutes every
+pair it just listed, so the same matches never re-open this gate. (Closing the modal saves, so
+without that the dialog came back on every close.) Muting is per pair — a genuinely new
+near-duplicate still stops the save.
 
 Saves also carry the record's `updated` timestamp, so if another browser tab changed the same
 prompt underneath you, the write is rejected with a conflict dialog rather than clobbering it.
@@ -616,6 +621,7 @@ defeats the whole point.)
 | `unit/text-format.test.js` | 44 | Grapheme safety (both the `Intl.Segmenter` and `Array.from` branches), label derivation, `relTime` with `now` injected, `escapeQuery` round-tripping. |
 | `unit/tokenize-timing.test.js` | 22 | The wildcard grammar against its Python counterpart, including the two deliberate divergences; `debounce`/`rafThrottle` including `cancel()`, which `closeModal()` relies on. |
 | `dom/close-save.test.js` | 18 | **Save-on-close.** The five-status matrix (`saved`/`clean` close; `blocked`/`failed`/`busy` stay open), the `it.closing` re-entry latch against Esc-mashing, the close button disabled for the round trip, all three close routes, the drag-to-backdrop that must *not* close, and full teardown. |
+| `dom/dupe-gate.test.js` | 7 | **Getting back out of the duplicate gate**, `createSave()` driven with a hand-built pane: the gate blocks and writes nothing, `save anyway` is the *last* dialog (one click, no second confirm) and mutes every pair it listed, an update stays an update rather than forking, a failed mute still leaves the record saved and complains once, and `keep both` mutes only its own row. |
 | `dom/shortcuts.test.js` | 9 | Ctrl/Cmd+S: fires once, `e.repeat` guarded, skipped while a layer is open, narrow mode brings the editor forward, `preventDefault` for the chord but never for a plain letter. |
 | `dom/key-isolation.test.js` | 9 | The pack's stated top hazard, against a simulated ComfyUI that registers document-capture listeners first: nothing inside `.pl-root` escapes, everything outside still works, typing is never `preventDefault`-ed, and closing removes **both** layers. |
 
@@ -692,7 +698,7 @@ accept the call and silently drop it. `Open Librarian` exists either way.
 ```
 python3 -m pytest tests/ -q      # 372 tests, no ComfyUI required   (Windows: python / py)
 npm install --no-bin-links       # jsdom, once (drop the flag if symlinks work)
-npm test                         # 151 JS tests, no ComfyUI and no browser
+npm test                         # 158 JS tests, no ComfyUI and no browser
 ruff check .                     # style, imports, complexity
 lint-imports                     # the layer + independence contracts
 python3 scripts/openapi.py       # the route table, as a listing or a spec

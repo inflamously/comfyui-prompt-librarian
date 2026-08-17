@@ -32,7 +32,7 @@ import { refreshAll, reportError } from "./data.js";
 import { clearDraft, loadDraft, saveDraft } from "./drafts.js";
 import { hostApp } from "./host.js";
 import { onKey } from "./keys.js";
-import { confirmDialog, popLayer, pushLayer, toast, topLayer } from "./layers.js";
+import { choiceDialog, confirmDialog, popLayer, pushLayer, toast, topLayer } from "./layers.js";
 import { getState, inst, setState, subscribe } from "./state.js";
 import {
   getTargetNodeId,
@@ -69,6 +69,7 @@ export function ctx() {
     // chrome
     toast,
     confirmDialog,
+    choiceDialog,
     pushLayer,
     popLayer,
     topLayer,

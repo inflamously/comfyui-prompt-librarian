@@ -72,6 +72,7 @@ export function mountInspector(el, ctx) {
     dupePaused: false, // body over the live-check ceiling
     ratingBusy: false,
     pendingId: null, // id of an in-flight selectPrompt fetch
+    leaving: false, // the unsaved-changes gate is on screen
     pendingDraft: null,
     /**
      * The last body that arrived FROM the node.
@@ -383,6 +384,90 @@ export function mountInspector(el, ctx) {
     renderFields();
   }
 
+  /**
+   * Unsaved-changes gate, run before the selection moves off an edited record.
+   *
+   * Picking a row in the sidebar used to park the edit in a sessionStorage
+   * draft and switch away without a word. The draft bar does surface it again
+   * later, but only if the user happens to come back to that exact record —
+   * so from where the user stands the edit simply vanished. Hence the ask.
+   *
+   * Three answers, and the cancel is the one every dismissal maps to:
+   *   "save"    commit, and only switch if the commit actually landed. A
+   *             conflict or dupe gate returns "blocked" with its own dialog on
+   *             screen; switching then would yank the record out from under
+   *             the decision the user is being asked to make.
+   *   "discard" drop the buffer AND the parked draft — "discard" has to mean
+   *             gone, or the draft bar resurrects it on the next visit and
+   *             makes a liar out of this dialog.
+   *   cancel    stay put, and put `currentId` back so the sidebar highlight
+   *             re-follows the record still in the editor.
+   *
+   * Degrades to the old park-a-draft behaviour when the host modal has no
+   * choiceDialog (inspector/ is mounted by panes.js and must tolerate an older
+   * or partial modal).
+   *
+   * @param {string} nextId the record about to be selected
+   * @returns {Promise<boolean>} true when the switch may proceed
+   */
+  async function confirmLeave(nextId) {
+    const rec = pane.current;
+    const curId = rec && rec.id ? String(rec.id) : "";
+    if (curId && curId === String(nextId)) return true;
+    if (!isDirty()) return true;
+    // Nothing typed at all — an empty buffer is not worth a dialog.
+    if (!pane.buf.body.trim() && !curId) return true;
+    if (typeof ctx.choiceDialog !== "function") { pane.saveDraft(); return true; }
+
+    const asNew = !curId;
+    const label = rec ? D.labelOf(rec) || rec.id : "";
+    let answer = "cancel";
+    try {
+      answer = await ctx.choiceDialog({
+        title: "Unsaved changes",
+        message: rec
+          ? "You edited " + LDQUO + label + RDQUO + " without saving.\nWhat should happen to those changes?"
+          : "You have an unsaved prompt in the editor.\nWhat should happen to it?",
+        cancelLabel: "Keep editing",
+        cancelValue: "cancel",
+        choices: [
+          { value: "discard", label: "Discard", danger: true },
+          { value: "save", label: asNew ? "Save as new" : "Save", primary: true },
+        ],
+      });
+    } catch (_) { answer = "cancel"; }
+    if (pane.disposed) return false;
+
+    if (answer === "save") {
+      const status = await requestSave(asNew);
+      if (pane.disposed) return false;
+      if (status !== "saved" && status !== "clean") { restoreSelection(); return false; }
+      return true;
+    }
+    if (answer === "discard") {
+      pane.discardDraft();
+      if (curId) {
+        pane.clearDraft(curId);
+        // Roll the buffer back to the stored record BEFORE leaving. Clearing
+        // only the sessionStorage draft would leave the buffer dirty, and the
+        // draft-parking line below would helpfully write it straight back.
+        adoptRecord(pane.current);
+      }
+      return true;
+    }
+    restoreSelection();
+    return false;
+  }
+
+  /** Point `currentId` back at what the editor is actually showing. */
+  function restoreSelection() {
+    try {
+      if (typeof ctx.setState === "function") {
+        ctx.setState({ currentId: pane.renderedId == null ? null : String(pane.renderedId) });
+      }
+    } catch (_) { /* the highlight is cosmetic; never block on it */ }
+  }
+
   async function selectPrompt(id) {
     if (pane.disposed) return;
     if (id == null || id === "") {
@@ -395,7 +480,25 @@ export function mountInspector(el, ctx) {
     // modal/ctx.js may both patch `currentId` (which we subscribe to) and call
     // ctx.inspector.select() for the same click; one fetch is enough.
     if (pane.pendingId != null && pane.pendingId === String(id)) return;
-    // Park the outgoing edit before switching away from it.
+    // Re-picking the row that is already open, with edits in the box: the
+    // fetch below would adopt the stored record and silently eat them. The
+    // gate cannot help here — there is nothing to switch to — so the only
+    // right answer is to leave the editor alone.
+    if (pane.renderedId && pane.renderedId === String(id) && isDirty()) return;
+    // One question at a time: a second row clicked while the gate is on screen
+    // would stack dialogs, and answering the first would then switch to the
+    // wrong record.
+    if (pane.leaving) return;
+    pane.leaving = true;
+    let mayLeave;
+    try {
+      mayLeave = await confirmLeave(id);
+    } finally {
+      pane.leaving = false;
+    }
+    if (!mayLeave || pane.disposed) return;
+    // Park the outgoing edit anyway: "save" and "discard" both leave a clean
+    // buffer, so this only ever fires on the no-dialog fallback path.
     if (pane.current && pane.current.id && String(pane.current.id) !== String(id) && isDirty()) pane.saveDraft();
     pane.pendingId = String(id);
     let r;

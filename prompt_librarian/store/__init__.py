@@ -1,0 +1,70 @@
+"""SQLite persistence for Prompt Librarian.
+
+``library.sqlite3`` is the only live store. Historical ``library.json`` and
+``library.jsonl`` files are read only by the explicit migration path.
+"""
+
+from .sqlite_store import LibrarianStore
+from .types import (
+    DEFAULT_DUPE_THRESHOLD,
+    MAX_BODY_CHARS,
+    MAX_SNIPPET_NAME_CHARS,
+    MAX_TAG_CHARS,
+    MAX_TAGS,
+    MERGE_VERSIONS_KEPT,
+    SCHEMA_VERSION,
+    VERSION_BYTES_CAP,
+    VERSION_CAP,
+    BodyTooLargeError,
+    ConflictError,
+    NotFoundError,
+    ReadOnlyError,
+    SameRecordError,
+    StoreError,
+    StoreWriteError,
+)
+from .utils import (
+    clean_body,
+    clean_tag,
+    clean_tags,
+    database_path,
+    new_id,
+    now_iso,
+    preview_of,
+    store_dir,
+    user_dir,
+    wildcards_dir,
+)
+
+STORE = LibrarianStore()
+
+__all__ = [
+    "LibrarianStore",
+    "STORE",
+    "StoreError",
+    "NotFoundError",
+    "BodyTooLargeError",
+    "ReadOnlyError",
+    "StoreWriteError",
+    "SameRecordError",
+    "ConflictError",
+    "SCHEMA_VERSION",
+    "MAX_BODY_CHARS",
+    "MAX_SNIPPET_NAME_CHARS",
+    "MAX_TAG_CHARS",
+    "MAX_TAGS",
+    "VERSION_CAP",
+    "VERSION_BYTES_CAP",
+    "MERGE_VERSIONS_KEPT",
+    "DEFAULT_DUPE_THRESHOLD",
+    "user_dir",
+    "store_dir",
+    "database_path",
+    "wildcards_dir",
+    "now_iso",
+    "new_id",
+    "preview_of",
+    "clean_tag",
+    "clean_tags",
+    "clean_body",
+]

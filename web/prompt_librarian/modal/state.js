@@ -32,6 +32,7 @@ export function freshState() {
     buffer: { tags: [], body: "" },
     dupes: { threshold: 0.9, matches: [], loading: false },
     caps: {},
+    storage: null,
     targetNodeId: null,
     targetOk: true,
     link: readLinkPref(), // two-way binding between the textarea and the node
@@ -93,6 +94,27 @@ export function inst() {
     closing: false, // a save-on-close is in flight; see modal/close.js
     binding: null, // {nodeId, node, unbind} — see modal/binding.js
   }));
+}
+
+/**
+ * Show or hide the retained shell together with its modal semantics.
+ *
+ * These two states must change as one operation. ComfyUI deliberately blocks
+ * global commands while this selector matches:
+ *
+ *   [role="dialog"][aria-modal="true"]
+ *
+ * Its check does not consider `hidden`, so hiding the root without removing
+ * `aria-modal` would leave workflow save disabled after the first close.
+ */
+export function setModalVisible(visible) {
+  const it = inst();
+  const card = it.els && it.els.card;
+  if (card) {
+    if (visible) card.setAttribute("aria-modal", "true");
+    else card.removeAttribute("aria-modal");
+  }
+  if (it.root) it.root.hidden = !visible;
 }
 
 /* --------------------------------------------------------------------------

@@ -213,12 +213,18 @@ def _ignored():
         return ()
 
 
-def _labeller():
+def _labeller(records=None):
     """``label_of(pid)`` / ``label_for(body)`` against the current library.
 
     One rev-keyed index for the whole api, so a list row, a node face and a
     version entry can never disagree about what a record is called.
     """
+    stats_fn = getattr(STORE, "search_corpus_stats", None)
+    df_fn = getattr(STORE, "search_term_df", None)
+    if callable(stats_fn) and callable(df_fn):
+        return search.SearchIndex(
+            list(records or ()), rev=_rev(), corpus=stats_fn(), df_fn=df_fn,
+        )
     return search.get_index(STORE)
 
 
@@ -231,4 +237,4 @@ def _labelled(rec):
     """
     if not rec:
         return {"prompt": rec, "label": ""}
-    return {"prompt": rec, "label": _labeller().label_of(_str(rec.get("id")))}
+    return {"prompt": rec, "label": _labeller([rec]).label_of(_str(rec.get("id")))}

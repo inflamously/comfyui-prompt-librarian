@@ -83,9 +83,10 @@ Click **Open Librarian** on the node. The panel is a full-screen overlay:
 
 Search supports operators: `tag:dance`, `-word` to exclude, and `"quoted phrase"`.
 
-**Ctrl+S** (⌘S) saves from anywhere in the panel. ComfyUI never sees the chord — the key isolation
-described under `keys.js` below stops every keystroke inside the overlay before the canvas can act
-on it — and the browser's own *Save Page* dialog is suppressed too.
+**Ctrl+S** (⌘S) follows the active surface: while the panel is open it saves the prompt and
+suppresses the browser's *Save Page* dialog; after the panel closes, the untouched chord belongs to
+ComfyUI's `Comfy.SaveWorkflow` command. The key isolation described under `keys.js` below also stops
+every other keystroke inside the overlay before the canvas can act on it.
 
 **Closing saves.** Escape, the `×` and a backdrop click all save first and then close; a panel with
 nothing to write closes straight away. There is no `Discard unsaved edits?` prompt, because being
@@ -185,17 +186,30 @@ state into its cache key — edit a file and dependent nodes correctly re-run.
 
 ```
 <ComfyUI>/user/default/prompt-librarian/
-├── library.json              the whole library
-├── library.bak.json          previous version, rewritten on every save
+├── library.sqlite3           authoritative library + search index
 └── wildcards/*.txt           your wildcard files
 ```
 
-`library.json` is plain readable JSON, written atomically (temp file + rename) so an interrupted
-save can't truncate it. Records look like:
+There is one authoritative persistent storage file. SQLite may create transient `-wal` and `-shm`
+companions while a connection is open. Complete prompt records, versions, settings, snippets,
+muted duplicate pairs, tags and the search projections all live in `library.sqlite3` and change in
+one transaction.
+
+Saving is proportional to the prompts changed. A single edit updates one record plus its tag/token/
+FTS rows; it never parses or rewrites the rest of the library. Search asks SQLite for candidate
+current bodies; an empty browse loads only 160-character row previews and basic metadata, never every
+full prompt or its version history. Deletes can leave free database pages; the Storage dialog offers
+**Optimize storage** (SQLite `VACUUM`) only when enough space is reclaimable. It is never run during
+a normal save.
+
+JSON remains the backup and interchange format. **Export JSON** streams the schema-1 envelope to a
+file in bounded batches; **Import JSON** uploads to a temporary file and supports safe merge or
+replace. Exported records look like:
 
 ```json
 {
   "schema": 1,
+  "updated": "2026-08-26T10:32:13Z",
   "settings": { "dupe_threshold": 0.90, "version_cap": 50 },
   "snippets": { "cine_lighting": { "body": "volumetric haze, 35mm", "updated": "..." } },
   "ignored": [["idA", "idB"]],
@@ -221,15 +235,19 @@ what it would have done anyway.
 Ids are random, not content hashes — two prompts with identical bodies must be able to coexist
 until you merge them, and an id has to survive a body edit to keep the workflow link intact.
 
-A corrupt or hand-broken `library.json` is never overwritten: the Librarian starts empty, logs, and
-moves the bad file aside as `library.corrupt-<timestamp>.json` on the next save. A file written by a
-*newer* schema loads read-only rather than being downgraded.
+Old `library.jsonl` and `library.json` files are migration sources, not live storage. When one exists,
+the Storage dialog offers an explicit migration. Migration merges prompts/snippets/muted pairs,
+keeps the current SQLite settings, gives colliding prompt ids deterministic new ids, records an
+idempotency marker, and leaves the source file untouched. Neither source is read automatically
+during ordinary startup. A database declaring a newer schema loads read-only rather than being
+downgraded; an unreadable database is never silently replaced.
 
 **Limits:** 100 000 characters per prompt, 50 versions (or 256 KB of version bodies) per record,
 32 tags. Similarity compares the first 4 000 normalized characters.
 
-**Not handled:** two ComfyUI instances sharing one user directory. Writes are per-record
-last-writer-wins, with silent loss for the loser.
+SQLite safely serializes writers from multiple tabs or processes. Independent edits to different
+records do not overwrite one another; simultaneous edits to the same record remain last-writer-wins
+unless the caller supplies the existing `updated` concurrency token.
 
 ---
 
@@ -251,7 +269,7 @@ Drop the folder in `ComfyUI/custom_nodes/` and restart. **No dependencies** beyo
 already ships — the whole thing is Python standard library plus vanilla JavaScript, with no build
 step.
 
-On start you should see `[prompt-librarian] registered 31 routes under /prompt_librarian`. Route
+On start you should see `[prompt-librarian] registered 34 routes under /prompt_librarian`. Route
 registration is isolated from the old node's, so a failure in one can't take down the other.
 
 ---
@@ -267,18 +285,18 @@ __init__.py                   node mappings, WEB_DIRECTORY, both route blocks
 prompt_librarian/             the Librarian domain
   __init__.py                 exports PromptLibrarian
   node.py                     the node class
-  api/                        31 routes under /prompt_librarian
+  api/                        34 routes under /prompt_librarian
     config.py                 prefix, capabilities, exception -> status table
     utils.py                  route table, guard, JSON envelope, coercion
-    api.py                    one function per feature — the handlers
+    routes/                   one handler module per feature group
     registration.py           register(): the route table -> aiohttp
     schemas.py                what each endpoint takes and returns, as types
     openapi.py                those two -> an OpenAPI 3.1 document (pydantic)
   wildcards.py                {a|b} / __file__ / [[snippet]] resolution
-  dedupe.py                   similarity cascade, dupe caches, word-level diff
+  dedupe/                     similarity, indexing, caches, scans, and word-level diff
   search.py                   inverted index, relevance scoring, filters, sorts
   labels.py                   what a record is called, derived from the corpus
-  store.py                    schema, atomic I/O, CRUD, versions, merge, snippets
+  store/                      authoritative SQLite, JSON/JSONL migration codecs
 
 prompt_store/                 the OLD node's domain — untouched
   __init__.py                 exports PromptLibrary and the prompts.json helpers
@@ -297,7 +315,7 @@ web/prompt_librarian/         the Librarian's frontend — one directory per fea
   librarian.css               scoped dark theme
 web/prompt_store/             the OLD node's frontend — same split, four files
 scripts/openapi.py            route table -> route listing or OpenAPI spec
-tests/*.py                    338 tests, stdlib + pytest only
+tests/*.py                    Python persistence/API/search tests
 ```
 
 The modules inside `prompt_librarian/` are listed highest-layer first: each may import the ones
@@ -322,28 +340,22 @@ failure in the route stack cannot take the node down with it.
 
 ### Python — the Librarian backend
 
-**`prompt_librarian/store.py`** (1503 lines) — the library file and every mutation of it. Defines
-`SCHEMA_VERSION`, the limit constants (`MAX_BODY_CHARS = 100 000`, `MAX_TAGS = 32`,
-`VERSION_CAP = 50`, `VERSION_BYTES_CAP = 256 KB`, `DEFAULT_DUPE_THRESHOLD = 0.90`), the exception
-hierarchy the API maps to error codes (`NotFoundError`, `BodyTooLargeError`, `ReadOnlyError`,
-`ConflictError`, `SameRecordError`, `StoreWriteError`), path helpers (`user_dir`, `store_dir`,
-`store_path`, `backup_path`, `wildcards_dir`), field cleaners (`clean_tags`, `clean_body`) and the
-`_coerce` layer that makes a hand-edited file loadable — and that scrubs the removed fields
-(`_REMOVED_FIELDS`: `category`, `name`, plus `categories` at the top level) off anything still
-carrying them.
-The bulk is `class LibrarianStore`: lock-guarded load/save (temp file + `os.replace` with retries
-for transient Windows locks, `.bak.json` rewritten each save, corrupt files moved aside rather than
-overwritten, newer-schema files loaded read-only), a monotonic `rev()` used for cache invalidation,
-`on_change` callbacks plus websocket `_notify`, then CRUD (`create`, `update`, `set_rating`,
-`delete`, `record_usage`), bulk ops (`bulk_delete`, `bulk_retag`, `bulk_merge`),
-versions (`versions`, `version_previews`, `restore_version`, `_trim_versions`), `merge` /
-`merge_new`, taxonomy (`tags`, `taxonomy`), snippets, the ignored-
-pair list (`ignore_pair` / `is_ignored`), and `export_raw` / `import_raw`. Ends with the module-level
-singleton `STORE`.
+**`prompt_librarian/store/`** — the persistence slice. `sqlite_store.py` is the one live
+`LibrarianStore`; `sqlite_database.py` owns records and search projections; `operations.py` owns
+CRUD/version/merge behavior; `models.py` owns schema-1 coercion; and `legacy.py` is a read-only
+JSON/JSONL importer. Complete normalized records, tags, token postings and FTS5 live in one database.
+Each operation uses a short transaction and a fresh connection, so readers do not hold the writer
+open.
 
-**`prompt_librarian/search.py`** (907 lines) — stdlib-only, knows nothing about aiohttp, ComfyUI or the
-file format; it takes an iterable of record dicts or anything with `list_all()` + `rev()`. With no
-name to match, **this module is the whole of how a library is navigated**, so the scoring weights
+The store exposes CRUD, bulk, versions, merge, taxonomy, snippets, ignored-pair and import/export.
+There are no JSON/JSONL store implementations or backend selector. Historical files are opened only
+by explicit, idempotent migration from the Storage dialog and are never modified.
+
+**`prompt_librarian/search.py`** — stdlib-only, knows nothing about aiohttp, ComfyUI or the file
+format. It accepts the original `list_all()` + `rev()` protocol, plus optional disk-backed candidate
+and corpus-stat methods. Typed searches therefore score only SQLite-selected current-body
+projections while preserving the same ranking and fallback behavior. With no name to match,
+**this module is the whole of how a library is navigated**, so the scoring weights
 are module constants and worth reading before they are changed: `W_TAG 2.0`, `W_BODY 1.0` and
 `W_HEAD 1.5` — a bonus on the body's first `HEAD_TOKENS` words, which inherit the role the name
 weight used to play, since a prompt says what it is about up front and qualifies it afterwards.
@@ -371,7 +383,7 @@ library's first prompt would be the only one that never got a real label. `term_
 surface word exactly as `search.normalize` does, splits included, and a word that splits is scored
 by its rarest piece.
 
-**`prompt_librarian/dedupe.py`** — near-duplicate detection and diffing, also stdlib-only.
+**`prompt_librarian/dedupe/`** — near-duplicate detection and diffing, also stdlib-only.
 `sim_norm` produces the normalized comparison text (capped at `SIM_MAX_CHARS = 4000`), `length_ok`
 is the cheap length prefilter, `ratio` is the cascaded `difflib` real-quick/quick/full ladder.
 `DupeIndex` / `build_dupe_index` provide the rare-token blocking index (`RARE_TOKENS`, `DF_ABS`,
@@ -401,10 +413,10 @@ cache with its `FILES` singleton, `signature()` (folded into the node's cache ke
 option parsing with weights (`3::`) and pick-N (`2$$`, `1-3$$`), the seeded `random.Random` picks,
 and the public `resolve` / `resolve_verbose` / `has_wildcards` / `referenced_names`.
 
-**`prompt_librarian/api/`** (1 276 lines, spec modules aside) — the 31 aiohttp routes under `/prompt_librarian`, split
-four ways: `config.py` (the prefix, `CAPABILITIES`, `_ERROR_MAP`), `utils.py` (the route table and
-everything mechanical), `api.py` (one function per feature — the handlers), `registration.py`
-(`register()` alone). `aiohttp` is imported on first use, never at module scope, so tests and
+**`prompt_librarian/api/`** — the 34 aiohttp routes under `/prompt_librarian`: `config.py` owns the
+prefix/capabilities/error map, `utils.py` owns routing mechanics, `routes/` groups handlers by
+feature, and `registration.py` registers the completed table. `aiohttp` is imported on first use,
+never at module scope, so tests and
 `scripts/openapi.py` can import the package without it. Every read is GET, every write is POST (no
 PATCH/DELETE, no path params — that survives ComfyUI's `/api` prefix rewriting). `_route` collects
 handlers into `_ROUTES`; `_guard` wraps each one so a backend bug returns `500 {"error", "code"}`
@@ -412,9 +424,9 @@ instead of taking down the server; `_ERROR_MAP` turns store exceptions into stab
 frontend branches on; every response merges in `{"rev": STORE.rev()}`. Anything that serializes JSON
 or scans every record goes through `_offload` to a thread; dict/index lookups run inline. Routes:
 GET `ping`, `search`, `prompt`, `versions`, `version`, `taxonomy`, `dupes/all`, `wildcards`,
-`snippets`, `export`; POST `meta`, `dupes`, `compare`, `resolve`, `create`, `update`, `rate`,
+`snippets`, `export`, `export/file`, `storage`; POST `meta`, `dupes`, `compare`, `resolve`, `create`, `update`, `rate`,
 `delete`, `usage`, `bulk/{delete,retag,merge}`, `merge`, `merge_new`, `versions/restore`,
-`dupes/ignore`, `snippet`, `settings`, `import`. Also exposes a `CAPABILITIES` dict the
+`dupes/ignore`, `snippet`, `settings`, `import`, `import/file`, `storage/{migrate,compact}`. Also exposes a `CAPABILITIES` dict the
 frontend feature-detects against.
 
 **`prompt_librarian/api/schemas.py`** (648 lines) + **`openapi.py`** (198) + **`scripts/openapi.py`**
@@ -542,9 +554,12 @@ guard — a window-capture listener that calls `stopImmediatePropagation()` on e
 originating inside `.pl-root`, so ComfyUI's global shortcuts (Delete removes the node, Ctrl+Z undoes
 the graph, Space pans the canvas) can't fire while you type — and re-delivers those events on its own
 key bus. That is why a plain `addEventListener("keydown", …)` is dead code everywhere else in the
-panel. The guard only ever calls `stopPropagation`, never `preventDefault`, because text entry and
-IME composition are default actions rather than listeners; the two sanctioned exceptions both live in
-`shell.js`, where Escape and Ctrl+S prevent a browser default that is not text entry.
+panel. The guard does not prevent text-entry defaults. Ctrl/Cmd+S is the narrow exception: when its
+target is inside `.pl-root`, the real event is consumed to save the prompt and suppress *Save Page*.
+On close, the retained card also drops `aria-modal`; ComfyUI uses the visibility-blind selector
+`[role="dialog"][aria-modal="true"]` as a global-command gate, so `state.js` changes that marker and
+the retained root's visibility together. Leaving the attribute on a hidden card would disable
+workflow save after the Librarian's first use.
 
 **`browse/`** (9 files) — the left rail: search box with live hit count, filter chips,
 `dupes only`, sort tabs, the virtualised list and the footer/bulk bar. `paged-source.js` handles
@@ -616,12 +631,13 @@ reach in.
 | File | Tests | Covers |
 |---|---|---|
 | `conftest.py` | — | Injects a stub `folder_paths` into `sys.modules` **before** `prompt_librarian.store` imports, and an autouse fixture repoints it at each test's `tmp_path`. Also puts the pack root on `sys.path` so the `from prompt_librarian import search` form works. No test can reach a real user directory or the old node's `prompts.json`. |
-| `test_store.py` | 48 | Schema coercion (including the removed-field scrub), atomic write and backup, corrupt/newer-schema handling, CRUD, conflicts, bulk ops, version trimming, merge semantics, taxonomy, snippets, ignored pairs. |
+| `test_store.py` | 35 | SQLite-backed CRUD, validation, conflicts, bulk ops, version trimming, merge semantics, taxonomy, snippets, ignored pairs and portable JSON envelopes. |
+| `test_store_sqlite.py` | 15 | SQLite durability, indexed search projections, independent writers, database health/optimization, and explicit JSON/JSONL migration. |
 | `test_search.py` | 44 | Free-standing (plain dict fixtures, no store): tokenizing, index building, query operators, scoring, filters, all four sorts, paging. |
 | `test_labels.py` | 29 | Also free-standing: distinctive-term selection, stopwords and the digit exception, phrase merging, ordering, caps, the body-head fallback, the smoothed idf that keeps a one-record library labelled, and that `term_tokens` folds exactly as `search.normalize` does. |
 | `test_dedupe.py` | 39 | Also free-standing: ratio cascade vs raw `difflib`, length prefilter, blocking index correctness, clustering, cache invalidation, diff opcodes and summaries. |
 | `test_wildcards.py` | 63 | Determinism, nesting, weights, pick-N, escapes — and the three guards that matter for not hanging a render worker: path traversal, cycles, output size. |
-| `test_api.py` | 68 | Drives handlers directly with a stub request (`.rel_url.query` + async `.json()`), so no server is stood up; skips wholesale if aiohttp is absent. Route table, error-code mapping, `rev` propagation. |
+| `test_api.py` | 70 | Drives handlers directly with a stub request (`.rel_url.query` + async `.json()`), so no server is stood up; skips wholesale if aiohttp is absent. Route table, error-code mapping, `rev` propagation. |
 | `test_openapi.py` | 17 | Drift guards on the generated spec: every route typed, every response inheriting the `rev` envelope, every operation id unique, every `$ref` resolvable, and `Capabilities` / `Prompt` / `Settings` / the error codes still matching the live tables. Needs no aiohttp; skips wholesale without pydantic. |
 | `test_node.py` | 30 | The load-bearing node properties: `INPUT_TYPES` is pure (no disk, no combos), `run()` never fails a render, `IS_CHANGED` responds to the right inputs, and usage counts only a run of the *saved* body. |
 | `test_route_contract.py` | 34 | The one test that spans both languages. Runs `tests-js/tools/dump-routes.mjs`, which invokes all 30 `API` methods against a recording transport, and asserts the resulting `(method, path)` set equals the Python `_ROUTES` table in **both** directions. Extraction is by execution, not regex, and reads neither `openapi.json` nor pydantic. Skips with a reason when `node` is absent. |
@@ -646,12 +662,12 @@ defeats the whole point.)
 | `unit/records.test.js` | 32 | `inspector/records.js` — zero imports, and `sig()` is the dirty comparison the whole close flow rests on. |
 | `unit/text-format.test.js` | 44 | Grapheme safety (both the `Intl.Segmenter` and `Array.from` branches), label derivation, `relTime` with `now` injected, `escapeQuery` round-tripping. |
 | `unit/tokenize-timing.test.js` | 22 | The wildcard grammar against its Python counterpart, including the two deliberate divergences; `debounce`/`rafThrottle` including `cancel()`, which `closeModal()` relies on. |
-| `dom/close-save.test.js` | 18 | **Save-on-close.** The five-status matrix (`saved`/`clean` close; `blocked`/`failed`/`busy` stay open), the `it.closing` re-entry latch against Esc-mashing, the close button disabled for the round trip, all three close routes, the drag-to-backdrop that must *not* close, and full teardown. |
+| `dom/close-save.test.js` | 19 | **Save-on-close.** The five-status matrix (`saved`/`clean` close; `blocked`/`failed`/`busy` stay open), the `it.closing` re-entry latch against Esc-mashing, the close button disabled for the round trip, all three close routes, the drag-to-backdrop that must *not* close, full teardown, and modal semantics restored on reopen. |
 | `dom/dupe-gate.test.js` | 10 | **Getting back out of the duplicate gate**, `createSave()` driven with a hand-built pane: the gate blocks and writes nothing, `save anyway` is the *last* dialog (one click, no second confirm) and mutes every pair it listed, an update stays an update rather than forking, a failed mute still leaves the record saved and complains once, and `keep both` mutes only its own row. Plus the split that keeps a mute honest: an already-muted match does not gate the save, but its score is untouched, so every counting surface still sees it. |
 | `dom/dupe-accordion.test.js` | 17 | **The duplicate accordion**, both tiers. `updateRow`'s three row kinds (cluster header badged `N copies`, quiet indented member, ordinary row keeping its near-dupe badge — and a view-less call painting flat, which is how `compare/` reuses the renderer); then the real rail against a stubbed `/search`: four copies are one row, the twisty opens and closes it in place, clicking a header opens *and* selects, ticking a collapsed cluster ticks all four, and "all filtered" counts records rather than rows. |
 | `dom/dupe-panel-muted.test.js` | 9 | **A muted pair is shown, not swallowed.** The live panel lists it marked, counts it in the heading (`3 near matches (2 muted)`), drops the amber when nothing is left to warn about, and un-mutes it back into the gate — including the failure path, and the unsaved draft that has no pair to un-mute in the first place. |
 | `unit/grouped-source.test.js` | 20 | `browse/grouped-source.js` against a fake `PagedSource`: rows vs records, the index shift an open cluster imposes on everything below it, what a row *stands for* when ticked (a collapsed cluster is its whole cluster), ranges loaded in top-level indices, and a stale span self-healing rather than shifting the list by two forever. |
-| `dom/shortcuts.test.js` | 9 | Ctrl/Cmd+S: fires once, `e.repeat` guarded, skipped while a layer is open, narrow mode brings the editor forward, `preventDefault` for the chord but never for a plain letter. |
+| `dom/shortcuts.test.js` | 12 | Ctrl/Cmd+S follows the active surface against a faithful ComfyUI `window` handler: the Librarian owns the chord while open, closing clears ComfyUI's DOM modal gate, workflow save resumes afterward, prompt save fires once, `e.repeat` is guarded, layers take precedence, and plain typing is never prevented. |
 | `dom/key-isolation.test.js` | 9 | The pack's stated top hazard, against a simulated ComfyUI that registers document-capture listeners first: nothing inside `.pl-root` escapes, everything outside still works, typing is never `preventDefault`-ed, and closing removes **both** layers. |
 
 Writing these turned up one live bug, since fixed: `sig()` joined the tags with `""`, so
@@ -668,7 +684,8 @@ one style invariant worth pinning (`.pl-dirty` is gone) is a grep in tier 0, not
 ### The dev playground — `scripts/devserver.py`
 
 ```
-python scripts/devserver.py --seed 2000     # then open http://localhost:8189
+python scripts/devserver.py                 # 50 curated prompts at http://localhost:8189
+python scripts/devserver.py --seed 2000     # larger generated dataset for scale testing
 python scripts/devserver.py --check         # assert everything and exit; CI-able
 ```
 
@@ -677,7 +694,8 @@ which is deliberately not a runtime dependency of this pack. A bare system Pytho
 the script says so up front and names the interpreter it was run with. `pip install aiohttp` in that
 interpreter works too.
 
-Mounts the real 29 routes against a real `LibrarianStore`, serves the real `web/` tree at ComfyUI's
+Mounts the real 34 routes against a scratch SQLite store, seeds 50 varied synthetic prompts, serves
+the real `web/` tree at ComfyUI's
 URL layout, and supplies stub `/scripts/{app,api}.js` from `devharness/`. Edit a file under `web/` and
 refresh; with `--reload` the page reloads itself and a `.py` change re-execs the server in ~300 ms.
 ComfyUI is never started.
@@ -732,7 +750,7 @@ ruff check .                     # style, imports, complexity
 lint-imports                     # the layer + independence contracts
 python3 scripts/openapi.py       # the route table, as a listing or a spec
 
-python3 scripts/devserver.py --seed 2000   # the whole UI at localhost:8189
+python3 scripts/devserver.py              # the whole UI, with 50 prompts, at localhost:8189
 ```
 
 On Windows the interpreter is `python` (or `py`), not `python3` — and for `devserver.py` it must be

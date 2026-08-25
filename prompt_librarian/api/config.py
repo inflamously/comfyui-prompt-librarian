@@ -30,6 +30,7 @@ CAPABILITIES = {
     "snippets": True,
     "bulk": True,
     "dupes": True,
+    "storage": True,
     # No soft delete: `delete` removes the record. Versions are the undo story,
     # and a trash bin nobody empties is a second source of near-duplicates.
     "soft_delete": False,

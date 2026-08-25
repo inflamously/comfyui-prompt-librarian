@@ -119,14 +119,45 @@ export function buildShell() {
   const inspect = h("div", { className: "pl-inspect" });
   const body = h("div", { className: "pl-body", dataset: { pane: "browse" } }, rail, inspect);
 
+  const storageBtn = h(
+    "button",
+    {
+      className: "pl-link pl-storage-open",
+      type: "button",
+      onclick: () => import("./storage.js").then((mod) => mod.openStorage()),
+    },
+    "storage"
+  );
+  const storageHint = h(
+    "div",
+    { className: "pl-storage-hint", hidden: true },
+    h("span", null, "storage can be optimized"),
+    h(
+      "button",
+      {
+        className: "pl-link",
+        type: "button",
+        onclick: () => import("./storage.js").then((mod) => mod.optimizeStorage()),
+      },
+      "Optimize"
+    )
+  );
+
   const foot = h(
     "div",
     { className: "pl-foot" },
     h("span", { className: "pl-pill" }, "comfyui-prompt-library"),
-    h("span", null, `// output: text ${ARROW}`)
+    h("span", null, `// output: text ${ARROW}`),
+    h("span", { className: "pl-spacer" }),
+    storageHint,
+    storageBtn
   );
 
-  const card = h("div", { className: "pl-card", role: "dialog", "aria-modal": "true", "aria-label": "Prompt Library" }, head, body, foot);
+  // `aria-modal` is deliberately absent while this retained shell is hidden.
+  // ComfyUI's keybinding service treats ANY matching
+  // [role="dialog"][aria-modal="true"] element as open without checking its
+  // visibility. openModal() adds the attribute and closeModal() removes it.
+  const card = h("div", { className: "pl-card", role: "dialog", "aria-label": "Prompt Library" }, head, body, foot);
 
   // .pl-layers and .pl-toasts are children of .pl-root and SIBLINGS of
   // .pl-card. That is not cosmetic: .pl-card sets `contain: layout paint`,
@@ -145,7 +176,7 @@ export function buildShell() {
     toasts
   );
 
-  Object.assign(els, { backdrop, card, head, sub, link, target, close: closeBtn, seg, body, rail, inspect, foot, layers, toasts });
+  Object.assign(els, { backdrop, card, head, sub, link, target, close: closeBtn, seg, body, rail, inspect, foot, storageBtn, storageHint, layers, toasts });
   it.root = root;
   it.built = true;
 
@@ -214,6 +245,26 @@ export function wireShell() {
   const it = inst();
   const root = it.root;
 
+  const paintStorage = (state) => {
+    const storage = state.storage || {};
+    const available = !state.caps || state.caps.storage !== false;
+    if (it.els.storageBtn) it.els.storageBtn.hidden = !available;
+    if (it.els.storageHint) it.els.storageHint.hidden = !available || !storage.should_compact;
+    if (it.els.storageBtn) {
+      it.els.storageBtn.textContent = "storage";
+      it.els.storageBtn.title = "Storage, migration, import and export";
+    }
+  };
+  // The retained shell is wired once, so this subscription intentionally
+  // lives for the retained modal's lifetime.
+  let storageSubs = it.subs.get("storage");
+  if (!storageSubs) {
+    storageSubs = new Set();
+    it.subs.set("storage", storageSubs);
+  }
+  storageSubs.add(paintStorage);
+  paintStorage(it.state);
+
   // ---- Escape + Ctrl/Cmd+S + Tab, through the key bus (see modal/keys.js) --
   onKey(root, "keydown", (e) => {
     if (e.key === "Escape" || e.key === "Esc") {
@@ -224,14 +275,10 @@ export function wireShell() {
       return;
     }
 
-    // Ctrl/Cmd+S — the other one. ComfyUI never sees this key at all: the
-    // window-capture guard in modal/keys.js already called
-    // stopImmediatePropagation() before we were handed the event. The
-    // preventDefault here is purely to stop the BROWSER's "Save Page" dialog,
-    // which is a default action but not a TEXT-ENTRY default action — the
-    // distinction keys.js draws when it forbids preventDefault on the guard.
+    // Ctrl/Cmd+S — the other one. modal/keys.js delivers chords focused inside
+    // the Librarian here and consumes their browser Save Page default. Chords
+    // focused in ComfyUI never enter the modal key bus.
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && String(e.key).toLowerCase() === "s") {
-      e.preventDefault();
       if (e.repeat) return; // a held chord must not queue saves
       // A layer owns whatever decision is on screen: the merge editor binds
       // its own Ctrl+S (compare/merge-editor.js), and the conflict / duplicate

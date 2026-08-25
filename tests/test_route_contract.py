@@ -34,9 +34,9 @@ from prompt_librarian import api  # noqa: E402
 from prompt_librarian.api.utils import _ROUTES  # noqa: E402
 
 # The frontend has one method per route, except that setSnippet and delSnippet
-# both POST to /snippet — so 30 methods describe 29 routes.
-EXPECTED_ROUTES = 29
-EXPECTED_METHODS = 30
+# both POST to /snippet — so 35 methods describe 34 routes.
+EXPECTED_ROUTES = 34
+EXPECTED_METHODS = 35
 
 
 def _node():

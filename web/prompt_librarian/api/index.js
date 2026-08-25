@@ -8,7 +8,7 @@
    all you need — `api/request.js` is the only one that pulls in ComfyUI.
    ========================================================================== */
 
-export { ABORTED, ApiError, BASE, req } from "./request.js";
+export { ABORTED, ApiError, BASE, download, req, upload } from "./request.js";
 export { cancelAllLanes, createLane, lanes } from "./lanes.js";
 export { applyCaps, capable, caps } from "./caps.js";
 export { API } from "./routes.js";

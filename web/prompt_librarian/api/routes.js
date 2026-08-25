@@ -13,7 +13,7 @@
    ========================================================================== */
 
 import { applyCaps } from "./caps.js";
-import { req } from "./request.js";
+import { download, req, upload } from "./request.js";
 
 export const API = {
   /* -- reads -------------------------------------------------------------- */
@@ -72,6 +72,14 @@ export const API = {
 
   exportRaw() {
     return req("export");
+  },
+
+  exportFile() {
+    return download("export/file");
+  },
+
+  storage() {
+    return req("storage");
   },
 
   /* -- writes ------------------------------------------------------------- */
@@ -182,6 +190,14 @@ export const API = {
     return req("settings", { method: "POST", body: { ...(patch || {}) } });
   },
 
+  migrateLegacy() {
+    return req("storage/migrate", { method: "POST", body: { source: "legacy" } });
+  },
+
+  compactStorage() {
+    return req("storage/compact", { method: "POST", body: { op: "compact" } });
+  },
+
   /**
    * @param {any} data the exported library object
    * @param {"replace"|"merge"} [mode] default "replace"
@@ -189,5 +205,9 @@ export const API = {
   importRaw(data, mode) {
     const replace = mode !== "merge";
     return req("import", { method: "POST", body: { library: data, data, mode, replace } });
+  },
+
+  importFile(file, mode) {
+    return upload("import/file", file, { query: { mode: mode || "merge" } });
   },
 };

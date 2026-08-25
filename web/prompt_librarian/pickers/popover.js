@@ -53,7 +53,8 @@ function mountTarget(ctx) {
  * @param {HTMLElement|(() => HTMLElement)} opts.anchor an element, or a getter
  *   for callers whose anchor is re-created by a re-render (see `resolveAnchor`)
  * @param {(el: HTMLElement, handle: object) => any} [opts.render]
- * @param {string} [opts.placement] "bottom-start" | "bottom-end" | "top-start" | "top-end"
+ * @param {string} [opts.placement] "bottom-start" | "bottom-end" | "top-start" |
+ *   "top-end" | "overlay-start" | "overlay-end"
  * @param {string} [opts.className] extra class(es) on the popover
  * @param {() => void} [opts.onClose]
  * @param {object} [opts.ctx] modal ctx — enables the layer stack and the key bus
@@ -88,10 +89,9 @@ export function openPopover({
   /**
    * The live anchor at call time.
    *
-   * A picker that stays open across a re-render (the tag picker toggles several
-   * tags in one visit, and each pick re-renders the chips row) is holding an
-   * element that is no longer in the document. A detached node measures as an
-   * all-zero rect, which used to place the popover in the top-left corner. So:
+   * A picker that stays open across a re-render may be holding an element that
+   * is no longer in the document. A detached node measures as an all-zero rect,
+   * which used to place the popover in the top-left corner. So:
    * a function anchor is re-read on every reposition, and a detached element
    * anchor is reported as unusable rather than measured.
    */
@@ -263,6 +263,7 @@ function place(el, anchor, placement) {
   if (!rect.width && !rect.height && !rect.top && !rect.left) return null;
 
   const { vw, vh } = viewport();
+  const overlay = typeof placement === "string" && placement.indexOf("overlay") === 0;
   const wantTop = typeof placement === "string" && placement.indexOf("top") === 0;
   const alignEnd = typeof placement === "string" && /end$/.test(placement);
 
@@ -280,7 +281,9 @@ function place(el, anchor, placement) {
   const roomAbove = rect.top - GAP - EDGE;
 
   let flipped = false;
-  if (wantTop) {
+  if (overlay) {
+    flipped = false;
+  } else if (wantTop) {
     flipped = roomAbove >= Math.min(size.h, MIN_FLIP_ROOM);
   } else {
     // Overflows the bottom AND there is more usable room above → flip.
@@ -288,7 +291,7 @@ function place(el, anchor, placement) {
       size.h > roomBelow && roomAbove > roomBelow && roomAbove >= Math.min(size.h, MIN_FLIP_ROOM);
   }
 
-  let top = flipped ? rect.top - GAP - size.h : rect.bottom + GAP;
+  let top = overlay ? rect.top : flipped ? rect.top - GAP - size.h : rect.bottom + GAP;
   top = Math.max(EDGE, Math.min(top, Math.max(EDGE, vh - EDGE - size.h)));
 
   let left = alignEnd ? rect.right - size.w : rect.left;
@@ -298,6 +301,6 @@ function place(el, anchor, placement) {
   el.style.left = `${Math.round(left)}px`;
   el.style.bottom = "auto";
   el.style.right = "auto";
-  el.dataset.flip = flipped ? "up" : "down";
+  el.dataset.flip = overlay ? "over" : flipped ? "up" : "down";
   return { top, left, flipped };
 }

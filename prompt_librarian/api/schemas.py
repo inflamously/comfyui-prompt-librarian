@@ -220,6 +220,7 @@ class Capabilities(_Schema):
     snippets: bool
     bulk: bool
     dupes: bool
+    storage: bool
     soft_delete: bool
     """Always false: `delete` removes the record, and versions are the undo."""
 
@@ -261,6 +262,29 @@ class PingResponse(Envelope):
     readonly: bool
     threshold: float
     capabilities: Capabilities
+    storage: dict
+
+
+@dataclass
+class StorageResponse(Envelope):
+    storage: dict
+
+
+@dataclass
+class MigrateStorageResponse(Envelope):
+    imported: int
+    skipped: int
+    collisions: int
+    already_migrated: bool
+    storage: dict
+
+
+@dataclass
+class CompactStorageResponse(Envelope):
+    before: int
+    after: int
+    records: int
+    storage: dict
 
 
 @dataclass
@@ -396,6 +420,12 @@ class SnippetsResponse(Envelope):
 @dataclass
 class ExportResponse(Envelope):
     library: Library
+
+
+@dataclass
+class ImportFileQuery(_Schema):
+    mode: Literal["merge", "replace"] = "merge"
+    """Merge preserves current prompts; replace swaps the library wholesale."""
 
 
 # --------------------------------------------------------------------------- #

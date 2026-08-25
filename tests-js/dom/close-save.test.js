@@ -270,6 +270,11 @@ describe("closeModal teardown", () => {
     assert.equal(torn, 1, "teardown steps ran");
     assert.deepEqual(cancelled, ["a", "b"], "every pane debounce cancelled");
     assert.equal(s.root.hidden, true);
+    assert.equal(
+      s.els.card.hasAttribute("aria-modal"),
+      false,
+      "the retained shell must not trip ComfyUI's modal keybinding gate",
+    );
     assert.equal(s.it.open, false);
     assert.equal(s.it.closing, false);
     assert.equal(s.closeBtn.disabled, false);
@@ -294,6 +299,17 @@ describe("closeModal teardown", () => {
     s.closeModal();
     s.closeModal();
     assert.equal(s.it.open, false);
+    env.assertNoErrors();
+  });
+
+  test("reopening restores the modal marker together with visibility", async () => {
+    const s = await openShell();
+    s.closeModal();
+
+    s.state.setModalVisible(true);
+
+    assert.equal(s.root.hidden, false);
+    assert.equal(s.els.card.getAttribute("aria-modal"), "true");
     env.assertNoErrors();
   });
 });

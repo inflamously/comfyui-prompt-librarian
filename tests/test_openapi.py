@@ -53,7 +53,9 @@ def test_reads_take_query_params_and_writes_take_bodies():
         if route.method == "get":
             assert route.spec.body is None, route.path
         else:
-            assert route.spec.query is None, route.path
+            # Multipart file import keeps its merge/replace switch in the
+            # query while the request body is the streamed file itself.
+            assert route.spec.query is None or route.path.endswith("/import/file"), route.path
 
 
 def test_every_response_inherits_the_rev_envelope():
@@ -131,6 +133,18 @@ def test_every_operation_documents_the_error_envelope(doc):
             for status in statuses:
                 schema = operation["responses"][status]["content"]["application/json"]
                 assert schema["schema"]["$ref"] == error, (method, path, status)
+
+
+def test_file_routes_document_streaming_json_and_multipart(doc):
+    exported = doc["paths"]["/prompt_librarian/export/file"]["get"]
+    assert exported["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/Library",
+    }
+    imported = doc["paths"]["/prompt_librarian/import/file"]["post"]
+    body = imported["requestBody"]["content"]["multipart/form-data"]["schema"]
+    assert body["properties"]["library"]["format"] == "binary"
+    mode = next(param for param in imported["parameters"] if param["name"] == "mode")
+    assert mode["schema"]["default"] == "merge"
 
 
 def test_document_is_json_serializable(doc):

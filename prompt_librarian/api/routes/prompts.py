@@ -52,7 +52,7 @@ async def meta(request):
     # The same rev-keyed index `/search` labels its rows from, so a node face
     # and the list row above it can never disagree about what a record is
     # called.
-    index = _labeller()
+    index = _labeller(records.values())
     out = {}
     for pid, rec in records.items():
         out[pid] = {

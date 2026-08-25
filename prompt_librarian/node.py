@@ -1,7 +1,7 @@
 """``PromptLibrarian`` — the librarian node.
 
 A second, fully independent node alongside the existing ``PromptLibrary``. It
-shares nothing with it: its own store file (``library.json``), its own
+shares nothing with it: its own SQLite store, its own
 ``/prompt_librarian/*`` routes, its own web assets. ``prompts.json`` is never
 read or written by anything in this file.
 

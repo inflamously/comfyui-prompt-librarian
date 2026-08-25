@@ -37,6 +37,8 @@ const CALLS = {
   wildcards: [],
   snippets: [],
   exportRaw: [],
+  exportFile: [],
+  storage: [],
   create: [{ body: "B", tags: ["t"] }],
   update: [{ id: "ID", body: "B", tags: ["t"], expect_updated: "TS" }],
   del: ["ID"],
@@ -55,7 +57,10 @@ const CALLS = {
   setSnippet: ["NAME", "BODY"],
   delSnippet: ["NAME"],
   settings: [{ dupe_threshold: 0.9 }],
+  migrateLegacy: [],
+  compactStorage: [],
   importRaw: [{ prompts: [] }, "replace"],
+  importFile: [new Blob(["{}"], { type: "application/json" }), "merge"],
 };
 
 const seen = [];
@@ -65,7 +70,9 @@ host.api.fetchApi = (rawUrl, init = {}) => {
   const url = String(rawUrl);
   const [path, query] = url.split("?");
   let body;
-  if (init.body !== undefined) {
+  if (typeof FormData !== "undefined" && init.body instanceof FormData) {
+    body = Object.fromEntries([...init.body.keys()].map((key) => [key, true]));
+  } else if (init.body !== undefined) {
     try {
       body = JSON.parse(init.body);
     } catch {

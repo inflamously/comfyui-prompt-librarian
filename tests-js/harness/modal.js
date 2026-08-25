@@ -45,7 +45,7 @@ export async function openShell(ctxPatch = {}) {
   };
   // closeModal() no-ops unless the modal is actually open.
   it.open = true;
-  it.root.hidden = false;
+  state.setModalVisible(true);
 
   return {
     it,

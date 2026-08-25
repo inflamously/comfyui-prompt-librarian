@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Serve the Prompt Librarian without ComfyUI, so the frontend can be iterated on.
 
-    python scripts/devserver.py                    # http://localhost:8189
-    python scripts/devserver.py --seed 2000        # with a realistic library
+    python scripts/devserver.py                    # 50 curated prompts, http://localhost:8189
+    python scripts/devserver.py --seed 2000        # add generated prompts for scale testing
     python scripts/devserver.py --reload           # re-exec on a .py change
     python scripts/devserver.py --check            # assert and exit; CI-able
 
-Mounts the REAL 29 ``/prompt_librarian/*`` routes against a REAL
-``LibrarianStore``, serves the REAL ``web/`` tree at ComfyUI's URL layout, and
+Mounts the REAL 34 ``/prompt_librarian/*`` routes against a scratch SQLite
+store, serves the REAL ``web/`` tree at ComfyUI's URL layout, and
 supplies stub ``/scripts/{app,api}.js`` from ``devharness/``. Edit a file under
 ``web/`` and refresh; ComfyUI is never involved.
 
@@ -18,11 +18,11 @@ DATA SAFETY
 This server must be unable to touch a real library, so four independent layers
 have to fail before it could:
 
-  1. ``LibrarianStore(path=...)`` overrides every path; backups, quarantine and
-     ``wildcards/`` all derive from it.
+  1. The store takes ``path=...``, which overrides its database and wildcard
+     paths.
   2. A stub ``folder_paths`` is injected before the pack is imported, so any
      module-level path helper resolves into the scratch root too.
-  3. ``store._FALLBACK_USER_DIR`` is pinned, covering the branch where
+  3. ``store.utils._FALLBACK_USER_DIR`` is pinned, covering the branch where
      ``folder_paths`` is absent or raises.
   4. ``_guard_scratch()`` refuses to start on anything that looks like a real
      library, and refuses to write to a pre-existing file this server did not
@@ -39,17 +39,20 @@ import json
 import mimetypes
 import os
 import posixpath
-import random
 import shutil
 import sys
 import threading
 import time
 import types
 
+if __package__:
+    from .devdata import DEFAULT_PROMPT_COUNT, SNIPPETS, WILDCARDS, prompt_seeds
+else:
+    from devdata import DEFAULT_PROMPT_COUNT, SNIPPETS, WILDCARDS, prompt_seeds
+
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
-
 _WEB = os.path.join(_ROOT, "web")
 _DEVHARNESS = os.path.join(_ROOT, "devharness")
 _SCRATCH_ROOT = os.path.join(_ROOT, ".devserver")
@@ -100,12 +103,13 @@ def _require_aiohttp():
 # Safety
 # --------------------------------------------------------------------------- #
 
+
 def _guard_scratch(path, allow_outside=False):
     """Refuse anything that could be a real library. Returns the realpath."""
     real = os.path.realpath(path)
     parts = [p.casefold() for p in real.split(os.sep) if p]
 
-    # The real thing lives at <user>/default/prompt-librarian/library.json.
+    # The real thing lives at <user>/default/prompt-librarian/library.sqlite3.
     if "prompt-librarian" in parts and "default" in parts and "user" in parts:
         _die(f"{real}\n  looks like a real ComfyUI library. Refusing to start.")
 
@@ -116,10 +120,7 @@ def _guard_scratch(path, allow_outside=False):
         except ValueError:  # different drives on Windows
             inside = False
         if not inside:
-            _die(
-                f"{real}\n  is outside {scratch}.\n"
-                "  Pass --allow-outside if you really mean it."
-            )
+            _die(f"{real}\n  is outside {scratch}.\n  Pass --allow-outside if you really mean it.")
 
     # A file this server did not create is not ours to overwrite.
     if os.path.exists(real) and not os.path.exists(real + ".devserver"):
@@ -189,6 +190,7 @@ def _repoint_store(dev_store):
 # Mount arithmetic
 # --------------------------------------------------------------------------- #
 
+
 def _assert_mount_depth(mount):
     """Each hardcoded ../ walk must land on /scripts/{app,api}.js."""
     for src, up in HOST_IMPORTS:
@@ -213,86 +215,71 @@ def _manifest():
 # Seeding
 # --------------------------------------------------------------------------- #
 
-_WORDS = (
-    "dancer rain neon alley cinematic portrait golden hour studio softbox rim light "
-    "forest fog cathedral marble statue cyberpunk market noodle stall reflection puddle "
-    "watercolour ink wash charcoal sketch oil impasto pastel dusk dawn overcast"
-).split()
 
-_TAGS = (
-    "portrait landscape studio outdoor night day cinematic anime photoreal sketch "
-    "character环境 lighting closeup wide macro vintage modern warm cool"
-).split()
-
-
-def seed(store, n, rng):
+def seed(store, n):
     """Fill the scratch library through the PUBLIC api, never by writing JSON.
 
     Going through create/update/set_rating/... means the envelope is always
     exactly what the real code produces, including version history and stamps.
-    Deliberately includes the shapes the UI has nothing to say about otherwise:
-    near-duplicates either side of the threshold, deep version histories, a long
-    tail of tags, and a body over the size cap.
+    The curated first fifty records cover the shapes needed by the UI; generated
+    additions keep ``--seed 2000`` useful for pagination and performance work.
     """
     from prompt_librarian.store import DEFAULT_DUPE_THRESHOLD
 
-    made = []
-    for _ in range(n):
-        words = rng.sample(_WORDS, rng.randint(6, 16))
-        body = " ".join(words)
-        tags = rng.sample(_TAGS, rng.randint(0, 4))
-        rec = store.create(body=body, tags=tags, rating=rng.choice([0, 0, 0, 3, 4, 5]))
-        made.append(rec)
+    specs = prompt_seeds(n)
+    made = {}
+    for spec in specs:
+        first_body = spec.history[0] if spec.history else spec.body
+        rec = store.create(
+            body=first_body,
+            tags=spec.tags,
+            rating=spec.rating,
+            notes=spec.notes,
+            pinned=spec.pinned,
+        )
+        made[spec.key] = rec
 
-        # ~15% near-duplicates, straddling the threshold so the dupe gate, the
-        # compare dialogs and /dupes/all all have something real to show.
-        if rng.random() < 0.15:
-            if rng.random() < 0.5:
-                near = body + " " + rng.choice(_WORDS)          # very similar
-            else:
-                near = " ".join(rng.sample(words, max(3, len(words) // 2)))  # less so
-            made.append(store.create(body=near, tags=tags))
+        for draft in spec.history[1:]:
+            store.update(rec["id"], body=draft)
+        if spec.deep_history:
+            for k in range(52):
+                store.update(
+                    rec["id"],
+                    body=f"Color-script exploration {k + 1:02d}: rescue boat, storm, horizon light",
+                )
+        if spec.history:
+            store.update(rec["id"], body=spec.body)
 
-    # A handful of deep histories, and one pushed past VERSION_CAP.
-    for rec in rng.sample(made, min(8, len(made))):
-        for k in range(rng.randint(3, 8)):
-            store.update(rec["id"], body=rec["body"] + f" — take {k + 2}")
-    if made:
-        deep = made[0]
-        for k in range(55):
-            store.update(deep["id"], body=deep["body"] + f" v{k}")
-
-    for rec in rng.sample(made, min(len(made), max(1, len(made) // 3))):
-        for _ in range(rng.randint(1, 25)):
+        for _ in range(spec.used):
             store.record_usage(rec["id"])
 
-    if len(made) >= 2:
-        store.ignore_pair(made[0]["id"], made[1]["id"])
+    for spec in specs:
+        if spec.ignore_with and spec.key in made and spec.ignore_with in made:
+            store.ignore_pair(made[spec.key]["id"], made[spec.ignore_with]["id"])
 
-    store.set_snippet("intro", "masterpiece, best quality")
-    store.set_snippet("negative", "blurry, low quality, watermark")
-
-    # The 413 path needs a body over the cap to be reachable at all.
-    store.create(body="x" * 200, tags=["edge"])
+    for name, body in SNIPPETS.items():
+        store.set_snippet(name, body)
 
     wc = store.wildcards_dir()
     os.makedirs(wc, exist_ok=True)
-    with open(os.path.join(wc, "hair.txt"), "w", encoding="utf-8") as fh:
-        fh.write("long\nshort\nbraided\ncurly\n")
-    with open(os.path.join(wc, "mood.txt"), "w", encoding="utf-8") as fh:
-        fh.write("calm\ntense\njoyful\nsombre\n")
+    for name, choices in WILDCARDS.items():
+        with open(os.path.join(wc, name + ".txt"), "w", encoding="utf-8") as fh:
+            fh.write("\n".join(choices) + "\n")
+    # One deliberately large source keeps wildcard-search performance testable.
     with open(os.path.join(wc, "big.txt"), "w", encoding="utf-8") as fh:
         fh.write("\n".join(f"variant {i}" for i in range(5000)))
 
     print(
         f"[devserver] seeded {store.count()} prompts "
-        f"(threshold {DEFAULT_DUPE_THRESHOLD}), 3 wildcard files, 2 snippets"
+        f"(threshold {DEFAULT_DUPE_THRESHOLD}), "
+        f"{len(WILDCARDS) + 1} wildcard files, {len(SNIPPETS)} snippets"
     )
 
 
 # --------------------------------------------------------------------------- #
 # The app
 # --------------------------------------------------------------------------- #
+
 
 def build_app(cfg, dev_store, hits):
     from aiohttp import web
@@ -323,13 +310,15 @@ def build_app(cfg, dev_store, hits):
     async def index(request):
         with open(os.path.join(_DEVHARNESS, "index.html"), encoding="utf-8") as fh:
             html = fh.read()
-        config = json.dumps({
-            "mount": cfg.mount,
-            "apiPrefix": cfg.api_prefix,
-            "library": dev_store.store_path(),
-            "reload": bool(cfg.reload),
-            "boot": BOOT_ID,
-        })
+        config = json.dumps(
+            {
+                "mount": cfg.mount,
+                "apiPrefix": cfg.api_prefix,
+                "library": dev_store.store_path(),
+                "reload": bool(cfg.reload),
+                "boot": BOOT_ID,
+            }
+        )
         html = html.replace(
             "<!-- __DEV_CONFIG__ : templated by scripts/devserver.py -->",
             f"<script>window.__DEV__ = {config};</script>",
@@ -342,23 +331,27 @@ def build_app(cfg, dev_store, hits):
 
     @dev.get("/__dev/rev")
     async def rev(request):
-        return web.json_response({
-            "boot": BOOT_ID,
-            "web": _newest_mtime(_WEB, _DEVHARNESS),
-            "py": _newest_mtime(os.path.join(_ROOT, "prompt_librarian")),
-        })
+        return web.json_response(
+            {
+                "boot": BOOT_ID,
+                "web": _newest_mtime(_WEB, _DEVHARNESS),
+                "py": _newest_mtime(os.path.join(_ROOT, "prompt_librarian")),
+            }
+        )
 
     @dev.get("/__dev/status")
     async def status(request):
-        return web.json_response({
-            "library": dev_store.store_path(),
-            "rev": dev_store.rev(),
-            "count": dev_store.count(),
-            "routes": len(list(routes)),
-            "apiPrefix": cfg.api_prefix,
-            "mount": cfg.mount,
-            "storeBindings": hits,
-        })
+        return web.json_response(
+            {
+                "library": dev_store.store_path(),
+                "rev": dev_store.rev(),
+                "count": dev_store.count(),
+                "routes": len(list(routes)),
+                "apiPrefix": cfg.api_prefix,
+                "mount": cfg.mount,
+                "storeBindings": hits,
+            }
+        )
 
     @dev.post("/__dev/reset")
     async def reset(request):
@@ -367,7 +360,7 @@ def build_app(cfg, dev_store, hits):
         shutil.rmtree(parent, ignore_errors=True)
         _mark_ours(path)
         dev_store.reload() if hasattr(dev_store, "reload") else None
-        seed(dev_store, cfg.seed or 25, random.Random(0))
+        seed(dev_store, cfg.seed)
         return web.json_response({"ok": True, "count": dev_store.count()})
 
     app.add_routes(dev)
@@ -430,32 +423,51 @@ def _watch_and_reexec(interval=0.3):
 # Entry
 # --------------------------------------------------------------------------- #
 
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--port", type=int, default=8189)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument(
         "--library",
-        default=os.path.join(_SCRATCH_ROOT, "default", "library.json"),
-        help="scratch library file (never a real one)",
+        default=None,
+        help="scratch SQLite library file (never a real one)",
     )
-    parser.add_argument("--seed", type=int, default=0, metavar="N",
-                        help="generate N prompts into an empty scratch library")
-    parser.add_argument("--mount", default=DEFAULT_MOUNT,
-                        help="URL prefix web/ is served at; must stay 2 segments deep")
-    parser.add_argument("--api-prefix", default="/api", dest="api_prefix",
-                        help='ComfyUI\'s API prefix; pass "" to simulate an install without one')
-    parser.add_argument("--reload", action="store_true",
-                        help="re-exec on a .py change and tell the page to refresh")
-    parser.add_argument("--allow-outside", action="store_true",
-                        help="permit a --library outside .devserver/")
-    parser.add_argument("--check", action="store_true",
-                        help="assert everything and exit without listening")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=DEFAULT_PROMPT_COUNT,
+        metavar="N",
+        help=f"generate N prompts into an empty scratch library (default: {DEFAULT_PROMPT_COUNT})",
+    )
+    parser.add_argument(
+        "--mount",
+        default=DEFAULT_MOUNT,
+        help="URL prefix web/ is served at; must stay 2 segments deep",
+    )
+    parser.add_argument(
+        "--api-prefix",
+        default="/api",
+        dest="api_prefix",
+        help='ComfyUI\'s API prefix; pass "" to simulate an install without one',
+    )
+    parser.add_argument(
+        "--reload", action="store_true", help="re-exec on a .py change and tell the page to refresh"
+    )
+    parser.add_argument(
+        "--allow-outside", action="store_true", help="permit a --library outside .devserver/"
+    )
+    parser.add_argument(
+        "--check", action="store_true", help="assert everything and exit without listening"
+    )
     cfg = parser.parse_args(argv)
 
     # Before the scratch dir is created, the library is seeded or the store is
     # repointed -- none of which is worth doing if we cannot serve.
     _require_aiohttp()
+
+    if cfg.library is None:
+        cfg.library = os.path.join(_SCRATCH_ROOT, "default", "library.sqlite3")
 
     lib = _guard_scratch(cfg.library, cfg.allow_outside)
     _mark_ours(lib)
@@ -464,7 +476,9 @@ def main(argv=None):
     _install_folder_paths_stub(scratch_root)
 
     from prompt_librarian import store as store_mod
-    store_mod._FALLBACK_USER_DIR = scratch_root
+    from prompt_librarian.store import utils as store_utils
+
+    store_utils._FALLBACK_USER_DIR = scratch_root
 
     # Import the api package BEFORE repointing: the swap walks sys.modules, so a
     # route module that has not been imported yet cannot be swapped and would
@@ -473,26 +487,31 @@ def main(argv=None):
     import prompt_librarian.api  # noqa: F401
 
     fresh = not os.path.exists(lib)
-    dev_store = store_mod.LibrarianStore(path=lib)
+    # `migrate_from=False`: a scratch library must never adopt a neighbouring
+    # legacy library.json, even if a development tool explicitly requests the
+    # opt-in migration behavior.
+    dev_store = store_mod.LibrarianStore(path=lib, migrate_from=False)
     hits = _repoint_store(dev_store)
 
     if cfg.seed and fresh:
-        seed(dev_store, cfg.seed, random.Random(0))
+        seed(dev_store, cfg.seed)
 
     app = build_app(cfg, dev_store, hits)
 
     manifest = _manifest()
-    print(f"[devserver] library : {lib}")
+    print(f"[devserver] library : {lib}  ({type(dev_store).__name__})")
     print(f"[devserver] prompts : {dev_store.count()}")
     print(f"[devserver] modules : {len(manifest)} under {cfg.mount}/")
     print(f"[devserver] store   : repointed {len(hits)} bindings")
 
     if cfg.check:
         from prompt_librarian.api.utils import _ROUTES
-        assert len(_ROUTES) == 29, f"expected 29 routes, found {len(_ROUTES)}"
+
+        assert len(_ROUTES) == 34, f"expected 34 routes, found {len(_ROUTES)}"
         assert manifest, "no .js found under web/"
-        assert os.path.realpath(lib).startswith(os.path.realpath(_SCRATCH_ROOT)) or \
-            cfg.allow_outside, "library escaped the scratch root"
+        assert (
+            os.path.realpath(lib).startswith(os.path.realpath(_SCRATCH_ROOT)) or cfg.allow_outside
+        ), "library escaped the scratch root"
         print("[devserver] --check OK")
         return 0
 
@@ -500,6 +519,7 @@ def main(argv=None):
         _watch_and_reexec()
 
     from aiohttp import web
+
     print(f"[devserver] http://{cfg.host}:{cfg.port}/")
     web.run_app(app, host=cfg.host, port=cfg.port, print=None)
     return 0

@@ -8,10 +8,10 @@ import { CHECK, PLUS, bindKeys, isFn, toast } from "./common.js";
 import { buildMenu, matches, taxonomyRows } from "./menu.js";
 import { openPopover } from "./popover.js";
 
-const MAX_TAG_CHARS = 40; // prompt_librarian/store.py MAX_TAG_CHARS
+const MAX_TAG_CHARS = 40; // prompt_librarian/store/types.py MAX_TAG_CHARS
 
 /**
- * Mirror of `prompt_librarian/store.py clean_tag`:
+ * Mirror of `prompt_librarian/store/utils.py clean_tag`:
  *
  *     text = _WS_RE.sub("-", _as_str(tag).strip()).casefold()
  *     return text[:MAX_TAG_CHARS]
@@ -41,10 +41,13 @@ export function normalizeTag(tag) {
 
 /**
  * @param {object} ctx
- * @param {{anchor: HTMLElement, selected?: string[], value?: string[],
+ * @param {{anchor: HTMLElement, placement?: string, selected?: string[], value?: string[],
  *          onPick: (tag: string) => void, onRemove?: (tag: string) => void}} opts
  */
-export function openTagPicker(ctx, { anchor, selected, value, onPick, onRemove } = {}) {
+export function openTagPicker(
+  ctx,
+  { anchor, placement, selected, value, onPick, onRemove } = {}
+) {
   const state = ctx && isFn(ctx.getState) ? ctx.getState() : {};
   const all = taxonomyRows(state && state.tags);
   // inspector/ passes `value`; the frozen contract says `selected`. Both.
@@ -54,6 +57,7 @@ export function openTagPicker(ctx, { anchor, selected, value, onPick, onRemove }
 
   const pop = openPopover({
     anchor,
+    placement,
     ctx,
     ariaLabel: "Tags",
     className: "pl-pick-tags",
@@ -88,11 +92,15 @@ export function openTagPicker(ctx, { anchor, selected, value, onPick, onRemove }
           chosen.add(t);
           if (isFn(onPick)) onPick(t);
         }
-        rebuild();
+        rebuild({ preserveScroll: true });
         handle.reposition();
       }
 
-      function rebuild() {
+      function rebuild({ preserveScroll = false } = {}) {
+        // Replacing every option briefly collapses the list. Browsers clamp
+        // the popover's scrollTop during that collapse, so a multi-selection
+        // used to jump back to the first tag after every click.
+        const scrollTop = preserveScroll ? el.scrollTop : 0;
         const q = menu.query();
         // Filter on the raw text OR its normalized form, so typing
         // "Camera Move" finds the stored "camera-move" instead of offering to
@@ -121,6 +129,7 @@ export function openTagPicker(ctx, { anchor, selected, value, onPick, onRemove }
           });
         }
         menu.setItems(items);
+        if (preserveScroll) el.scrollTop = scrollTop;
       }
 
       rebuild();

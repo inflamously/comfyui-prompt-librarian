@@ -74,10 +74,11 @@ export function buildView(pane) {
     editedEl
   );
 
+  const textLabel = h("span", { className: "pl-lbl" }, "// PROMPT TEXT");
   const textHead = h(
     "div",
     { className: "pl-ta-foot" },
-    h("span", { className: "pl-lbl" }, "// PROMPT TEXT"),
+    textLabel,
     h("span", { className: "pl-spacer" }),
     countsEl
   );
@@ -188,7 +189,7 @@ export function buildView(pane) {
     labelEl, newBtn, tagsRow,
     draftText, draftBar,
     charsEl, tokensEl, editedEl,
-    mirror, ta, taWrap,
+    textLabel, textHead, mirror, ta, taWrap,
     diffLink, wildLink, snipLink, versLink,
     dupesTitle, threshBtn, reviseBtn, dupesHead, dupesBody, dupesPanel,
     usedV, lastV, versV, starsEl,

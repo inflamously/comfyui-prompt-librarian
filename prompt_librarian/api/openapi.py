@@ -64,6 +64,9 @@ _TAGS = (
     ("/export", "library"),
     ("/import", "library"),
     ("/settings", "library"),
+    ("/storage", "library"),
+    ("/storage/migrate", "library"),
+    ("/storage/compact", "library"),
     ("/ping", "library"),
     ("/search", "search"),
     ("/prompt", "prompts"),
@@ -146,11 +149,40 @@ def _operation(route, components):
         required = bool(components[spec.body.__name__].get("required"))
         out["requestBody"] = {"required": required,
                               "content": {"application/json": {"schema": ref}}}
+    if route.path == PREFIX + "/import/file":
+        out["requestBody"] = {
+            "required": True,
+            "content": {
+                "multipart/form-data": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "library": {"type": "string", "format": "binary"},
+                        },
+                        "required": ["library"],
+                    },
+                },
+            },
+        }
     out["responses"] = _responses(route, components)
     return out
 
 
 def _responses(route, components):
+    if route.path == PREFIX + "/export/file":
+        out = {
+            "200": {
+                "description": "Portable schema-1 JSON library download.",
+                "headers": {
+                    "Content-Disposition": {
+                        "schema": {"type": "string"},
+                        "description": "Attachment filename.",
+                    },
+                },
+                "content": {"application/json": {"schema": _ref(schemas.Library, components)}},
+            },
+        }
+        return _with_error_responses(out, components)
     if not issubclass(route.spec.returns, schemas.Envelope):
         # Every payload carries `rev`; a response type that does not inherit
         # the envelope would document a field the handler always sends.
@@ -158,6 +190,10 @@ def _responses(route, components):
     out = {"200": {"description": "Success.",
                    "content": {"application/json":
                                {"schema": _ref(route.spec.returns, components)}}}}
+    return _with_error_responses(out, components)
+
+
+def _with_error_responses(out, components):
     error = _ref(schemas.Error, components)
     codes = {}
     for _, status, code in _ERROR_MAP:

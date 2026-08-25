@@ -22,8 +22,11 @@ the ones above — enforced by the import-linter contract in ``pyproject.toml``)
     Near-duplicate detection and diffing.
 ``search``
     Normalisation, tokenising, ranking.
+``labels``
+    Corpus-derived display handles for records.
 ``store``
-    ``library.json`` persistence — the bottom of the stack.
+    Persistence — the bottom of the stack. ``sqlite_store`` owns the live
+    database; JSON/JSONL are migration and portable export formats.
 
 Only the node is re-exported here; the pack root imports ``api`` explicitly,
 inside its own guard, so a failure in the route stack cannot take the node down

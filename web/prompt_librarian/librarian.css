@@ -472,16 +472,6 @@
   transition: border-color var(--pl-fast) ease;
 }
 
-/* Decorative ring glyph from the spec — a pseudo-element so markup stays clean. */
-.pl-search::before {
-  content: "";
-  flex: 0 0 auto;
-  width: 11px;
-  height: 11px;
-  border: 1.5px solid var(--pl-text-dim);
-  border-radius: 50%;
-}
-
 .pl-search:focus-within {
   border-color: var(--pl-accent);
 }
@@ -678,7 +668,10 @@
   gap: 3px 9px;
   height: var(--pl-row-h);
   min-width: 0;
-  padding: 12px 14px 10px 14px;
+  /* Leave enough vertical content space for the body's advertised two-line
+     clamp. At the old 12px/10px inset the fixed 96px row gave the body only
+     ~31.5px, so its 35.5px of line boxes clipped the second line. */
+  padding: 10px 14px 7px;
   border-bottom: 1px solid var(--pl-border-soft);
   background: transparent;
   cursor: pointer;
@@ -1507,6 +1500,28 @@
   font-size: 11.5px;
   letter-spacing: 0.02em;
   color: var(--pl-text-mute);
+}
+
+.pl-storage-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--pl-warn, #d9a441);
+}
+
+.pl-storage-hint[hidden] {
+  display: none;
+}
+
+.pl-storage-dialog {
+  width: min(620px, calc(100vw - 32px));
+}
+
+.pl-storage-status {
+  display: grid;
+  gap: 6px;
+  padding: 14px 0 18px;
+  color: var(--pl-muted, #aeb4be);
 }
 
 .pl-pill {

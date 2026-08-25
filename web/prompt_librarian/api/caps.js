@@ -29,6 +29,7 @@ export const caps = singleton("caps", () => ({
   rate: true,
   usage: true,
   import_export: true,
+  storage: true,
 }));
 
 /** `false` only when the backend explicitly said so. */

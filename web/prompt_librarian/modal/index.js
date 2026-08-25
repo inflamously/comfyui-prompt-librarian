@@ -28,7 +28,7 @@ import { loadTaxonomy, paintHeader, reportError } from "./data.js";
 import { installKeyGuards } from "./keys.js";
 import { mountPanes } from "./panes.js";
 import { buildShell, installResponsive, wireShell } from "./shell.js";
-import { inst, setState } from "./state.js";
+import { inst, setModalVisible, setState } from "./state.js";
 import { librarianNodes, refreshTarget } from "./target.js";
 
 const HEARTBEAT_MS = 1000;
@@ -58,7 +58,7 @@ export async function openModal(opts = {}) {
 
   if (!it.open) {
     it.previouslyFocused = document.activeElement;
-    it.root.hidden = false;
+    setModalVisible(true);
     it.open = true;
     installKeyGuards();
     installResponsive();
@@ -86,7 +86,11 @@ export async function openModal(opts = {}) {
     const ping = await API.ping();
     // `/ping` carries the persisted dupe threshold. Ignoring it is why the
     // picker looked inert: the panel booted at 90 % however the store was set.
-    const patch = { caps: { ...caps }, rev: (ping && Number(ping.rev)) || it.state.rev };
+    const patch = {
+      caps: { ...caps },
+      rev: (ping && Number(ping.rev)) || it.state.rev,
+      storage: (ping && ping.storage) || it.state.storage,
+    };
     let t = ping ? Number(ping.threshold) : NaN;
     if (Number.isFinite(t) && t > 0) {
       if (t > 1) t = t / 100; // tolerate a percent-shaped value

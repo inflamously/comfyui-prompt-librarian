@@ -161,3 +161,40 @@ export async function req(path, opts = {}) {
   }
   return payload;
 }
+
+/** Fetch a non-JSON download through ComfyUI's prefix-aware transport. */
+export async function download(path, opts = {}) {
+  let res;
+  try {
+    res = await api.fetchApi(BASE + path, { method: "GET", signal: opts.signal });
+  } catch (err) {
+    if (isAbort(err)) throw err;
+    throw new ApiError(0, { error: String((err && err.message) || err) }, "network");
+  }
+  if (!res.ok) throw new ApiError(res.status, null, codeForStatus(res.status));
+  return res.blob();
+}
+
+/** Upload one JSON file as multipart without materialising it in JavaScript. */
+export async function upload(path, file, opts = {}) {
+  const form = new FormData();
+  form.append("library", file, (file && file.name) || "library.json");
+  const url = BASE + path + (opts.query ? escapeQuery(opts.query) : "");
+  let res;
+  try {
+    res = await api.fetchApi(url, { method: "POST", body: form, signal: opts.signal });
+  } catch (err) {
+    if (isAbort(err)) throw err;
+    throw new ApiError(0, { error: String((err && err.message) || err) }, "network");
+  }
+  let payload = null;
+  try {
+    payload = await res.json();
+  } catch (_) {
+    /* rendered below as bad_json */
+  }
+  if (!res.ok || !payload) {
+    throw new ApiError(res.status, payload, (payload && payload.code) || "bad_json");
+  }
+  return payload;
+}

@@ -212,6 +212,12 @@ def make_doc(rec: dict[str, Any]) -> Doc:
         rating = int(rec.get("rating") or 0)
     except (TypeError, ValueError):
         rating = 0
+    try:
+        body_len = int(
+            rec.get("_chars", len(body) if isinstance(body, str) else len(str(body)))
+        )
+    except (TypeError, ValueError):
+        body_len = len(body) if isinstance(body, str) else len(str(body))
 
     return Doc(
         pid=pid,
@@ -233,7 +239,7 @@ def make_doc(rec: dict[str, Any]) -> Doc:
         # not by its label, which is corpus-derived and would therefore reorder
         # the list every time an unrelated record was saved.
         body_disp_lower=_WS_RE.sub(" ", str(body)).strip()[:SORT_KEY_CHARS].casefold(),
-        body_len=len(body) if isinstance(body, str) else len(str(body)),
+        body_len=max(0, body_len),
     )
 
 
@@ -251,9 +257,12 @@ class SearchIndex:
     """
 
     __slots__ = ("docs", "records", "postings", "vocab", "rev", "_stats_dirty",
-                 "_max_used", "_updated_sorted", "_labels")
+                 "_max_used", "_updated_sorted", "_labels", "_df_fn",
+                 "_corpus_count")
 
-    def __init__(self, records: Iterable[dict[str, Any]] | None = None, rev: int = 0):
+    def __init__(self, records: Iterable[dict[str, Any]] | None = None, rev: int = 0,
+                 *, corpus: dict[str, Any] | None = None,
+                 df_fn: Callable[[str], int] | None = None):
         self.docs: dict[str, Doc] = {}
         self.records: dict[str, dict[str, Any]] = {}
         self.postings: dict[str, set[str]] = {}
@@ -263,8 +272,15 @@ class SearchIndex:
         self._max_used = 0
         self._updated_sorted: list[str] = []
         self._labels: dict[str, str] = {}
+        self._df_fn = df_fn
+        self._corpus_count = 0
         if records is not None:
             self.build(records, rev=rev)
+        if corpus:
+            self._corpus_count = max(0, int(corpus.get("count") or 0))
+            self._max_used = max(0, int(corpus.get("max_used") or 0))
+            self._updated_sorted = list(corpus.get("updated") or ())
+            self._stats_dirty = False
 
     # -- construction ------------------------------------------------------
 
@@ -351,12 +367,17 @@ class SearchIndex:
 
     def df(self, token: str) -> int:
         """How many records contain ``token`` -- the corpus half of a label."""
+        if self._df_fn is not None:
+            try:
+                return max(0, int(self._df_fn(token)))
+            except Exception:
+                pass
         bucket = self.postings.get(token)
         return len(bucket) if bucket else 0
 
     def label_for(self, body: Any) -> str:
         """Label any text against this corpus (a version body, a draft)."""
-        return labels.label_for(body, self.df, len(self.docs))
+        return labels.label_for(body, self.df, self._corpus_count or len(self.docs))
 
     def label_of(self, pid: str) -> str:
         """Label one indexed record, memoized for the life of the index.
@@ -485,7 +506,9 @@ def get_index(store: Any) -> SearchIndex:
             _index_owner = key
         idx = _index_cache.get(rev)
         if idx is None:
-            idx = SearchIndex(store.list_all(), rev=rev)
+            projected = getattr(store, "list_search_records", None)
+            records = projected() if callable(projected) else store.list_all()
+            idx = SearchIndex(records, rev=rev)
             _index_cache.clear()
             _index_cache[rev] = idx
         return idx
@@ -835,13 +858,23 @@ def search(  # noqa: C901 - the query pipeline reads better as one function
     Without ``groups`` they are equal and ``groups{}`` is empty.
     """
     t0 = time.perf_counter()
-    index = _as_index(source, rev)
     pq = parse_query(query)
 
     if sort not in SORTS:
         sort = "relevance"
     if mode not in MODES:
         mode = "all"
+    candidate_fn = getattr(source, "search_candidate_records", None)
+    if pq.tokens and callable(candidate_fn):
+        stats_fn = getattr(source, "search_corpus_stats", None)
+        df_fn = getattr(source, "search_term_df", None)
+        corpus = stats_fn() if callable(stats_fn) else None
+        index = SearchIndex(
+            candidate_fn(pq.tokens, mode), rev=rev or int(source.rev()),
+            corpus=corpus, df_fn=df_fn if callable(df_fn) else None,
+        )
+    else:
+        index = _as_index(source, rev)
     empty_query = not pq.tokens
     if empty_query and sort == "relevance":
         sort = "recent"          # relevance is meaningless without terms
@@ -958,7 +991,9 @@ def search(  # noqa: C901 - the query pipeline reads better as one function
             "last_run": doc.last_run,
             "updated": doc.updated,
             "chars": doc.body_len,
-            "version_count": len(rec.get("versions") or ()),
+            "version_count": int(
+                rec.get("_version_count", len(rec.get("versions") or ())) or 0
+            ),
             "score": round(sc, 6),
             "dupe_count": int(counts.get(doc.pid, 0) or 0),
             "match_pct": (int(round(m * 100)) if isinstance(m, (int, float)) else None),

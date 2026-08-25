@@ -74,7 +74,8 @@ async def dupes(request):
     # `find_similar` returns its *cached* list, so the label goes onto a copy:
     # mutating a match here would poison every later cache hit with a label
     # computed against an older corpus.
-    index = _labeller()
+    records = STORE.get_many([m["id"] for m in matches])
+    index = _labeller(records.values())
     return _json({
         "matches": [{**m, "label": index.label_of(m["id"])} for m in matches],
         "threshold": threshold,

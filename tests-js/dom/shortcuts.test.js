@@ -1,11 +1,9 @@
 /* ==========================================================================
    Ctrl/Cmd+S
 
-   ComfyUI never sees this chord: the window-capture guard in modal/keys.js has
-   already called stopImmediatePropagation() before shell.js is handed the
-   event. The preventDefault() in shell.js is purely to suppress the BROWSER's
-   "Save Page" dialog — which is why it is allowed here and forbidden on the
-   guard itself, where preventDefault would break text entry.
+   While the Librarian is open, the window-capture guard consumes Save Page
+   and shell.js saves the prompt. On close, the retained shell must stop
+   matching ComfyUI's modal gate so its own Ctrl+S command works again.
    ========================================================================== */
 
 import { test, describe, beforeEach, afterEach } from "node:test";
@@ -37,7 +35,100 @@ function recorder(status = "saved") {
   };
 }
 
+const COMFY_MODAL = '[role="dialog"][aria-modal="true"]';
+
+/**
+ * The relevant behavior of ComfyUI's real keybindingService:
+ *
+ *   - one bubble listener on window
+ *   - Ctrl/Cmd+S is the core Comfy.SaveWorkflow binding
+ *   - any matching modal suppresses command execution
+ *
+ * Keeping this faithful matters: a generic document listener did not expose
+ * the retained hidden `.pl-card` that caused the production regression.
+ */
+function comfyWorkflowShortcut() {
+  const saves = [];
+  window.addEventListener("keydown", (e) => {
+    if (!(e.ctrlKey || e.metaKey) || String(e.key).toLowerCase() !== "s") return;
+    if (document.querySelector(COMFY_MODAL)) {
+      e.preventDefault();
+      return;
+    }
+    e.preventDefault();
+    saves.push(e);
+  });
+  return saves;
+}
+
 describe("Ctrl+S", () => {
+  test("the focused Librarian owns the chord instead of ComfyUI", async () => {
+    const workflowSaves = comfyWorkflowShortcut();
+    const { ctx, calls } = recorder();
+    const s = await openShell(ctx);
+    const promptInput = document.createElement("textarea");
+    s.els.inspect.appendChild(promptInput);
+    promptInput.focus();
+    const chord = new KeyboardEvent("keydown", {
+      key: "s", ctrlKey: true, bubbles: true, cancelable: true,
+    });
+
+    promptInput.dispatchEvent(chord);
+    await flush();
+
+    assert.equal(document.activeElement, promptInput);
+    assert.deepEqual(calls, [true], "the Librarian saves the prompt");
+    assert.deepEqual(workflowSaves, [], "the modal chord must not also save the workflow");
+    assert.equal(chord.defaultPrevented, true, "the modal chord cannot open Save Page");
+    env.assertNoErrors();
+  });
+
+  test("ComfyUI's modal gate blocks its workflow command only while the Librarian is open", async () => {
+    const workflowSaves = comfyWorkflowShortcut();
+    const { ctx, calls } = recorder();
+    const s = await openShell(ctx);
+    const comfyInput = document.createElement("input");
+    document.body.appendChild(comfyInput);
+    comfyInput.focus();
+    const chord = new KeyboardEvent("keydown", {
+      key: "s", ctrlKey: true, bubbles: true, cancelable: true,
+    });
+
+    comfyInput.dispatchEvent(chord);
+    await flush();
+
+    assert.equal(document.activeElement, comfyInput);
+    assert.equal(document.querySelector(COMFY_MODAL), s.els.card);
+    assert.deepEqual(workflowSaves, [], "ComfyUI does not run global commands over a modal");
+    assert.deepEqual(calls, [], "an unfocused Librarian must not save");
+    assert.equal(chord.defaultPrevented, true, "ComfyUI still suppresses Save Page");
+    env.assertNoErrors();
+  });
+
+  test("closing clears ComfyUI's modal gate and returns Ctrl+S to workflow save", async () => {
+    const workflowSaves = comfyWorkflowShortcut();
+    const comfyInput = document.createElement("input");
+    document.body.appendChild(comfyInput);
+    comfyInput.focus();
+    const { ctx, calls } = recorder();
+    const s = await openShell(ctx);
+    s.it.previouslyFocused = comfyInput;
+
+    s.closeModal();
+    assert.equal(document.querySelector(COMFY_MODAL), null, "the hidden shell is not an open modal");
+    const chord = new KeyboardEvent("keydown", {
+      key: "s", ctrlKey: true, bubbles: true, cancelable: true,
+    });
+    comfyInput.dispatchEvent(chord);
+    await flush();
+
+    assert.equal(document.activeElement, comfyInput, "close restores ComfyUI focus");
+    assert.deepEqual(workflowSaves, [chord], "ComfyUI executes workflow save once");
+    assert.deepEqual(calls, [], "the closed Librarian must not save");
+    assert.equal(chord.defaultPrevented, true, "the ComfyUI hook suppresses Save Page");
+    env.assertNoErrors();
+  });
+
   test("Ctrl+S and Cmd+S both request a save, as a create", async () => {
     for (const meta of [false, true]) {
       env.reset();

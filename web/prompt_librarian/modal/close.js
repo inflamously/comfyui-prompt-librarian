@@ -19,7 +19,7 @@ import { NS } from "../shared/ns.js";
 import { singletonBag } from "../shared/singleton.js";
 import { cancelAllLanes } from "../api/lanes.js";
 import { popLayer } from "./layers.js";
-import { inst } from "./state.js";
+import { inst, setModalVisible } from "./state.js";
 
 export function isDirty() {
   const it = inst();
@@ -142,7 +142,8 @@ export function closeModal() {
 
   cancelAllLanes();
 
-  it.root.hidden = true;
+  // Clear ComfyUI's DOM-based modal gate before returning keyboard focus.
+  setModalVisible(false);
 
   const back = it.previouslyFocused;
   it.previouslyFocused = null;

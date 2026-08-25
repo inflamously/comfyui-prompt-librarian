@@ -38,12 +38,15 @@ export function createNeighbours(pane) {
       const fn = mod.openTagPicker || mod.tagPicker;
       if (typeof fn === "function") {
         try {
-          // A getter, not the node: picking a tag re-renders the chips row, and
-          // the old "+ tag" button would then measure as a detached zero rect.
+          // The prompt-text label is permanent and sits immediately above the
+          // textarea. Chips and the "+ tag" button move as tags wrap and are
+          // replaced on every pick, so neither can provide a stable origin.
           fn(ctx, {
-            anchor: () => els.tagsRow.lastChild,
+            anchor: els.textLabel,
+            placement: "overlay-start",
             value: pane.buf.tags.slice(),
             onPick: pane.addTag,
+            onRemove: pane.removeTag,
           });
           return;
         } catch (err) { /* fall through */ }
@@ -52,7 +55,8 @@ export function createNeighbours(pane) {
     const tags = (pane.S().tags || [])
       .map((t) => (t && t.name != null ? String(t.name) : String(t)))
       .filter((t) => !pane.buf.tags.includes(t));
-    pane.openLocalPopover(els.tagsRow.lastChild, tags, pane.addTag, {
+    pane.openLocalPopover(els.textLabel, tags, pane.addTag, {
+      placement: "overlay-start",
       withInput: true,
       placeholder: "new tag…",
       emptyLabel: "no tags yet",

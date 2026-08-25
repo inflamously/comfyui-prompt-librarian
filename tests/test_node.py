@@ -23,7 +23,9 @@ def node():
 @pytest.fixture
 def store(tmp_path, monkeypatch):
     """A real store in a temp dir, wired into the node module."""
-    target = librarian_store.LibrarianStore(path=str(tmp_path / "lib" / "library.json"))
+    target = librarian_store.LibrarianStore(
+        path=str(tmp_path / "lib" / "library.sqlite3"), migrate_from=False
+    )
     monkeypatch.setattr(node_mod, "STORE", target)
     return target
 

@@ -17,16 +17,20 @@
      the FIRST thing to see the event, ahead of any document/body/canvas
      listener regardless of registration order. When the event originates
      inside our root we call stopImmediatePropagation() and the outside world
-     never learns a key was pressed.
+     never learns a key was pressed. Ctrl/Cmd+S follows the same ownership
+     boundary: inside the Librarian it saves the prompt; outside the root the
+     event is untouched. Once the modal closes, ComfyUI keeps its workflow-save
+     shortcut (close.js also clears ComfyUI's DOM-based modal gate).
 
    Layer B — root-level BUBBLE stops, for the (many) handlers bound on body or
      the canvas in the bubble phase. Defence in depth: if Layer A ever fails to
      install, this still catches everything that bubbles.
 
-   `stopPropagation` ONLY — NEVER `preventDefault` on the guard. Text entry,
-   IME composition and clipboard actions are DEFAULT ACTIONS, not listeners;
-   preventing them breaks typing outright. Escape is the single exception, and
-   it is handled explicitly in modal/shell.js.
+   `stopPropagation` ONLY for ordinary keys — NEVER `preventDefault` on them.
+   Text entry, IME composition and clipboard actions are DEFAULT ACTIONS, not
+   listeners; preventing them breaks typing outright. Ctrl/Cmd+S is narrowly
+   prevented to suppress the browser's Save Page dialog. Escape is prevented
+   by its handler in modal/shell.js.
 
    CONSEQUENCE YOU MUST KNOW ABOUT: Layer A stops the event before it ever
    reaches our own subtree, so `el.addEventListener("keydown", …)` INSIDE the
@@ -66,6 +70,16 @@ const BUBBLE_STOP_TYPES = [
   "cut",
   "dragstart",
 ];
+
+function isSaveChord(e) {
+  return (
+    e.type === "keydown" &&
+    (e.ctrlKey || e.metaKey) &&
+    !e.altKey &&
+    !e.shiftKey &&
+    String(e.key).toLowerCase() === "s"
+  );
+}
 
 /**
  * Register a key handler that survives the capture guard.
@@ -173,7 +187,11 @@ export function installKeyGuards() {
     // `contains` covers text nodes and the root itself; a target of `window`
     // or `document` (some synthetic events) is correctly excluded.
     if (!t || typeof root.contains !== "function" || !root.contains(t)) return;
-    e.stopImmediatePropagation(); // never preventDefault here
+    // Event targets track keyboard focus. A chord from inside the root belongs
+    // solely to the Librarian; a chord outside never enters this branch and is
+    // left untouched. Suppress Save Page only for the chord we own.
+    if (isSaveChord(e)) e.preventDefault();
+    e.stopImmediatePropagation(); // never preventDefault for ordinary keys
     deliverKey(e);
   };
   for (const type of KEY_TYPES) window.addEventListener(type, guard, true);
@@ -183,7 +201,11 @@ export function installKeyGuards() {
   });
 
   // ---- Layer B: root-level bubble stops ----------------------------------
-  const stop = (e) => e.stopPropagation(); // never stopImmediatePropagation:
+  const stop = (e) => {
+    // Defence in depth if the window guard was unavailable.
+    if (isSaveChord(e)) e.preventDefault();
+    e.stopPropagation();
+  }; // never stopImmediatePropagation:
   // our own root-level listeners (registered after this one) must still run.
   for (const type of BUBBLE_STOP_TYPES) root.addEventListener(type, stop, false);
   it.teardown.push(() => {

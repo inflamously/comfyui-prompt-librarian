@@ -65,14 +65,20 @@ export function createLayerHost(pane) {
     openLayers.clear();
   }
 
-  /** Position a `.pl-popover` under an anchor, flipping when it overflows. */
-  function placePopover(pop, anchor) {
+  /** Position a `.pl-popover` against an anchor, flipping when it overflows. */
+  function placePopover(pop, anchor, placement) {
     try {
       if (!anchor || typeof anchor.getBoundingClientRect !== "function") return;
       const r = anchor.getBoundingClientRect();
       const vw = (typeof window !== "undefined" && window.innerWidth) || 1280;
       const vh = (typeof window !== "undefined" && window.innerHeight) || 800;
       pop.style.left = Math.max(8, Math.min(r.left, vw - 260)) + "px";
+      if (placement === "overlay-start") {
+        pop.style.top = Math.max(8, r.top) + "px";
+        pop.style.bottom = "auto";
+        pop.dataset.flip = "over";
+        return;
+      }
       const below = vh - r.bottom;
       if (below < 180 && r.top > below) {
         pop.style.bottom = Math.max(8, vh - r.top + 6) + "px";
@@ -135,7 +141,7 @@ export function createLayerHost(pane) {
       );
     }
     layer = openLayer(pop, { closeOnOutside: true });
-    placePopover(pop, anchor);
+    placePopover(pop, anchor, opts.placement);
     return layer;
   }
 

@@ -12,6 +12,7 @@ from prompt_librarian.store import (
     LibrarianStore,
     StoreWriteError,
 )
+from prompt_librarian.store.sqlite_database import _INITIALIZED, SQLiteDatabase
 
 
 @pytest.fixture
@@ -69,6 +70,33 @@ def test_database_contains_complete_records_and_search_projections(store, db_pat
     assert row[1] == "volumetric café lighting"
     assert row[2] == "film"
     assert store.search_candidate_records(["volumetric"])[0]["id"] == "future"
+
+
+def test_saves_support_retired_jsonl_index_columns(tmp_path):
+    path = str(tmp_path / "library.sqlite3")
+    database = SQLiteDatabase(path)
+    database.initialize()
+
+    # Exact constraints left by the previous authoritative SQLite implementation:
+    # these columns had no defaults, so the new INSERT failed on ``off`` first.
+    with sqlite3.connect(path) as con:
+        con.execute("ALTER TABLE entries ADD COLUMN off INTEGER NOT NULL")
+        con.execute("ALTER TABLE entries ADD COLUMN len INTEGER NOT NULL")
+        con.execute("ALTER TABLE entries ADD COLUMN seq INTEGER NOT NULL")
+    _INITIALIZED.pop(os.path.abspath(path), None)
+
+    store = LibrarianStore(path=path, migrate_from=False)
+    created = store.create("works after upgrade")
+    with sqlite3.connect(path) as con:
+        con.execute("UPDATE entries SET off=7,len=11,seq=13 WHERE id=?", (created["id"],))
+    updated = store.update(created["id"], body="still works")
+
+    assert updated["body"] == "still works"
+    with sqlite3.connect(path) as con:
+        retired = con.execute(
+            "SELECT off,len,seq FROM entries WHERE id=?", (created["id"],)
+        ).fetchone()
+    assert retired == (7, 11, 13)
 
 
 def test_single_record_edits_do_not_replace_or_scan_the_library(store, monkeypatch):

@@ -25,6 +25,27 @@ _INITIALIZED = {}
 _ENTRY_COLUMNS = (
     "id,order_no,tags_json,rating,used,pinned,created,updated,last_run,chars,versions,preview"
 )
+_ENTRY_WRITE_COLUMNS = (
+    "id",
+    "order_no",
+    "tags_json",
+    "rating",
+    "used",
+    "pinned",
+    "created",
+    "updated",
+    "last_run",
+    "chars",
+    "versions",
+    "preview",
+    "body",
+    "body_norm",
+    "tags_norm",
+    "sim_norm",
+    "notes",
+    "record_json",
+)
+_RETIRED_ENTRY_COLUMNS = ("off", "len", "seq")
 
 
 def normalize(text):
@@ -84,6 +105,7 @@ class SQLiteDatabase:
     def __init__(self, path):
         self.path = os.path.abspath(path)
         self.fts5 = False
+        self._retired_entry_columns = ()
 
     def _connect(self):
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
@@ -119,6 +141,7 @@ class SQLiteDatabase:
             cached = _INITIALIZED.get(self.path)
             if identity is not None and cached and cached[0] == identity:
                 self.fts5 = cached[1]
+                self._retired_entry_columns = cached[2]
                 return self.fts5
 
             with self._connection() as con:
@@ -177,6 +200,15 @@ class SQLiteDatabase:
                 );
                 """
                 )
+                columns = {row[1] for row in con.execute("PRAGMA table_info(entries)")}
+                # The first authoritative SQLite schema shared its entries table
+                # with the retired JSONL index.  Its byte-location columns have
+                # no default, so omitting them makes even an UPSERT fail its
+                # preliminary NOT NULL checks.  Preserve that database in place:
+                # old rows keep their offsets and new rows receive inert zeros.
+                self._retired_entry_columns = tuple(
+                    column for column in _RETIRED_ENTRY_COLUMNS if column in columns
+                )
                 try:
                     con.execute(
                         "CREATE VIRTUAL TABLE IF NOT EXISTS prompt_fts "
@@ -193,7 +225,11 @@ class SQLiteDatabase:
                     (str(SCHEMA_VERSION),),
                 )
             stat = os.stat(self.path)
-            _INITIALIZED[self.path] = ((stat.st_dev, stat.st_ino), self.fts5)
+            _INITIALIZED[self.path] = (
+                (stat.st_dev, stat.st_ino),
+                self.fts5,
+                self._retired_entry_columns,
+            )
         return self.fts5
 
     @staticmethod
@@ -237,43 +273,43 @@ class SQLiteDatabase:
     def _put(self, con, rec, entry, order_no):
         p = projection(rec, entry)
         record_json = json.dumps(rec, ensure_ascii=False, separators=(",", ":"))
+        values = (
+            p["id"],
+            order_no,
+            json.dumps(p["tags"], ensure_ascii=False, separators=(",", ":")),
+            p["rating"],
+            p["used"],
+            int(p["pinned"]),
+            p["created"],
+            p["updated"],
+            p["last_run"],
+            p["chars"],
+            p["versions"],
+            p["preview"],
+            p["body"],
+            p["body_norm"],
+            p["tags_norm"],
+            p["sim_norm"],
+            p["notes"],
+            record_json,
+        )
+        columns = _ENTRY_WRITE_COLUMNS
+        if self._retired_entry_columns:
+            columns = (
+                columns[0],
+                *self._retired_entry_columns,
+                *columns[1:],
+            )
+            values = (values[0], *(0 for _ in self._retired_entry_columns), *values[1:])
+        column_sql = ",".join(columns)
+        value_sql = ",".join("?" for _column in columns)
+        update_sql = ",".join(
+            f"{column}=excluded.{column}" for column in _ENTRY_WRITE_COLUMNS if column != "id"
+        )
         con.execute(
-            """
-            INSERT INTO entries(
-                id,order_no,tags_json,rating,used,pinned,created,
-                updated,last_run,chars,versions,preview,body,body_norm,tags_norm,
-                sim_norm,notes,record_json
-            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(id) DO UPDATE SET
-                order_no=excluded.order_no,tags_json=excluded.tags_json,
-                rating=excluded.rating,used=excluded.used,pinned=excluded.pinned,
-                created=excluded.created,updated=excluded.updated,
-                last_run=excluded.last_run,chars=excluded.chars,
-                versions=excluded.versions,preview=excluded.preview,
-                body=excluded.body,body_norm=excluded.body_norm,
-                tags_norm=excluded.tags_norm,sim_norm=excluded.sim_norm,
-                notes=excluded.notes,record_json=excluded.record_json
-            """,
-            (
-                p["id"],
-                order_no,
-                json.dumps(p["tags"], ensure_ascii=False, separators=(",", ":")),
-                p["rating"],
-                p["used"],
-                int(p["pinned"]),
-                p["created"],
-                p["updated"],
-                p["last_run"],
-                p["chars"],
-                p["versions"],
-                p["preview"],
-                p["body"],
-                p["body_norm"],
-                p["tags_norm"],
-                p["sim_norm"],
-                p["notes"],
-                record_json,
-            ),
+            f"INSERT INTO entries({column_sql}) VALUES({value_sql}) "
+            f"ON CONFLICT(id) DO UPDATE SET {update_sql}",
+            values,
         )
         con.execute("DELETE FROM tags WHERE prompt_id=?", (p["id"],))
         con.executemany(

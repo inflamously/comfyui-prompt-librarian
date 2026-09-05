@@ -149,7 +149,7 @@ def _install_folder_paths_stub(scratch_root):
 def _repoint_store(dev_store):
     """Replace every binding of the process-wide STORE, by identity.
 
-    Name-based discovery misses ``wildcards._STORE``. A partial swap is the one
+    Name-based discovery misses ``wildcards.sources._STORE``. A partial swap is the one
     failure mode that reaches real data, so an incomplete result is fatal.
     """
     from prompt_librarian import dedupe, search, wildcards
@@ -170,7 +170,7 @@ def _repoint_store(dev_store):
         "prompt_librarian.api.utils.STORE",
         "prompt_librarian.api.registration.STORE",
         "prompt_librarian.api.routes.prompts.STORE",
-        "prompt_librarian.wildcards._STORE",
+        "prompt_librarian.wildcards.sources._STORE",
     }
     missing = required - set(hits)
     if missing:

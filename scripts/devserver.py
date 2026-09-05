@@ -29,7 +29,7 @@ have to fail before it could:
      create.
 
 The store is then repointed BY OBJECT IDENTITY across every module attribute --
-not by name. ``prompt_librarian/wildcards.py`` binds it as ``_STORE``, which a
+not by name. ``prompt_librarian/wildcards/sources.py`` binds it as ``_STORE``, which a
 name-based sweep (like the one in tests/test_api.py) misses, and the wildcard
 routes would otherwise read the real user directory.
 """

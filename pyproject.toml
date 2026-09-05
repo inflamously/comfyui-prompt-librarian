@@ -109,6 +109,7 @@ known-third-party = ["folder_paths", "server", "comfy", "nodes"]
 # Feature packages also reach their domain siblings through the parent package;
 # absolute imports are not reliable under ComfyUI's file-location loader.
 "prompt_librarian/dedupe/**/*.py" = ["TID252"]
+"prompt_librarian/wildcards/**/*.py" = ["TID252"]
 # Same rule for the dev server's aiohttp handlers, plus its seed word lists,
 # which are prose kept readable as one split string rather than a list literal.
 "scripts/devserver.py" = ["ARG001", "SIM905"]

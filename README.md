@@ -292,7 +292,7 @@ prompt_librarian/             the Librarian domain
     registration.py           register(): the route table -> aiohttp
     schemas.py                what each endpoint takes and returns, as types
     openapi.py                those two -> an OpenAPI 3.1 document (pydantic)
-  wildcards.py                {a|b} / __file__ / [[snippet]] resolution
+  wildcards/                  syntax, choices, sources, file cache, and resolution
   dedupe/                     similarity, indexing, caches, scans, and word-level diff
   search.py                   inverted index, relevance scoring, filters, sorts
   labels.py                   what a record is called, derived from the corpus
@@ -402,7 +402,7 @@ what lets `group=true` sit on the search hot path at all. The diff half is `diff
 (word-level opcodes, capped), `diff_summary` (the readable `"toward" → "towards", + volumetric haze`
 line, using real curly quotes and arrows since the UI renders the payload verbatim) and `compare`.
 
-**`prompt_librarian/wildcards.py`** (662 lines) — the `{a|b}` / `__file__` / `[[snippet]]` resolver. No
+**`prompt_librarian/wildcards/`** — the `{a|b}` / `__file__` / `[[snippet]]` resolver. No
 filesystem access at import time. Escapes (`\{`, `\|`, `\}`, `\_`, `\[`, `\]`) are swapped for
 private-use sentinels `U+E000..U+E005` first, so the rest of the pass can treat every remaining
 metacharacter as syntax without a hand-written parser; the innermost-brace regex is then applied
@@ -412,6 +412,10 @@ of hanging the prompt worker. Contains `_safe_name` (the path-traversal guard), 
 cache with its `FILES` singleton, `signature()` (folded into the node's cache key), `names()`,
 option parsing with weights (`3::`) and pick-N (`2$$`, `1-3$$`), the seeded `random.Random` picks,
 and the public `resolve` / `resolve_verbose` / `has_wildcards` / `referenced_names`.
+The package facade keeps these imports and the configurable `FILES` and guard defaults stable;
+`syntax.py` owns patterns and escaping, `choices.py` owns weighted selection, `sources.py` owns
+lazy store defaults and snippet lookup, `files.py` owns the file cache, and `resolver.py` runs
+the bounded expansion passes.
 
 **`prompt_librarian/api/`** — the 34 aiohttp routes under `/prompt_librarian`: `config.py` owns the
 prefix/capabilities/error map, `utils.py` owns routing mechanics, `routes/` groups handlers by
@@ -605,7 +609,7 @@ install where `compare/` failed to load. Never `innerHTML` — prompt bodies are
 `tags.js` (with `normalizeTag`, mirroring the store's `clean_tag`), `threshold.js`,
 `snippets.js` and `wildcards.js`, all over the shared `menu.js` body. Plus `caret.js`
 (`insertAtCaret`), `tokenize.js` (the wildcard syntax lexer, deliberately aligned with
-`wildcards.py` — a highlight that disagrees with the resolver is worse than no highlight) and
+`wildcards/syntax.py` — a highlight that disagrees with the resolver is worse than no highlight) and
 `mirror.js`, the highlight layer rendered behind the textarea, which only lines up if every
 typographic property matches exactly and which tears itself down when its own one-frame height
 self-check says it doesn't. `common.js` carries the `bindKeys` helper and restates the isolation rule.
@@ -714,7 +718,7 @@ of the four graph probes `modal/target.js` will find. Those defences are otherwi
 `LibrarianStore(path=…)` override, a stub `folder_paths` injected before the pack imports, a pinned
 `_FALLBACK_USER_DIR`, and a refuse-to-start guard that rejects anything shaped like a real library,
 anything outside `.devserver/`, and any pre-existing file the server did not create. The store is then
-repointed **by object identity** across every module attribute — `wildcards.py` binds it as `_STORE`,
+repointed **by object identity** across every module attribute — `wildcards/sources.py` binds it as `_STORE`,
 which a name-based sweep misses — and an incomplete swap is fatal rather than silent.
 
 ### The old node — untouched

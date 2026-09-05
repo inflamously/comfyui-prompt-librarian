@@ -294,7 +294,7 @@ prompt_librarian/             the Librarian domain
     openapi.py                those two -> an OpenAPI 3.1 document (pydantic)
   wildcards/                  syntax, choices, sources, file cache, and resolution
   dedupe/                     similarity, indexing, caches, scans, and word-level diff
-  search.py                   inverted index, relevance scoring, filters, sorts
+  search/                     indexing, query parsing, scoring, filters, and result pages
   labels.py                   what a record is called, derived from the corpus
   store/                      authoritative SQLite, JSON/JSONL migration codecs
 
@@ -351,7 +351,7 @@ The store exposes CRUD, bulk, versions, merge, taxonomy, snippets, ignored-pair 
 There are no JSON/JSONL store implementations or backend selector. Historical files are opened only
 by explicit, idempotent migration from the Storage dialog and are never modified.
 
-**`prompt_librarian/search.py`** — stdlib-only, knows nothing about aiohttp, ComfyUI or the file
+**`prompt_librarian/search/`** — stdlib-only, knows nothing about aiohttp, ComfyUI or the file
 format. It accepts the original `list_all()` + `rev()` protocol, plus optional disk-backed candidate
 and corpus-stat methods. Typed searches therefore score only SQLite-selected current-body
 projections while preserving the same ranking and fallback behavior. With no name to match,
@@ -369,9 +369,13 @@ and the public `search()` returning a page dict. `SearchIndex` also answers the 
 `len()` and nothing extra is counted; `label_of(pid)` memoizes per index and the cache is dropped
 wholesale on any write, because one added record can change every label.
 Timestamps are compared as plain ISO strings — nothing here parses a date.
+The feature package exposes its public API through `__init__.py`: `config.py` holds defaults,
+`text.py` handles normalization and previews, `index.py` owns documents and the incremental
+index, `cache.py` manages live-store indexes, `query.py` parses operators, `scoring.py` ranks
+matches, `results.py` filters/sorts/folds groups, and `service.py` assembles result pages.
 
 **`prompt_librarian/labels.py`** (336 lines) — what a record is *called*, computed and never
-stored. Pure and stdlib-only, one layer below `search.py`: the index owns the document frequencies,
+stored. Pure and stdlib-only, one layer below `search/`: the index owns the document frequencies,
 this module owns what to do with them. `label_for(body, df, ndocs)` picks the `LABEL_TERMS` most
 distinctive terms of a body by tf-idf, merges the ones that were adjacent in the body back into
 phrases (`ruined theatre`, not `ruined · theatre`), renders them in body order and caps the result;

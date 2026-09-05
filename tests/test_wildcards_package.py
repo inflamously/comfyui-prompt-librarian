@@ -1,5 +1,6 @@
 """Compatibility checks for the wildcard package's public entry points."""
 
+import importlib
 import importlib.util
 import sys
 import types
@@ -7,8 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from prompt_librarian import wildcards as wc
-from prompt_librarian.wildcards import sources
+from prompt_librarian.features import wildcards as wc
+from prompt_librarian.features.wildcards import sources
+from prompt_librarian.shared import paths
 
 
 def test_shared_files_override_reaches_all_entry_points(tmp_path, monkeypatch):
@@ -38,8 +40,9 @@ def test_public_limits_reach_resolution(monkeypatch, limit, value, expected, war
 
 def test_default_snippets_are_loaded_only_when_needed(monkeypatch):
     calls = []
-    store = types.SimpleNamespace(snippets=lambda: calls.append(True) or {"a": "calm"})
-    monkeypatch.setattr(sources, "_STORE", store)
+    monkeypatch.setattr(
+        sources, "_snippets_provider", lambda: calls.append(True) or {"a": "calm"}
+    )
 
     assert wc.resolve("plain") == "plain"
     assert wc.resolve("[[a]]", snippets={"a": "explicit"}) == "explicit"
@@ -48,45 +51,31 @@ def test_default_snippets_are_loaded_only_when_needed(monkeypatch):
     assert calls == [True]
 
 
-def test_fallback_directory_does_not_gain_an_extra_wildcards_component(tmp_path, monkeypatch):
-    package = tmp_path / "prompt_librarian" / "wildcards"
-    monkeypatch.setattr(sources, "__file__", str(package / "sources.py"))
-    monkeypatch.setattr(sources, "_STORE", None)
-    monkeypatch.setattr(sources, "_store_wildcards_dir", None)
-
-    assert wc.WildcardFiles().root() == str(package)
+def test_the_default_directory_sits_next_to_the_library(user_dir):
+    assert wc.WildcardFiles().root() == paths.wildcards_dir()
+    assert wc.WildcardFiles().root().startswith(str(user_dir))
 
 
-@pytest.mark.parametrize("with_store", [True, False])
-def test_file_location_import_is_lazy_and_supports_optional_store(
-    tmp_path, monkeypatch, with_store
-):
-    # ComfyUI loads beneath its own package name. A synthetic parent prevents
-    # this check from importing the pack root or any real ComfyUI modules.
-    parent_name = "_wildcard_test_domain"
-    parent = types.ModuleType(parent_name)
-    parent.__path__ = []
-    monkeypatch.setitem(sys.modules, parent_name, parent)
+@pytest.mark.parametrize("configured", [True, False])
+def test_file_location_import_is_lazy_and_configurable(tmp_path, monkeypatch, configured):
+    # ComfyUI loads beneath its own package name, so mount the librarian tree
+    # under a synthetic one; the pack root and ComfyUI are never imported.
+    name = "_wildcard_test_domain"
+    parent = types.ModuleType(name)
+    parent.__path__ = [str(Path(wc.__file__).parents[2])]
+    monkeypatch.setitem(sys.modules, name, parent)
     calls = []
-    store_module = types.ModuleType(parent_name + ".store")
-    store_module.STORE = types.SimpleNamespace(
-        wildcards_dir=lambda: calls.append("files") or str(tmp_path),
-        snippets=lambda: calls.append("snippets") or {"a": "calm"},
-    )
-    store_module.wildcards_dir = lambda: str(tmp_path)
-    monkeypatch.setitem(sys.modules, store_module.__name__, store_module if with_store else None)
-
-    name = parent_name + ".wildcards"
-    spec = importlib.util.spec_from_file_location(name, Path(wc.__file__))
-    module = importlib.util.module_from_spec(spec)
-    monkeypatch.setitem(sys.modules, name, module)
     try:
-        spec.loader.exec_module(module)
-        assert calls == []
+        module = importlib.import_module(name + ".features.wildcards")
         assert module.resolve("{only}", snippets={}) == "only"
-        assert calls == []
-        assert module.resolve("[[a]]") == ("calm" if with_store else "[[a]]")
-        if with_store:
+        if configured:
+            module.configure(
+                root=lambda: calls.append("files") or str(tmp_path),
+                snippets=lambda: calls.append("snippets") or {"a": "calm"},
+            )
+        assert calls == [], "configuring reads nothing"
+        assert module.resolve("[[a]]") == ("calm" if configured else "[[a]]")
+        if configured:
             assert module.FILES.root() == str(tmp_path)
             assert calls == ["snippets", "files"]
     finally:

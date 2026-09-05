@@ -1,9 +1,3 @@
-/* ==========================================================================
-   Prompt Librarian — the compare / merge dialog
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-   ========================================================================== */
-
 import { NS } from "../shared/ns.js";
 import { clear, h } from "../shared/dom.js";
 import {
@@ -28,10 +22,7 @@ import {
 import { reconstruct, renderDiff } from "./diff.js";
 import { openMergeEditor } from "./merge-editor.js";
 
-/**
- * The compare/merge dialog. One dialog serves three callers — the dupe panel,
- * `diff vs saved`, and the version history — which is why the action set is a
- * parameter rather than a hard-coded row.
+/** Parameterize actions so duplicate, saved-text, and version comparisons share a dialog.
  *
  * @param {object} ctx modal ctx
  * @param {{a_id?: string|null, a_text?: string, b_id?: string|null,
@@ -61,7 +52,6 @@ export function openCompare(ctx, opts = {}) {
   /** Timers registered here are cancelled by the layer's onClose. */
   const debounces = [];
 
-  /* ---- chrome ---------------------------------------------------------- */
 
   const titleEl = h("div", { className: "pl-dialog-title" }, `${titleA}  ${SWAP}  ${titleB}`);
   const matchEl = h("span", { className: "pl-row-match" }, "");
@@ -135,7 +125,6 @@ export function openCompare(ctx, opts = {}) {
     acts
   );
 
-  /* ---- mode ------------------------------------------------------------ */
 
   let mode = o.mode === "split" || o.mode === "unified" ? o.mode : defaultMode(ctx);
 
@@ -146,7 +135,6 @@ export function openCompare(ctx, opts = {}) {
       const st = c && typeof c.getState === "function" ? c.getState() : null;
       if (st && (st.narrow === true || st.width === "narrow")) return "unified";
     } catch (_) {
-      /* ignore */
     }
     return "split";
   }
@@ -155,14 +143,11 @@ export function openCompare(ctx, opts = {}) {
     mode = next === "unified" ? "unified" : "split";
     splitTab.setAttribute("aria-selected", mode === "split" ? "true" : "false");
     unifiedTab.setAttribute("aria-selected", mode === "unified" ? "true" : "false");
-    // NOT `labels.hidden`: .pl-diff sets `display: grid`, which beats the UA
-    // `[hidden] { display: none }` rule, and librarian.css has no
-    // `.pl-diff[hidden]` override. An inline display wins outright.
+    // Use inline display: .pl-diff grid styles override the browser's hidden rule.
     labels.style.display = mode === "unified" ? "none" : "";
     paintDiff();
   }
 
-  /* ---- painting -------------------------------------------------------- */
 
   function paintDiff() {
     if (diffHandle && typeof diffHandle.dispose === "function") diffHandle.dispose();
@@ -186,7 +171,6 @@ export function openCompare(ctx, opts = {}) {
     summaryEl.textContent = summary ? `differs: ${summary}` : "";
   }
 
-  /* ---- data ------------------------------------------------------------ */
 
   let lastError = "";
 
@@ -232,7 +216,6 @@ export function openCompare(ctx, opts = {}) {
     renderActions();
   }
 
-  /* ---- actions --------------------------------------------------------- */
 
   const api = {
     ctx,
@@ -261,7 +244,6 @@ export function openCompare(ctx, opts = {}) {
     if (!on) renderActions();
   }
 
-  /** Wrap an action so a throw becomes a toast and the row is never stuck. */
   function guard(fn) {
     return async () => {
       if (busy) return;
@@ -293,13 +275,7 @@ export function openCompare(ctx, opts = {}) {
     layer.close();
   }
 
-  /**
-   * Build one action descriptor.
-   *
-   * An action that cannot apply — `a_id` is null because the left side is an
-   * unsaved buffer, say — is rendered DISABLED with the reason in its `title`.
-   * Never hidden (the user cannot tell a missing button from a bug) and never
-   * silently broken.
+  /** Disable unavailable actions with a reason rather than hiding them.
    */
   function spec(key, label, opts2) {
     const ready = !loading && !!opcodes;
@@ -385,9 +361,7 @@ export function openCompare(ctx, opts = {}) {
 
     specs.push(
       spec("keep_both", "keep both", {
-        // Deliberately not gated on the diff: "keep both" is the answer to
-        // "these are duplicates", and it stays available even if /compare is
-        // down.
+        // Keep-both must remain usable even when the diff endpoint fails.
         needsDiff: false,
         title: "stop flagging this pair as duplicates",
         reason: pairReason,
@@ -460,14 +434,12 @@ export function openCompare(ctx, opts = {}) {
     );
   }
 
-  /* ---- keys ------------------------------------------------------------ */
 
   const unbind = [];
   unbind.push(
     bindKey(ctx, el, "keydown", (e) => {
       if (!e) return;
-      // Escape is handled by the modal (it pops the top layer). Only the local
-      // shortcuts live here.
+      // The modal handles Escape by popping the top layer.
       if ((e.key === "u" || e.key === "U") && !e.ctrlKey && !e.metaKey && !isTextEntry(e.target)) {
         setMode(mode === "split" ? "unified" : "split");
         if (typeof e.preventDefault === "function") e.preventDefault();
@@ -475,7 +447,6 @@ export function openCompare(ctx, opts = {}) {
     })
   );
 
-  /* ---- layer ----------------------------------------------------------- */
 
   const layer = openLayer(ctx, el, {
     closeOnOutside: false,
@@ -485,25 +456,21 @@ export function openCompare(ctx, opts = {}) {
         try {
           fn();
         } catch (_) {
-          /* ignore */
         }
       }
       for (const d of debounces.splice(0)) {
         try {
           if (d && typeof d.cancel === "function") d.cancel();
         } catch (_) {
-          /* ignore */
         }
       }
       if (diffHandle && typeof diffHandle.dispose === "function") diffHandle.dispose();
       diffHandle = null;
-      // Abort work this dialog started; a response landing after close would
-      // paint into a detached tree.
+      // Cancel on close so late responses cannot repaint detached content.
       if (loading && ctx.lanes && ctx.lanes.diff && typeof ctx.lanes.diff.cancel === "function") {
         try {
           ctx.lanes.diff.cancel();
         } catch (_) {
-          /* ignore */
         }
       }
       if (typeof o.onClose === "function") o.onClose();

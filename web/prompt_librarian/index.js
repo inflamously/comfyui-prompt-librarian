@@ -1,70 +1,44 @@
-/* ==========================================================================
-   Prompt Librarian — extension entry
-   --------------------------------------------------------------------------
-   THIS IS THE ONLY FILE IN THIS DOMAIN ALLOWED TO HAVE IMPORT-TIME SIDE
-   EFFECTS.
-
-   ComfyUI imports every .js under WEB_DIRECTORY as an extension, so every
-   module under web/prompt_librarian/ is loaded whether or not we ask for it —
-   those files are inert by construction (exports and const data only). All the
-   wiring lives here: one registerExtension call, one stylesheet, one node hook.
-
-   Extension name is `prompt-librarian.ui`. The OLD node registers
-   `prompt-library.ui` (web/prompt_store/) — different node class, different
-   routes, different store, zero overlap. Deleting either domain directory must
-   leave the other working, which is also why nothing here imports from
-   web/prompt_store/.
-
-   Feature layout under this directory, mirroring the Python side:
-
-     shared/      h(), text/number formatting, timing, the singleton bag
-     api/         transport: request primitive, lanes, caps, routes, meta cache
-     node/        the node's own face, widgets, hydration and the ⇄ binding
-     modal/       the overlay shell, state store, key isolation, layers
-     browse/      the left rail: search, filters, virtualised list, bulk bar
-     inspector/   the right pane: fields, dupe gate, the save flow
-     pickers/     the popover primitive and its five consumers
-     compare/     diff, compare/merge and version-history dialogs
-   ========================================================================== */
+/* ComfyUI loads every .js under web/, including unreferenced modules.
+ * Keep other modules inert on import; register hooks only in this entry.
+ * The caps/lanes singleton allocations are the tested exceptions.
+ * This domain must remain independent of prompt_store/.
+ */
 
 import { app } from "../../../scripts/app.js";
 import { NS } from "./shared/ns.js";
 import { warnOnce, singleton } from "./shared/singleton.js";
 import { ensureStyles } from "./shared/styles.js";
 import { buildFace } from "./node/face.js";
-import { ensureHydrated } from "./node/hydrate.js";
+import { setupGraphNode } from "./node/setup.js";
+import { addWordPictureMenu } from "./node/word-picture-menu.js";
 
 const NODE_CLASS = "PromptLibrarian";
 
-/* --------------------------------------------------------------------------
-   Host injection point.
-
-   Other modules never import this file (that would re-run registerExtension
-   under a second cache-busted URL). They read the host off the shared
-   singleton bag instead. `app` is captured here, in the one place that is
-   already coupled to ComfyUI's module layout.
-   -------------------------------------------------------------------------- */
+/* Share the host bag instead of importing this entry again under another URL.
+ */
 function host() {
   return singleton("host", () => ({ app: null }));
 }
 
-/* --------------------------------------------------------------------------
-   Modal
-   -------------------------------------------------------------------------- */
 
-/**
- * Open the librarian for a node. `modal/index.js` is imported LAZILY and
- * inside a try/catch: the extension must load and the node must work without
- * it. A missing modal logs once and no-ops; it never throws into LiteGraph's
- * event handling.
+/** Lazily load the modal and hand it ComfyUI's `app`. Throws when the modal
+ * cannot be loaded; the caller turns that into a one-time warning.
+ */
+async function setupModal() {
+  const modal = await import("./modal/index.js");
+  if (typeof modal.setHost === "function") modal.setHost({ app });
+  if (typeof modal.openModal !== "function") throw new Error("openModal missing");
+  return modal;
+}
+
+/** Open the panel for a node. A modal failure must never break the node.
  */
 async function openLibrarian(node) {
   ensureStyles();
-  ensureHydrated(node); // third and final hydration trigger
+  // Backstop: the node may not have been set up yet if its widgets were late.
+  setupGraphNode(node);
   try {
-    const modal = await import("./modal/index.js");
-    if (typeof modal.setHost === "function") modal.setHost({ app });
-    if (typeof modal.openModal !== "function") throw new Error("openModal missing");
+    const modal = await setupModal();
     await modal.openModal({ targetNodeId: node ? node.id : null });
   } catch (err) {
     warnOnce(
@@ -75,32 +49,28 @@ async function openLibrarian(node) {
   }
 }
 
-/* --------------------------------------------------------------------------
-   Registration — the one and only side effect in this domain
-   -------------------------------------------------------------------------- */
 
 app.registerExtension({
   name: "prompt-librarian.ui",
 
   setup() {
     host().app = app;
-    // Injected here, not at import time: the document head is guaranteed
-    // ready by setup(), and a stylesheet request during module evaluation
-    // competes with ComfyUI's own boot.
+    // Inject styles during setup, when the document head is ready.
     ensureStyles();
+  },
+
+  beforeRegisterNodeDef(nodeType) {
+    // Any node can show generated images (SaveImage, PreviewImage, custom ones);
+    // the item only appears when the node is actually showing one.
+    addWordPictureMenu(nodeType, app);
   },
 
   nodeCreated(node) {
     if (!node || node.comfyClass !== NODE_CLASS) return;
 
-    // Try the richer DOM card first; fall back to the proven button face.
-    // buildFace() may still fall back asynchronously (post-rAF mount
-    // verification), which it handles itself.
     buildFace(node, openLibrarian);
 
-    // `Open Librarian` exists in BOTH tiers — it is the primary affordance and
-    // must never depend on the DOM card having rendered correctly. Added here
-    // rather than inside either face builder so exactly one is ever created.
+    // Add Open Librarian independently of the face so either rendering tier has it.
     if (!node.__plOpenBtn) {
       node.__plOpenBtn = node.addWidget("button", "Open Librarian", null, () =>
         openLibrarian(node),
@@ -108,13 +78,11 @@ app.registerExtension({
       if (node.__plOpenBtn) node.__plOpenBtn.serialize = false;
     }
 
-    // Trigger 1: next frame. Trigger 2: the 500 ms the old node proved.
-    // Trigger 3 is the first modal open, inside openLibrarian().
-    if (!ensureHydrated(node)) {
+    if (!setupGraphNode(node)) {
       if (typeof requestAnimationFrame === "function") {
-        requestAnimationFrame(() => ensureHydrated(node));
+        requestAnimationFrame(() => setupGraphNode(node));
       }
-      setTimeout(() => ensureHydrated(node), 500);
+      setTimeout(() => setupGraphNode(node), 500);
     }
   },
 });

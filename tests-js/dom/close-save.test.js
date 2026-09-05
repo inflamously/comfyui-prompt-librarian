@@ -313,3 +313,27 @@ describe("closeModal teardown", () => {
     env.assertNoErrors();
   });
 });
+
+describe("attemptClose with an emptied editor", () => {
+  test("closes at once without saving, since an empty body cannot be saved", async () => {
+    const { ctx, calls } = saving("blocked");
+    ctx.inspector = { getBuffer: () => ({ tags: [], body: "  \n" }) };
+    const s = await openShell(ctx);
+
+    assert.equal(s.attemptClose(), true, "nothing to save, so the close is synchronous");
+    assert.equal(s.it.open, false);
+    assert.deepEqual(calls, [], "no save was attempted");
+    env.assertNoErrors();
+  });
+
+  test("a non-empty dirty buffer still saves first", async () => {
+    const { ctx, calls } = saving("blocked");
+    ctx.inspector = { getBuffer: () => ({ tags: [], body: "text" }) };
+    const s = await openShell(ctx);
+
+    assert.equal(s.attemptClose(), false);
+    await flush();
+    assert.deepEqual(calls, [true]);
+    assert.equal(s.it.open, true, "blocked still keeps the modal open");
+  });
+});

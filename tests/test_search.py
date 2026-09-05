@@ -1,4 +1,4 @@
-"""Tests for prompt_librarian.search.
+"""Tests for prompt_librarian.features.search.
 
 Deliberately free-standing: plain dict fixtures, no store, no conftest, no
 ``folder_paths``.  ``sys.path`` is fixed up here so the suite runs whether or
@@ -12,7 +12,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest  # noqa: E402
 
-from prompt_librarian import search as S  # noqa: E402
+from prompt_librarian.features import search as S  # noqa: E402
+from prompt_librarian.features.prompts.create import create_prompt  # noqa: E402
+from prompt_librarian.shared.library import Library  # noqa: E402
 
 # --------------------------------------------------------------------------
 # Fixtures (plain dicts matching the record schema)
@@ -439,29 +441,22 @@ def test_search_accepts_a_prebuilt_index(records):
     assert res["rev"] == 12
 
 
-def test_search_accepts_a_duck_typed_store(records):
-    class FakeStore:
-        def __init__(self, recs):
-            self._recs = recs
-            self._rev = 3
-            self.calls = 0
-
-        def rev(self):
-            return self._rev
-
-        def list_all(self):
-            self.calls += 1
-            return self._recs
-
-    st = FakeStore(records)
+def test_search_reads_a_library_through_its_source(tmp_path):
+    lib = Library(str(tmp_path / "library.sqlite3"))
+    create_prompt(lib, "ballet dancer")
+    source = S.LibrarySearchSource(lib)
     S.invalidate_index()
-    assert S.search(st, "ballet", limit=10)["rev"] == 3
-    S.search(st, "ballet", limit=10)
-    assert st.calls == 1                      # index cached until rev bumps
-    st._rev = 4
-    assert S.search(st, "ballet", limit=10)["rev"] == 4
-    assert st.calls == 2
-    S.invalidate_index()
+    try:
+        index = S.get_index(source)
+        assert S.get_index(source) is index      # cached until the revision moves
+        create_prompt(lib, "ballet shoes")
+        assert S.get_index(source) is not index
+        result = S.search(source, "ballet", limit=10)
+        assert result["total"] == 2
+        assert result["rev"] == lib.revision()
+    finally:
+        S.invalidate_index()
+        lib.close()
 
 
 def test_index_stats_are_recomputed_after_mutation(records):

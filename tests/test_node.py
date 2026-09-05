@@ -9,10 +9,12 @@ import os
 
 import pytest
 
+from prompt_librarian import app as librarian_app
 from prompt_librarian import node as node_mod
-from prompt_librarian import store as librarian_store
-from prompt_librarian import wildcards as wc
+from prompt_librarian.features import wildcards as wc
 from prompt_librarian.node import PromptLibrarian
+from prompt_librarian.shared.library import Library
+from tests import uc
 
 
 @pytest.fixture
@@ -22,11 +24,11 @@ def node():
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
-    """A real store in a temp dir, wired into the node module."""
-    target = librarian_store.LibrarianStore(
+    """A real app on a temp library, installed as the one the node uses."""
+    target = librarian_app.build(
         path=str(tmp_path / "lib" / "library.sqlite3"), migrate_from=False
     )
-    monkeypatch.setattr(node_mod, "STORE", target)
+    librarian_app.use(target)
     return target
 
 
@@ -81,7 +83,7 @@ def test_input_types_touches_no_filesystem(tmp_path, user_dir, monkeypatch):
 
     monkeypatch.setattr(os, "stat", _boom)
     monkeypatch.setattr(os, "listdir", _boom)
-    monkeypatch.setattr(librarian_store.LibrarianStore, "ensure_loaded", _boom)
+    monkeypatch.setattr(Library, "prepare", _boom)
     PromptLibrarian.INPUT_TYPES()
     monkeypatch.undo()
     assert not os.path.exists(store_dir)
@@ -134,16 +136,15 @@ def test_run_falls_back_to_raw_when_resolution_explodes(node, store, monkeypatch
 
 
 def test_run_never_raises_without_a_store(node, monkeypatch):
-    monkeypatch.setattr(node_mod, "STORE", None)
+    monkeypatch.setattr(node_mod, "app", None)
     assert node.run("hi", "some-id", 0, False, True)["result"] == ("hi",)
 
 
 def test_run_never_raises_when_the_store_errors(node, monkeypatch):
-    class Broken:
-        def record_usage(self, pid, body=None):
-            raise OSError("disk gone")
+    def broken(lib, pid, body=None):
+        raise OSError("disk gone")
 
-    monkeypatch.setattr(node_mod, "STORE", Broken())
+    monkeypatch.setattr(node_mod, "record_usage", broken)
     out = node.run("hi", "some-id", 0, False, True)
     assert out["result"] == ("hi",)
     assert out["ui"]["counted"] == [False]
@@ -158,50 +159,50 @@ def test_run_tolerates_a_junk_seed(node, store, wcdir):
 # --------------------------------------------------------------------------- #
 
 def test_usage_increments_for_a_matching_body(node, store):
-    rec = store.create(body="ballet drift")
+    rec = uc.create_prompt(store.lib, body="ballet drift")
     out = node.run("ballet drift", rec["id"], 0, False, True)
     assert out["ui"]["counted"] == [True]
     assert out["ui"]["used"] == [1]
-    assert store.get(rec["id"])["used"] == 1
+    assert uc.get_prompt(store.lib, rec["id"])["used"] == 1
 
 
 def test_usage_does_not_increment_for_an_edited_body(node, store):
-    rec = store.create(body="ballet drift")
+    rec = uc.create_prompt(store.lib, body="ballet drift")
     out = node.run("ballet drift, but edited", rec["id"], 0, False, True)
     assert out["ui"]["counted"] == [False]
-    assert store.get(rec["id"])["used"] == 0
+    assert uc.get_prompt(store.lib, rec["id"])["used"] == 0
 
 
 def test_usage_ignores_whitespace_only_differences(node, store):
-    rec = store.create(body="ballet drift")
+    rec = uc.create_prompt(store.lib, body="ballet drift")
     node.run("  ballet drift\n", rec["id"], 0, False, True)
-    assert store.get(rec["id"])["used"] == 1
+    assert uc.get_prompt(store.lib, rec["id"])["used"] == 1
 
 
 def test_usage_counts_the_raw_text_not_the_resolved_output(node, store, wcdir):
     # A wildcard prompt resolves differently every seed by design, so the
     # comparison has to be against what is saved: the raw widget text.
-    rec = store.create(body="a {x|y} b")
+    rec = uc.create_prompt(store.lib, body="a {x|y} b")
     node.run("a {x|y} b", rec["id"], 5, True, True)
-    assert store.get(rec["id"])["used"] == 1
+    assert uc.get_prompt(store.lib, rec["id"])["used"] == 1
 
 
 def test_usage_does_not_raise_for_an_unknown_id(node, store):
     out = node.run("whatever", "0" * 32, 0, False, True)
     assert out["ui"]["counted"] == [False]
-    assert store.count() == 0
+    assert uc.count_prompts(store.lib) == 0
 
 
 def test_usage_is_skipped_when_disabled(node, store):
-    rec = store.create(body="body")
+    rec = uc.create_prompt(store.lib, body="body")
     node.run("body", rec["id"], 0, False, False)
-    assert store.get(rec["id"])["used"] == 0
+    assert uc.get_prompt(store.lib, rec["id"])["used"] == 0
 
 
 def test_usage_is_skipped_without_an_id(node, store):
-    rec = store.create(body="body")
+    rec = uc.create_prompt(store.lib, body="body")
     node.run("body", "", 0, False, True)
-    assert store.get(rec["id"])["used"] == 0
+    assert uc.get_prompt(store.lib, rec["id"])["used"] == 0
 
 
 # --------------------------------------------------------------------------- #

@@ -23,7 +23,7 @@ import { seedHost } from "./mount.js";
 /**
  * Browser globals the pack reaches for. Deliberately does NOT include
  * `ResizeObserver`: jsdom has none, and its absence exercises the real
- * window-resize fallback in shell.js installResponsive().
+ * window-resize fallback in shell/responsive.js installResponsive().
  */
 const GLOBALS = [
   "window",

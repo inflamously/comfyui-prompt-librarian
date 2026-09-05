@@ -1,9 +1,3 @@
-/* ==========================================================================
-   Prompt Librarian — duplicate-threshold picker
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-   ========================================================================== */
-
 import { cls, h } from "../shared/dom.js";
 import { CHECK, bindKeys, isFn, toast } from "./common.js";
 import { openPopover } from "./popover.js";

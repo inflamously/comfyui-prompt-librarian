@@ -1,13 +1,3 @@
-/* ==========================================================================
-   Prompt Librarian — record / payload shapes
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   Pure functions: everything the pane needs to read a backend answer, compare
-   two buffers, or recognise a conflict. No DOM, no state.
-   ========================================================================== */
-
-/** sessionStorage key prefix for per-record drafts. */
 export const DRAFT_PREFIX = "pl:draft:";
 
 export function errMsg(e) {
@@ -35,12 +25,8 @@ export function isConflict(x) {
   return /\bconflict\b|\b409\b/i.test(String(x.message || x.error || ""));
 }
 
-/** Records come back bare, or wrapped as {prompt}/{record}.
- *
- * The derived `label` travels in the envelope BESIDE the record rather than
- * inside it — a derived field inside would end up in the exported file, which
- * is a stored name again by another route. Carry it onto the unwrapped copy so
- * the pane has one shape to read; nothing ever sends this copy back.
+/** Accept bare records or envelopes; carry the derived envelope label into the
+ * view copy without adding it to the persisted record.
  */
 export function unwrapRecord(r) {
   if (!r || typeof r !== "object") return null;
@@ -51,7 +37,6 @@ export function unwrapRecord(r) {
   return rec;
 }
 
-/** Score as a 0..1 fraction, tolerating a 0..100 payload. */
 export function frac(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return 0;
@@ -60,17 +45,8 @@ export function frac(v) {
 
 export const pct = (v) => Math.round(frac(v) * 100) + "%";
 
-/** Normalise a dupe response into sorted
- * `{id, label, score, summary, body, ignored}`.
- *
- * `label` is the backend's derived handle for the match; it falls back to the
- * preview and then to the id, because a row has to say *something* and the id
- * is the only thing every match is guaranteed to have.
- *
- * `ignored` marks a pair the user has already answered "keep both" about. The
- * backend still reports it — muting is a decision about the save DIALOG, not a
- * claim that the duplicate went away — so it is the caller that drops it (the
- * save gate) or draws it differently (the panel).
+/** Normalize matches to {id, label, score, summary, body, ignored}.
+ * Fall back to preview or ID when no derived label is available.
  */
 export function matchesOf(r) {
   const arr = Array.isArray(r) ? r : (r && (r.matches || r.dupes)) || [];
@@ -98,20 +74,13 @@ export function bufferFrom(rec) {
   };
 }
 
-/** Field signature used for the dirty comparison (tags order-insensitive).
- *
- * The label is not in it, and must not be: it is derived from the body and
- * from the rest of the library, so a label that moved because a *different*
- * record was saved is not an unsaved edit of this one.
+/** Exclude corpus-derived labels from dirty state; unrelated writes can change them.
  */
 export function sig(o) {
   if (!o) o = {};
   const tags = Array.isArray(o.tags) ? o.tags.map(String).slice().sort() : [];
-  // The tag ARRAY is stringified, not `tags.join("")`. Joining loses the
-  // boundaries, so ["cat","dog"] and ["catdog"] produced the same signature —
-  // isDirty() returned false, save() reported "clean", and save-on-close threw
-  // the retag away. No separator is safe either: clean_tag() only collapses
-  // whitespace to "-", so a tag may contain any other character.
+  // Serialize the tag array to preserve boundaries: joining strings can collide
+  // and incorrectly mark retagged records clean.
   return JSON.stringify([tags, String(o.body || "")]);
 }
 

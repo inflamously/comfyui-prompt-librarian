@@ -1,15 +1,6 @@
-/* ==========================================================================
-   Prompt Librarian — the inspector's markup
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   Built once; every later update is a value/textContent write. Handlers are
-   late-bound through `pane`, so this file never has to know the order the
-   feature modules were wired in.
-
-   Never innerHTML. Prompt bodies and tags are user data — h() and
-   textContent only.
-   ========================================================================== */
+/* Handlers resolve through pane at event time, after feature wiring.
+ * Render prompt bodies and tags as text, never HTML.
+ */
 
 import { CAP_TITLE, CARET, MIDDOT, MUL } from "./constants.js";
 
@@ -23,20 +14,12 @@ export function buildView(pane) {
 
   D.clearEl(el);
 
-  // There is no name field, because there is no name. This is a *readout*:
-  // the handle the rest of the panel prints for this record, derived from the
-  // body against the rest of the library and recomputed whenever either
-  // changes. It is here so the user can see what a row of theirs will say, not
-  // so they can set it — the way to make a prompt findable is to write what it
-  // is about in the prompt, and to search for that.
+  // Labels are derived readouts, not editable record names.
   const labelEl = h("div", {
     className: "pl-label",
     title: "Derived from the prompt text — search finds prompts, names do not",
   });
 
-  // Sits beside the readout because that row is where "which prompt am I
-  // editing" is answered — "none yet, I am writing one" is an answer to the
-  // same question, so the control that gets you there belongs next to it.
   const newBtn = h(
     "button",
     {
@@ -68,8 +51,7 @@ export function buildView(pane) {
     { className: "pl-counts" },
     h("span", null, charsEl, " chars"),
     h("span", { className: "pl-sep" }, MIDDOT),
-    // `~` because estimateTokens() is a heuristic, not a tokenizer. Never
-    // render this number bare; that would be dishonest precision.
+    // Display ~ because estimateTokens is a heuristic.
     h("span", null, tokensEl, " tokens"),
     editedEl
   );
@@ -83,9 +65,7 @@ export function buildView(pane) {
     countsEl
   );
 
-  // The mirror stays empty: pickers/mirror.js owns highlighting and adds
-  // `.is-mirrored` to the wrap when its self-check passes. The CSS only makes
-  // the textarea transparent under that class, so leaving it inert is safe.
+  // Only activate textarea transparency after the mirror passes its layout check.
   const mirror = h("div", { className: "pl-ta-mirror", "aria-hidden": "true" });
   const ta = h("textarea", {
     className: "pl-ta",
@@ -120,8 +100,6 @@ export function buildView(pane) {
     h("span", null, "threshold 90%"),
     h("span", { "aria-hidden": "true" }, CARET)
   );
-  // The panel below shows the closest match only; this is the way to the rest.
-  // Hidden while there is nothing to revise, so a clean check stays quiet.
   const reviseBtn = h(
     "button",
     {
@@ -157,11 +135,7 @@ export function buildView(pane) {
     h("div", { className: "pl-stat" }, h("div", { className: "pl-stat-k" }, "RATING"), h("div", { className: "pl-stat-v" }, starsEl))
   );
 
-  // No `Load into node` button: the box and the node's `text` widget are two
-  // views of one value (modal/binding.js), so every keystroke is already there.
-  // Saving CREATES by default — see inspector/save.js. Overwriting the record
-  // in the editor is the secondary, opt-in action, so the primary button is
-  // the one that can never cost you an existing prompt.
+  // The bound node already receives edits. Save creates; Update overwrites.
   const saveNewBtn = h("button", { className: "pl-btn pl-btn-primary", type: "button", title: "Save as new (Ctrl+S)", onclick: () => pane.save(true) }, "Save as new");
   const saveBtn = h("button", { className: "pl-btn", type: "button", title: "Overwrite the selected prompt", onclick: () => pane.save(false) }, "Update");
   const delBtn = h("button", { className: "pl-btn pl-btn-danger", type: "button", onclick: () => pane.remove() }, "Delete");
@@ -196,10 +170,6 @@ export function buildView(pane) {
     saveBtn, saveNewBtn, delBtn,
   };
 
-  /* ------------------------------------------------------------------ *
-   * Capability gating — a missing backend feature disables its control  *
-   * with an explanation instead of throwing when it is clicked.         *
-   * ------------------------------------------------------------------ */
   function applyCaps() {
     const pairs = [
       [diffLink, "__diff"],

@@ -1,28 +1,7 @@
-/* ==========================================================================
-   Prompt Librarian — the node's face on the canvas
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   TIER CONTRACT
-   --------------------------------------------------------------------------
-   Tier 1 (shipped, proven): two `node.addWidget("button", …)` widgets.
-     [0] head    `ballet_drift_v3  ★★★★☆  used 41×`
-     [1] preview one truncated line of the body
-   Both of them open the modal, as does the entry's `Open Librarian` button.
-   A button whose label renders oddly is still a working button, so the node
-   can never become a dead end.
-
-   Tier 2 (the nicer one): a `.pl-node-card` DOM widget with clickable stars
-   and a near-dupe badge. Strictly an upgrade — it is attempted only when
-   `addDOMWidget` exists, is wrapped in try/catch, and is verified after one
-   rAF by checking `el.isConnected` (some frontends accept the call and
-   silently drop the element). Any failure tears down and falls back to
-   Tier 1. `Open Librarian` exists in BOTH tiers; it is added by the entry.
-
-   `open` is passed IN rather than imported: the entry file is the only module
-   allowed import-time side effects, and importing it from here would re-run
-   `registerExtension` under a second cache-busted URL.
-   ========================================================================== */
+/* Verify DOM widget attachment after a frame; some frontends silently drop it.
+ * Fall back to button widgets on failure. The entry always adds Open Librarian.
+ * The open callback is injected to avoid re-importing the extension entry.
+ */
 
 import { warnOnce } from "../shared/singleton.js";
 import { firstLine, stars, truncate } from "../shared/text.js";
@@ -45,16 +24,8 @@ export function buildFace(node, open) {
   return node.__plFace;
 }
 
-/**
- * TIER 2 — the richer `.pl-node-card` DOM face.
- *
- * `addDOMWidget` is NOT a verified API in this installation (nothing in the
- * old node uses it), so this is defence in three layers:
- *   1. `typeof` check      — the method may simply not exist;
- *   2. `try/catch`         — it may exist with a different signature and throw;
- *   3. post-rAF `isConnected` — it may accept the call and silently never
- *      mount the element, which no exception would reveal.
- * Any failure tears the widget back out and installs the proven Tier-1 face.
+/** A successful addDOMWidget call may not mount anything. Verify attachment
+ * after a frame and fall back to buttons if it fails.
  *
  * @returns {boolean} true if a DOM face was installed (pending verification)
  */
@@ -95,10 +66,6 @@ function buildDomFace(node, open) {
   return true;
 }
 
-/**
- * The `.pl-node-card` element. Every class here is defined in librarian.css,
- * which the entry's `setup()` has already injected.
- */
 function buildNodeCard(node, open) {
   const mk = (tag, cls) => {
     const n = document.createElement(tag);
@@ -106,8 +73,6 @@ function buildNodeCard(node, open) {
     return n;
   };
 
-  // Structure and class names come straight from the `.pl-node-card` block in
-  // librarian.css — head (label / stars / used), clamped body, foot (dupe badge).
   const el = mk("div", "pl-node-card");
   const head = mk("div", "pl-nc-head");
   const label = mk("div", "pl-nc-name");
@@ -132,7 +97,6 @@ function buildNodeCard(node, open) {
   // A pointerdown inside the card must not start a canvas node-drag, or the
   // node runs away from the cursor the moment you click a star.
   el.addEventListener("pointerdown", (e) => e.stopPropagation());
-  // Clicking the card body (not a star) is a second way into the modal.
   el.addEventListener("click", (e) => {
     if (e.target && e.target.closest && e.target.closest(".pl-stars")) return;
     open(node);
@@ -142,7 +106,6 @@ function buildNodeCard(node, open) {
   return el;
 }
 
-/** Repaint the five clickable stars, wired to an optimistic rate call. */
 function paintStars(node, starRow, rating) {
   const current = Number(rating) || 0;
   while (starRow.firstChild) starRow.removeChild(starRow.firstChild);
@@ -161,10 +124,7 @@ function paintStars(node, starRow, rating) {
   }
 }
 
-/**
- * Optimistic rating straight from the node card: paint first, then write.
- * On failure we repaint from the last known meta rather than leaving a lie
- * on the canvas.
+/** Optimistically repaint ratings; restore known metadata if the write fails.
  */
 async function rateFromNode(node, rating) {
   const idW = findWidget(node, "prompt_id");
@@ -184,7 +144,6 @@ async function rateFromNode(node, rating) {
   }
 }
 
-/** TIER 1 — the guaranteed face. Idempotent. */
 function buildButtonFace(node, open) {
   if (node.__plFace) return node.__plFace;
   const onOpen = () => open(node);
@@ -201,9 +160,7 @@ function buildButtonFace(node, open) {
   return face;
 }
 
-/**
- * Repaint the face from whatever we know. Handles BOTH tiers: the DOM card
- * when one mounted, the button labels otherwise. Callers never care which.
+/** Update either face tier from the available metadata.
  *
  * @param {object} node
  * @param {{label?:string, rating?:number, used?:number, body?:string,
@@ -217,10 +174,7 @@ export function paintFace(node, meta) {
   const body = (meta && meta.body) || (textW ? String(textW.value || "") : "");
   const linked = idW && String(idW.value || "").trim();
 
-  // The library's derived handle when there is a record to derive one from.
-  // "(unsaved)" = no library link at all. "(unsynced)" = the workflow carries
-  // an id but this library has no record for it — a workflow from another
-  // machine. Both still run: `text` is the source of truth.
+  // An unknown linked ID is unsynced, not unsaved; either still runs from text.
   const label = (meta && meta.label) || (linked ? "(unsynced)" : "(unsaved)");
   const rating = meta ? meta.rating : 0;
   const uses = meta && meta.used ? meta.used : 0;

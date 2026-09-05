@@ -1,14 +1,6 @@
-/* ==========================================================================
-   Prompt Librarian — list selection
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   TWO SELECTION MODES:
-     "ids"    an explicit Set of record ids
-     "filter" the abstract "everything the current query matches" — the QUERY
-              is stored, not 1 284 ids, which is the only shape that scales and
-              exactly what the bulk endpoints accept as `{query}`.
-   ========================================================================== */
+/* Filter selection stores the query, not all matching IDs; bulk endpoints
+ * resolve it server-side so selection can span unloaded pages.
+ */
 
 import { fmtInt } from "../shared/format.js";
 import { labelOf } from "../shared/text.js";
@@ -26,7 +18,6 @@ export function createSelection({ ctx, source, onChange }) {
     const state = st();
     const sel = state.selection;
     if (state.selectionMode === "filter") {
-      // Leaving "all filtered" turns the abstract selection back into ids.
       ctx.setState({ selectionMode: "ids" }, { silent: true });
       sel.clear();
     }
@@ -42,12 +33,7 @@ export function createSelection({ ctx, source, onChange }) {
     toggleIds([id], on);
   }
 
-  /**
-   * Toggle whatever the ROW at `index` stands for.
-   *
-   * A collapsed duplicate cluster stands for all of its members, so ticking it
-   * ticks the cluster. Prefer this over `toggleId` anywhere a list index is
-   * what the user actually clicked.
+  /** A collapsed cluster selects all members; an expanded member selects only itself.
    */
   function toggleRow(index, on) {
     const ids = typeof source.idsAt === "function"
@@ -96,7 +82,6 @@ export function createSelection({ ctx, source, onChange }) {
     };
   }
 
-  /** The `{ids}` or `{query}` selector the bulk endpoints take. */
   function current() {
     const state = st();
     if (state.selectionMode === "filter") return { query: queryForServer() };
@@ -106,13 +91,12 @@ export function createSelection({ ctx, source, onChange }) {
   function count() {
     const state = st();
     if (state.selectionMode !== "filter") return state.selection.size;
-    // RECORDS, not rows. "Everything filtered" re-runs the query ungrouped on
-    // the server, so a folded list must not promise to touch fewer prompts
-    // than the bulk op is about to.
+    // Bulk queries resolve records, so report recordTotal rather than folded rows.
     return source.recordTotal == null ? source.total : source.recordTotal;
   }
 
-  /** First five labels, for the confirm text. Loaded pages only, by design. */
+  /** Confirmation labels come from loaded pages only.
+   */
   function labels(limit = 5) {
     const state = st();
     const out = [];

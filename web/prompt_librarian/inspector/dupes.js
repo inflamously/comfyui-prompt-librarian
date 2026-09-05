@@ -1,17 +1,9 @@
-/* ==========================================================================
-   Prompt Librarian — the duplicate-check panel
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-
-   The live check that runs while you type. The SAVE-TIME gate is not here —
-   it lives in inspector/save.js and is re-run from scratch on every save,
-   whatever this panel happens to be showing.
-   ========================================================================== */
+/* This panel is advisory. save.js repeats the duplicate check before saving.
+ */
 
 import { LDQUO, MDASH, RDQUO } from "./constants.js";
 import { ensureOk, matchesOf, pct } from "./records.js";
 
-/** Threshold options for the `threshold 90% ▾` popover. */
 const THRESHOLDS = [0.8, 0.85, 0.9, 0.95, 0.99];
 
 /** Live dupe check is skipped below this many characters (noise). */
@@ -31,21 +23,13 @@ export function createDupes(pane) {
   const h = D.h;
   const els = pane.els;
 
-  /** Current threshold as a 0..1 fraction, tolerating a 0..100 state value. */
   function threshold() {
     const t = Number((pane.S().dupes || {}).threshold);
     if (!Number.isFinite(t) || t <= 0) return 0.9;
     return t > 1 ? t / 100 : t;
   }
 
-  /**
-   * Two visual states:
-   *   warn  — matches present: the CSS default (amber bg/border/heading).
-   *   clean — nothing found: same box, muted inline colours so a clean result
-   *           is quiet rather than alarming. Inline styles (not a new class)
-   *           because librarian.css has no `clean` variant and this file is
-   *           not allowed to touch it; every value is an existing custom
-   *           property, so the theme still owns the colours.
+  /** Use warning colors for unmuted matches; clean/all-muted results stay quiet.
    */
   function renderDupes() {
     const st = pane.S().dupes || {};
@@ -81,8 +65,7 @@ export function createDupes(pane) {
     }
 
     if (!list.length) {
-      // Quiet, collapsed-ish: the box stays (so the threshold control stays
-      // reachable) but drops the warning colours.
+      // Keep the threshold reachable even with no matches.
       els.dupesPanel.hidden = !pane.buf.body || D.charCount(pane.buf.body) < DUPE_MIN_CHARS;
       setPanelTone(false);
       els.dupesTitle.textContent = "Duplicate check " + MDASH + " no near matches";
@@ -91,25 +74,16 @@ export function createDupes(pane) {
 
     els.dupesPanel.hidden = false;
     const muted = list.filter((m) => m.ignored).length;
-    // Amber only for matches that would still stop a save. An all-muted panel
-    // is information, not a warning — the user already decided.
+    // All-muted results are informational; the user has already chosen keep-both.
     setPanelTone(muted < list.length);
     els.dupesTitle.textContent =
       "Duplicate check " + MDASH + " " + D.fmtInt(list.length) + " near match" +
       (list.length === 1 ? "" : "es") +
       (muted ? " (" + D.fmtInt(muted) + " muted)" : "");
 
-    // The heading IS the panel. No rows: a list of matches inside the editor
-    // is a list of decisions the user did not ask for yet, and every one of
-    // them needs the context (what is kept, what is thrown away) that only the
-    // `revise` dialog has room for. The body stays empty on purpose.
+    // List matches in the revise dialog, where each action can explain its outcome.
   }
 
-  /**
-   * `revise` — the only place matches are listed, because it is the only place
-   * that can say what picking one would DO. Each row names what survives and
-   * what does not, so "merge" is never a guess.
-   */
   function openRevise() {
     const list = matchesOf((pane.S().dupes || {}).matches || []);
     if (!list.length) return null;
@@ -166,10 +140,7 @@ export function createDupes(pane) {
     }
   }
 
-  /**
-   * Take back a "keep both". The pair starts blocking saves again, which is
-   * the only thing muting ever changed — so the panel below does not move and
-   * only the save gate behaves differently next time.
+  /** Unmute the pair so it is advisory again and eligible for exact-copy checks.
    */
   async function unmute(m) {
     const mine = pane.current && pane.current.id ? String(pane.current.id) : null;
@@ -185,21 +156,7 @@ export function createDupes(pane) {
     runDupes(pane.dupePaused);
   }
 
-  /**
-   * One match, as an OUTCOME rather than an entry.
-   *
-   * A row that says "97 % — differs: two words" tells the user what the
-   * backend noticed; it does not tell them what happens if they press a
-   * button, which is the only thing they are actually deciding. So each row
-   * spells out what survives and what is thrown away, in the two shapes this
-   * pane can produce them:
-   *
-   *   merge     the MATCH survives (id, usage count, version history) and
-   *             takes this text as its body; the record being edited is
-   *             absorbed and removed — or, if nothing has been saved yet,
-   *             there is nothing to remove.
-   *   overwrite the match keeps everything and only its TEXT is replaced;
-   *             the old text is recoverable from its own version history.
+  /** Describe what each destructive action keeps before offering it.
    */
   function reviseRow(m, top) {
     const mine = pane.current && pane.current.id ? String(pane.current.id) : null;
@@ -230,9 +187,6 @@ export function createDupes(pane) {
         "overwrite"
       )
     );
-    // Muting used to be a one-way trapdoor: nothing in the panel said a pair
-    // was muted and nothing could take it back, so a library quietly stopped
-    // flagging duplicates its owner could still see.
     if (m.ignored) {
       acts.appendChild(
         h(
@@ -305,9 +259,7 @@ export function createDupes(pane) {
             id: pane.current && pane.current.id ? pane.current.id : null,
             exclude_id: pane.current && pane.current.id ? pane.current.id : null,
             threshold: threshold(),
-            // The panel renders one row, but `revise` lists everything this
-            // call returned — so the fetch has to cover the dialog, not the
-            // row. 10 matches the save gate's own limit.
+            // Fetch enough matches for revise, not just the closest-match summary.
             limit: 10,
             summaries: true,
           },
@@ -351,10 +303,7 @@ export function createDupes(pane) {
         renderDupes();
         pane.scheduleDupes.cancel();
         runDupes(pane.dupePaused);
-        // The knob used to be session-local AND panel-local: the list's
-        // duplicate counts kept using the stored value, and reopening the
-        // modal reverted to it — which is what "the threshold does nothing"
-        // looked like from the outside. Persist it, then re-ask the list.
+        // Persist the threshold and refresh the list so both use the same value.
         try {
           if (ctx.API && typeof ctx.API.settings === "function") {
             Promise.resolve()

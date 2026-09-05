@@ -13,7 +13,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Prompt Librarian — dev harness</title>
     <link rel="stylesheet" href="/__dev/harness/harness.css" />
-    <!-- __DEV_CONFIG__ : templated by scripts/devserver.py -->
+    <!-- __DEV_CONFIG__ : templated by scripts/devkit/server.py -->
   </head>
   <body>
     <header id="dev-bar">
@@ -41,7 +41,7 @@
       </label>
 
       <label>graph
-        <select id="dev-graph" title="which graph probe modal/target.js will find">
+        <select id="dev-graph" title="which graph probe modal/target/nodes.js will find">
           <option value="all">all probes</option>
           <option value="_nodes">_nodes only</option>
           <option value="nodes">nodes only</option>
@@ -62,6 +62,7 @@
       <span class="dev-sep"></span>
 
       <button id="dev-add">+ node</button>
+      <button id="dev-image" title="a Preview Image node; its menu offers &quot;Use as picture for word…&quot;">+ image node</button>
       <button id="dev-reset" title="wipe and reseed the scratch library">reset data</button>
       <button id="dev-hostile" title="simulate ComfyUI's own document-level hotkeys">hostile keys: off</button>
       <button id="dev-double" title="re-import the entry under a second ?v= — the singleton hazard">double-load</button>
@@ -79,6 +80,13 @@
       <section class="dev-panel">
         <h2>network <button class="dev-clear" data-clear="dev-net">clear</button></h2>
         <ol id="dev-net"></ol>
+      </section>
+      <section class="dev-panel">
+        <h2>
+          <span>word pictures <span id="dev-pics-count"></span></span>
+          <input id="dev-pics-filter" type="search" placeholder="filter" aria-label="filter word pictures" />
+        </h2>
+        <div id="dev-pics" title="what the autocomplete preview can show; generate more from a Librarian node's menu"></div>
       </section>
     </footer>
 

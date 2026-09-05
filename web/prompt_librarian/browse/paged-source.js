@@ -1,12 +1,3 @@
-/* ==========================================================================
-   Prompt Librarian — PagedSource
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-
-   200 records per page; holes render as skeleton rows and repaint when their
-   page lands.
-   ========================================================================== */
-
 import { NS } from "../shared/ns.js";
 
 export const PAGE_SIZE = 200;
@@ -22,9 +13,7 @@ export class PagedSource {
     this.pages = new Map(); // pageIndex -> item[]
     this.inflight = new Map(); // pageIndex -> Promise
     this.total = 0;
-    // Rows and records part company once duplicate clusters are folded: one
-    // row can stand for four prompts. `total` is what this pages over;
-    // `recordTotal` is what a bulk op over the same query would touch.
+    // total counts folded rows; recordTotal counts records affected by bulk queries.
     this.recordTotal = 0;
     this.known = false; // has any page landed?
     this.epoch = 0;
@@ -48,9 +37,7 @@ export class PagedSource {
     return Math.floor(i / this.pageSize);
   }
 
-  /**
-   * The record at `i`, or `null` when its page is not loaded yet (the caller
-   * renders a skeleton row and the page load repaints it).
+  /** Return null for unloaded pages; callers display skeletons until repaint.
    */
   get(i) {
     if (i < 0) return null;
@@ -73,8 +60,7 @@ export class PagedSource {
     const promise = Promise.resolve()
       .then(() => this.fetchPage(p * this.pageSize, this.pageSize))
       .then((res) => {
-        // Epoch guard: a reset() happened while this was in flight, so this
-        // page belongs to a query nobody is looking at any more.
+        // Discard responses from queries invalidated by reset().
         if (epoch !== this.epoch) return;
         const hits = (res && Array.isArray(res.hits) && res.hits) || [];
         this.pages.set(p, hits);
@@ -97,11 +83,7 @@ export class PagedSource {
     return promise;
   }
 
-  /**
-   * Guarantee every index in [a, b] is resident. This is what makes
-   * shift-click ranges work across the virtualisation boundary — the rows in
-   * the middle of the range have never been rendered, so their ids are not in
-   * the DOM and must be fetched before the range can be turned into ids.
+  /** Load the whole range before shift-selection; off-screen IDs are not in the DOM.
    */
   async ensureRange(a, b) {
     const lo = Math.max(0, Math.min(a, b));
@@ -113,7 +95,6 @@ export class PagedSource {
     if (wanted.length) await Promise.all(wanted);
   }
 
-  /** Ids for an index range, in order. Loads what is missing. */
   async idsInRange(a, b) {
     await this.ensureRange(a, b);
     const lo = Math.max(0, Math.min(a, b));

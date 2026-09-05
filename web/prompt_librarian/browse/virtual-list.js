@@ -1,12 +1,3 @@
-/* ==========================================================================
-   Prompt Librarian — VirtualList
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-
-   Also used by compare/versions.js for a long snapshot list, which is why it
-   is its own file rather than a detail of the rail.
-   ========================================================================== */
-
 import { NS } from "../shared/ns.js";
 import { clear } from "../shared/dom.js";
 import { rafThrottle } from "../shared/timing.js";
@@ -45,9 +36,7 @@ export class VirtualList {
     this.pool = [];
     this.destroyed = false;
 
-    // Row height comes from CSS (`--pl-row-h`), never from a constant here:
-    // the spacer height, the translateY and the stylesheet must agree or the
-    // list drifts a little further out of place with every screen of scroll.
+    // Read row height from CSS so spacer and row transforms cannot drift.
     this.rowH = readRowHeight(this.viewport) || ROW_H_FALLBACK;
 
     this.onScroll = rafThrottle(() => this.render());
@@ -63,7 +52,6 @@ export class VirtualList {
     this.render();
   }
 
-  /** Re-read the row height (call after a theme/zoom change). */
   measure() {
     const h2 = readRowHeight(this.viewport);
     if (h2 && h2 !== this.rowH) {
@@ -96,7 +84,6 @@ export class VirtualList {
     this.end = end;
     this.win.style.transform = `translateY(${start * rowH}px)`;
 
-    // Recycle anything that scrolled out of the window.
     for (const [index, el] of Array.from(this.live)) {
       if (index >= start && index < end) continue;
       this.live.delete(index);
@@ -111,9 +98,7 @@ export class VirtualList {
         this.live.set(i, el);
         this.win.appendChild(el);
       }
-      // Order inside the window does not matter: every row is absolutely
-      // placed by its own translateY, so appending recycled nodes at the end
-      // is correct and avoids an insertBefore per row.
+      // Absolute positioning lets recycled rows be appended without DOM reordering.
       el.style.transform = `translateY(${(i - start) * rowH}px)`;
       const item = this.source ? this.source.get(i) : null;
       try {
@@ -124,7 +109,6 @@ export class VirtualList {
     }
   }
 
-  /** Repaint the currently mounted rows without changing the window. */
   repaint() {
     for (const [i, el] of this.live) {
       const item = this.source ? this.source.peek(i) : null;

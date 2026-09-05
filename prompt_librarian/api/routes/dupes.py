@@ -1,15 +1,10 @@
-"""Near-duplicate detection in all three shapes, plus "keep both".
+"""Offload/coalesce library-wide scans; cached one-body checks run inline."""
 
-* ``/dupes/all`` — the library-wide all-pairs scan. Expensive (0.5-2 s cold),
-  offloaded, and coalesced (see :func:`_dupes_all`).
-* ``/dupes`` — one body against the library. The hot path, fired on every
-  edit, and cheap enough to run inline.
-* ``/compare`` — two bodies, word-level diff.
-* ``/dupes/ignore`` — the decision that stops the other three from nagging.
-"""
-
-from ... import dedupe
-from ...store import STORE, NotFoundError
+from ... import app
+from ...features import dupes as dupes_feature
+from ...features.library.ignored import ignore_pair, unignore_pair
+from ...features.prompts.get import get_prompt, get_prompts
+from ...shared.errors import NotFoundError
 from .. import schemas
 from ..queries import _all_pairs
 from ..utils import (
@@ -19,6 +14,7 @@ from ..utils import (
     _int,
     _json,
     _labeller,
+    _lib,
     _offload,
     _query,
     _rev,
@@ -60,8 +56,8 @@ async def dupes(request):
     pid = _str(data.get("id")) or None
     # Required, or saving an existing prompt always reports itself at 100%.
     exclude_id = _str(data.get("exclude_id")) or None
-    matches = dedupe.find_similar(
-        STORE,
+    matches = dupes_feature.find_similar(
+        app.current().dupe_source,
         text=(_str(text) if text is not None else None),
         pid=pid,
         exclude_id=exclude_id,
@@ -71,10 +67,8 @@ async def dupes(request):
         ignored=_ignored(),
         rev=_rev(),
     )
-    # `find_similar` returns its *cached* list, so the label goes onto a copy:
-    # mutating a match here would poison every later cache hit with a label
-    # computed against an older corpus.
-    records = STORE.get_many([m["id"] for m in matches])
+    # Label a copy: mutating cached matches would retain labels from an old corpus.
+    records = get_prompts(_lib(), [m["id"] for m in matches])
     index = _labeller(records.values())
     return _json({
         "matches": [{**m, "label": index.label_of(m["id"])} for m in matches],
@@ -88,7 +82,7 @@ async def dupes(request):
 async def compare(request):
     """Word-level diff of two bodies, each given as an id or as raw text."""
     data = await _body(request)
-    return _json(dedupe.compare(_side(data, "a"), _side(data, "b")))
+    return _json(dupes_feature.compare(_side(data, "a"), _side(data, "b")))
 
 
 def _side(data, key):
@@ -96,7 +90,7 @@ def _side(data, key):
     if text is not None:
         return _str(text)
     pid = _str(data.get(key + "_id") or data.get(key))
-    rec = STORE.get(pid)
+    rec = get_prompt(_lib(), pid)
     if rec is None:
         raise NotFoundError(f"no prompt with id {pid!r}")
     return rec.get("body", "")
@@ -111,7 +105,7 @@ async def dupes_ignore(request):
     first = _str(data.get("a") or data.get("id"))
     second = _str(data.get("b") or data.get("other"))
     if _bool(data.get("unignore")):
-        changed = await _offload(STORE.unignore_pair, first, second)
+        changed = await _offload(unignore_pair, _lib(), first, second)
         return _json({"changed": bool(changed), "ignored": False})
-    changed = await _offload(STORE.ignore_pair, first, second)
+    changed = await _offload(ignore_pair, _lib(), first, second)
     return _json({"changed": bool(changed), "ignored": True})

@@ -8,7 +8,15 @@
    ========================================================================== */
 
 import { app } from "./fake-app.js";
-import { loadPack, setupExtensions, createNode, removeNode, watchForReload } from "./boot.js";
+import {
+  createImageNode,
+  createNode,
+  loadPack,
+  menuOptions,
+  removeNode,
+  setupExtensions,
+  watchForReload,
+} from "./boot.js";
 
 const $ = (id) => document.getElementById(id);
 const DEV = window.__DEV__;
@@ -72,16 +80,58 @@ const nodeOpts = () => ({
   lateWidgets: Number($("dev-late").value),
 });
 
-$("dev-add").onclick = () => {
-  const node = createNode(nodeOpts());
-  // A delete button per node, because hydrate.js chains onRemoved and a binder
+/** The node's context menu, as a button: what getExtraMenuOptions adds. */
+function addMenu(node) {
+  const button = document.createElement("button");
+  button.className = "dev-node-del";
+  button.textContent = "menu ▾";
+  button.title = "LiteGraph's right-click menu items from getExtraMenuOptions";
+  const list = document.createElement("div");
+  list.className = "dev-node-menu";
+  list.hidden = true;
+  button.onclick = () => {
+    list.textContent = "";
+    const options = menuOptions(node);
+    if (!options.length) list.textContent = "(no extra menu items)";
+    for (const option of options) {
+      const item = document.createElement("button");
+      item.textContent = option.content;
+      item.onclick = () => {
+        list.hidden = true;
+        option.callback?.(null, null, null, null, node);
+      };
+      list.appendChild(item);
+    }
+    list.hidden = !list.hidden;
+  };
+  node.__el.append(button, list);
+}
+
+/** Menu and delete buttons for a node on the fake canvas. */
+function chrome(node) {
+  addMenu(node);
+  // A delete button per node, because setup.js chains onRemoved and a watcher
   // leak is invisible unless something actually calls it.
   const del = document.createElement("button");
   del.className = "dev-node-del";
   del.textContent = "delete node";
   del.onclick = () => removeNode(node);
   node.__el.appendChild(del);
+  return node;
+}
+
+$("dev-add").onclick = () => {
+  chrome(createNode(nodeOpts()));
   refreshStatus();
+};
+
+let samples = 0;
+$("dev-image").onclick = async () => {
+  try {
+    chrome(await createImageNode(`sample ${++samples}`));
+  } catch (err) {
+    row("dev-log", String(err), "err");
+  }
 };
 
 $("dev-graph").onchange = () => {
@@ -93,6 +143,7 @@ $("dev-reset").onclick = async () => {
   await fetch("/__dev/reset", { method: "POST" });
   row("dev-log", "scratch library reset + reseeded", "ok");
   refreshStatus();
+  refreshPictures();
 };
 
 let hostile = false;
@@ -117,10 +168,66 @@ $("dev-double").onclick = async () => {
   row("dev-log", "re-imported under a second ?v= — open the panel and look for duplicates", "warn");
 };
 
+/* -- word pictures -------------------------------------------------------- */
+
+/** Every stored picture, straight from the real routes. */
+async function refreshPictures() {
+  const api = DEV.apiPrefix + "/prompt_librarian";
+  let images, total;
+  try {
+    images = (await (await fetch(`${api}/word_images`, { cache: "no-store" })).json()).images || {};
+    total = (await (await fetch(`${api}/word_images/candidates?limit=1`, { cache: "no-store" })).json()).total;
+  } catch {
+    $("dev-pics-count").textContent = "(unavailable)";
+    return;
+  }
+  const grid = $("dev-pics");
+  grid.textContent = "";
+  const words = Object.keys(images).sort();
+  for (const word of words) {
+    const { version, source } = images[word];
+    const tile = document.createElement("figure");
+    tile.dataset.word = word;
+    tile.title = `${word} (${source || "?"})`;
+    const img = document.createElement("img");
+    img.loading = "lazy";
+    img.src = `${api}/word_image?${new URLSearchParams({ word, v: version })}`;
+    const caption = document.createElement("figcaption");
+    caption.textContent = word;
+    if (source === "manual") tile.classList.add("manual");
+    tile.append(img, caption);
+    grid.appendChild(tile);
+  }
+  $("dev-pics-count").textContent = `· ${words.length} stored · ${total ?? "?"} words without`;
+  filterPictures();
+}
+
+function filterPictures() {
+  const needle = $("dev-pics-filter").value.trim().toLowerCase();
+  for (const tile of $("dev-pics").children) tile.hidden = !!needle && !tile.dataset.word.includes(needle);
+}
+$("dev-pics-filter").oninput = filterPictures;
+
+// Follow writes made by the pack itself, debounced across a generator run.
+let picturesTimer = null;
+window.addEventListener("dev:net", (e) => {
+  if (!/\/word_image\/(attach|remove|order)$/.test(e.detail.url)) return;
+  clearTimeout(picturesTimer);
+  picturesTimer = setTimeout(refreshPictures, 400);
+});
+
 /* -- go ------------------------------------------------------------------- */
+
+/** Open the librarian the way a user does: click the node's own button. */
+function openPanel(node) {
+  const button = [...node.__el.querySelectorAll("button")].find((b) => /open librarian/i.test(b.textContent));
+  if (button) button.click();
+  else row("dev-log", `node #${node.id} has no Open Librarian button to click`, "warn");
+}
 
 const res = await loadPack();
 await setupExtensions();
-if (!res.failed.length) createNode(nodeOpts());
+if (!res.failed.length) openPanel(chrome(createNode(nodeOpts())));
 await refreshStatus();
+await refreshPictures();
 if (DEV.reload) watchForReload();

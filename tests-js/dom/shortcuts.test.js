@@ -2,7 +2,7 @@
    Ctrl/Cmd+S
 
    While the Librarian is open, the window-capture guard consumes Save Page
-   and shell.js saves the prompt. On close, the retained shell must stop
+   and input/shortcuts.js saves the prompt. On close, the retained shell must stop
    matching ComfyUI's modal gate so its own Ctrl+S command works again.
    ========================================================================== */
 

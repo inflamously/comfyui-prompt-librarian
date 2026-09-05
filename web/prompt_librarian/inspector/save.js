@@ -1,84 +1,21 @@
-/* ==========================================================================
-   THE SAVE FLOW — the feature this pane exists for
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-       NEVER A SILENT OVERWRITE
-
-   SAVING CREATES BY DEFAULT. Ctrl+S, the primary button and every save-on-
-   leave path pass `asNew` — they mint a new record. Overwriting is plan B:
-   the inspector's secondary `Update` button for the record in the editor, and
-   the `merge` / `overwrite` rows of the duplicate panel's `revise` dialog
-   (inspector/dupes.js) for anything else.
-
-   NEAR DUPLICATES NO LONGER BLOCK A SAVE. There used to be a "Possible
-   duplicate — nothing saved yet" dialog in the middle of this path; it is
-   gone. Creating is now the default, so a near match costs an extra record
-   rather than someone else's text, and the standing duplicate panel below the
-   editor — amber, with `revise` on it — is where that gets resolved, on the
-   user's own clock. What survives here is the EXACT-copy shortcut, which is
-   not a decision anyone would want to be asked about.
-
-   The save path:
-     1. not dirty, with a record loaded       -> stop, say so
-     2. staleness check (someone else edited) -> conflict UI, stop
-     3. exact-copy check: a 1.00 match while creating means there is nothing
-        to write, so the stored record is adopted and the save ends "clean"
-     4. commit (create | update+expect_updated); 409 re-enters step 2
-     5. adopt the server's record as both `current` and `baseline`
-
-   Step 2 builds its dialog INLINE via the pane's own layer host rather than
-   through compare/: refusing a silent overwrite is the safety property left
-   on this path, and it must still work on an install where compare/ failed
-   to load.
-
-   SHAPE. `SaveFlow` is the class that owns the effects — one instance per
-   pane, holding the pane and nothing else. Every DECISION it makes is a pure
-   function exported above it (`preflight`, `classifyMatches`, `exactAction`,
-   `expectUpdatedFor`, `sameContent`, `nearMessage`): same input, same output,
-   no `pane`, no API, no DOM. Those are the parts worth reasoning about and
-   testing directly; the methods around them are plumbing that talks to the
-   backend and the screen.
-
-   `createSave(pane)` stays the entry point and still hangs the methods off
-   `pane` — index.js, dupes.js, view.js and modal/close.js call them there.
-
-   SAVE STATUS — what `save()` returns. Ctrl+S ignores it; the close path in
-   modal/close.js needs it, because "I put a dialog on screen" and "I wrote the
-   record" are the same `undefined` otherwise:
-
-     "saved"    committed; the buffer is now clean
-     "clean"    nothing to write — already matches what is stored
-     "blocked"  the conflict dialog is on screen, or the body is empty. The
-                modal must stay open.
-     "failed"   the write or its pre-flight errored; a toast says why
-     "busy"     a save is already in flight, or the pane is disposed
-
-   Only "saved" and "clean" mean it is safe to close. The vocabulary is
-   duplicated as a comment in modal/ctx.js and compared there as a plain
-   string — modal/ must not import from inspector/, which is lazily loaded and
-   optional.
-   ========================================================================== */
+/* Normal saves create records; Update explicitly overwrites with expect_updated.
+ * Near matches do not block creation. Exact copies adopt the stored record.
+ * Conflict dialogs are local so they work even if compare/ fails to load.
+ *
+ * Only "saved" and "clean" permit closing. "blocked" (conflict/empty body),
+ * "failed", and "busy" keep the modal open. modal/ compares these strings
+ * without importing this optional feature.
+ */
 
 import { LDQUO, MDASH, MIDDOT, RDQUO } from "./constants.js";
 import { bufferFrom, ensureOk, errMsg, isConflict, matchesOf, sig, unwrapRecord } from "./records.js";
 
-/**
- * A similarity at or above this is "the same text", not "similar text": the
- * backend scores on normalized bodies, so 1.00 means the two normalize to the
- * same string. Just under 1 to stay clear of float noise.
+/** Treat normalized similarity near 1 as an exact-copy candidate; allow float noise.
  */
 export const EXACT = 0.9999;
 
-/* ==========================================================================
-   PURE DECISIONS — no pane, no API, no DOM. Everything below `SaveFlow` uses
-   these; nothing here reaches back out.
-   ========================================================================== */
 
-/**
- * Step 1. What, if anything, stops the save before any request is made.
- *
- * @param {{disposed?:boolean, saving?:boolean, dirty?:boolean,
+/** @param {{disposed?:boolean, saving?:boolean, dirty?:boolean,
  *          hasRecord?:boolean, body?:string}} s
  * @returns {null|{status:"busy"|"clean"|"blocked", toast?:string,
  *                 tone?:string, focusBody?:boolean}}
@@ -86,33 +23,20 @@ export const EXACT = 0.9999;
  */
 export function preflight(s) {
   if (s.disposed || s.saving) return { status: "busy" };
-  // Nothing typed since the record was loaded: there is nothing to write,
-  // whichever mode we are in. This matters more now that "save as new" is the
-  // default — without it, Ctrl+S on an untouched record would go and ask the
-  // backend whether it is a duplicate of itself, and a dupe-check outage
-  // (which saves anyway, by design) would fork the record for no reason.
+  // Skip unchanged records before dupe requests; an outage must not create a copy.
   if (!s.dirty && s.hasRecord) return { status: "clean", toast: "no changes" };
-  // The body is the only thing a record needs. There is nothing else to ask
-  // the user for before saving — the handle is derived from this text.
   if (!String(s.body || "").trim()) {
     return { status: "blocked", toast: "prompt text is empty", tone: "error", focusBody: true };
   }
   return null;
 }
 
-/** True when this save writes over the record in the editor rather than creating. */
 export function isUpdateSave(asNew, current) {
   return !asNew && !!(current && current.id);
 }
 
-/**
- * Step 3, part one. Reduce the dupe-check matches to the two things the flow
- * acts on: how many near matches to mention, and the exact copy (if any).
- *
- * `m.ignored` is the "keep both" decision taken elsewhere (compare/), and it
- * still applies: a muted pair must not resurface as an adoption. The record in
- * the editor is only "not a match" when we are about to update it — creating
- * from an edited copy of it, it is the most relevant match there is.
+/** Muted matches must not be adopted. Exclude the current record only on update;
+ * when creating from an edit, it remains a relevant match.
  *
  * @returns {{near:number, exact:object|null}}
  */
@@ -126,15 +50,8 @@ export function classifyMatches(matches, { threshold, isUpdate, curId }) {
   };
 }
 
-/**
- * Step 3, part two. What an exact match means for this save.
- *
- * The body is what the dupe check scores, so an "exact" match says nothing
- * about the TAGS. Retagging a record without touching its text lands here —
- * the record in the editor is its own exact match, since `exclude_id` is null
- * while creating. Adopting it would put the stored tags back over the ones
- * just typed and call it "already saved". So: same record, tags moved ->
- * update it in place rather than mint an identical-bodied twin.
+/** Similarity scores only the body. An exact match on the current record must
+ * update tags rather than adopt old tags or create an identical-body twin.
  *
  * @returns {"commit"|"update-current"|"adopt"}
  */
@@ -144,11 +61,8 @@ export function exactAction({ exact, isUpdate, curId }) {
   return "adopt";
 }
 
-/**
- * True when the stored record and the buffer hold the same prompt — body AND
- * tags. `adoptExact` throws the buffer away, so it is only "nothing added"
- * when the tags match too. The body is compared trimmed (the backend scores
- * normalized text); the tags go through sig() so their order does not matter.
+/** Adoption discards the edit buffer, so require matching body AND tags.
+ * Tag order is irrelevant.
  */
 export function sameContent(rec, buf) {
   if (!rec) return false;
@@ -156,13 +70,11 @@ export function sameContent(rec, buf) {
   return sig({ tags: bufferFrom(rec).tags }) === sig({ tags: (buf && buf.tags) || [] });
 }
 
-/** The `expect_updated` an update carries: an explicit override, else the baseline's. */
 export function expectUpdatedFor(baseline, opts = {}) {
   if (opts.expectUpdated !== undefined) return opts.expectUpdated;
   return baseline ? baseline.updated : undefined;
 }
 
-/** The "saved, but look at the panel" line. `fmtInt` keeps this free of `D`. */
 export function nearMessage(near, fmtInt) {
   return (
     "saved " + MDASH + " " + fmtInt(near) + " near match" + (near === 1 ? "" : "es") +
@@ -170,9 +82,6 @@ export function nearMessage(near, fmtInt) {
   );
 }
 
-/* ==========================================================================
-   THE EFFECTS
-   ========================================================================== */
 
 export class SaveFlow {
   /** @param {object} pane */
@@ -199,7 +108,6 @@ export class SaveFlow {
   async save(asNew) {
     const { pane, D } = this;
 
-    // ---- 1. pre-flight --------------------------------------------------
     const stop = preflight({
       disposed: pane.disposed,
       saving: pane.saving,
@@ -216,25 +124,14 @@ export class SaveFlow {
     const isUpdate = isUpdateSave(asNew, pane.current);
     this.setSaving(true);
     try {
-      // ---- 2. staleness -------------------------------------------------
       if (isUpdate) {
         const verdict = await this.checkStale(asNew);
         if (verdict) return verdict;
       }
 
-      // ---- 3. exact-copy check ------------------------------------------
-      // NOT a gate any more: near matches do not stop a save, they light up
-      // the duplicate panel below the editor, whose `revise` button owns
-      // merge / overwrite. Only a 1.00 match is acted on here, because that is
-      // not a decision — it is the same text, and writing it would add a
-      // second identical record for nothing.
       const { near, exact } = await this.findMatches(isUpdate);
       if (pane.disposed) return "busy";
 
-      // An exact copy of something already stored, with nothing of our own to
-      // update: writing it would add a second identical record and nothing
-      // else. Adopt the one that exists instead — the buffer ends up clean, so
-      // this counts as saved and the modal may close.
       const action = exactAction({
         exact,
         isUpdate,
@@ -246,12 +143,8 @@ export class SaveFlow {
       }
       if (action === "adopt" && (await this.adoptExact(exact))) return "clean";
 
-      // ---- 5. commit ----------------------------------------------------
       const rec = await this.commit(asNew);
       if (!rec) return "failed";
-      // Near matches are reported, never blocking: `commit` has already
-      // re-run the live check, so the panel below is amber with a `revise`
-      // button on it. This line is only so the outcome is not silent.
       if (near) pane.toast(nearMessage(near, D.fmtInt));
       return "saved";
     } finally {
@@ -259,9 +152,7 @@ export class SaveFlow {
     }
   }
 
-  /**
-   * Step 2. `null` when the save may go on; a status when it may not (the
-   * conflict dialog is up, or the record is gone).
+  /** Return a blocking/failure status, or null when the save may continue.
    *
    * @returns {Promise<null|"failed"|"blocked">}
    */
@@ -282,13 +173,8 @@ export class SaveFlow {
     return null;
   }
 
-  /**
-   * Step 3's request. Deliberately NOT through ctx.lanes.dupe: a keystroke
-   * landing mid-save must not be able to abort the check. Freshly run every
-   * time, whatever the live panel happens to be showing.
-   *
-   * An outage here costs the exact-copy shortcut, nothing more: the save goes
-   * ahead and the panel below will say what it finds next time.
+  /** Do not use the typing dupe lane: a keystroke must not cancel this fresh check.
+   * If it fails, saving continues without exact-copy adoption.
    *
    * @returns {Promise<{near:number, exact:object|null}>}
    */
@@ -314,9 +200,7 @@ export class SaveFlow {
     }
   }
 
-  /**
-   * Step 5. `create` or `update` with expect_updated; a 409 falls back into
-   * the conflict branch rather than a generic error toast.
+  /** Use expect_updated; a 409 reopens the conflict flow.
    */
   async commit(asNew, opts = {}) {
     const { pane, ctx, D } = this;
@@ -358,7 +242,6 @@ export class SaveFlow {
     return rec;
   }
 
-  /** The three things every successful write does to the rest of the UI. */
   afterWrite() {
     const { pane, ctx } = this;
     if (typeof ctx.refreshAll === "function") ctx.refreshAll();
@@ -366,13 +249,8 @@ export class SaveFlow {
     pane.runDupes(false);
   }
 
-  /**
-   * The "you already have this" path: select the stored record instead of
-   * creating a copy of it.
-   *
-   * Deliberately NOT a silent no-op — the panel switches to the record that
-   * matched, so the user can see the thing their text turned out to be, and
-   * the node ends up pointing at a real id (`push`) rather than at nothing.
+  /** Adopt the matched record and update the node link; a no-op would leave the
+   * editor detached from the stored record.
    *
    * @returns {Promise<boolean>} false when the record could not be loaded, in
    *   which case the caller falls through to the normal duplicate dialog.
@@ -398,7 +276,6 @@ export class SaveFlow {
     return true;
   }
 
-  /* ---- Conflict UI (step 2) ---------------------------------------- */
 
   openConflict(fresh, asNew) {
     const { pane, D, h } = this;
@@ -489,7 +366,6 @@ export class SaveFlow {
     return layer;
   }
 
-  /** "merge into this" / the live panel's `merge` — the match wins. */
   async mergeInto(m, opts = {}) {
     const { pane, ctx, D } = this;
     if (!m || !m.id) return;
@@ -535,7 +411,6 @@ export class SaveFlow {
     }
   }
 
-  /** "overwrite that one" — my text replaces the match's body. */
   async overwriteMatch(m, close) {
     const { pane, ctx } = this;
     if (!m || !m.id) return;
@@ -566,10 +441,8 @@ export class SaveFlow {
     }
   }
 
-  /**
-   * Put the buffer's body onto someone else's record, keeping their tags and
-   * passing their own `updated` as expect_updated. Shared by merge (when
-   * nothing of ours is saved yet) and overwrite. Throws — both callers report.
+  /** Write the buffer body onto the match, preserving its tags and using its
+   * updated stamp for optimistic concurrency. Let callers report errors.
    */
   async replaceBodyOf(id) {
     const { pane, ctx } = this;
@@ -588,10 +461,7 @@ export class SaveFlow {
   }
 }
 
-/**
- * The entry point the pane uses. Builds the flow and hangs its methods off
- * `pane` — index.js, view.js, dupes.js and modal/close.js reach for them
- * there, and the bound methods work as bare callbacks.
+/** Attach bound callbacks to pane for editor and modal consumers.
  *
  * @param {object} pane
  * @returns {SaveFlow}

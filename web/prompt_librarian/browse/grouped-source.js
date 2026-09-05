@@ -1,37 +1,8 @@
-/* ==========================================================================
-   Prompt Librarian — GroupedView
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
+/* Flatten expanded clusters into fixed-height rows for VirtualList.
+ * Remembered group indices belong to one query: reset them on query changes
+ * and revalidate IDs after page replacement to avoid stale row offsets.
+ */
 
-   The accordion. `PagedSource` pages over what the server returns — with
-   `group=true` that is one row per near-duplicate CLUSTER — and this view sits
-   on top of it turning "which clusters has the user opened?" into a flat index
-   space the virtual list can page over unchanged.
-
-   WHY A FLAT INDEX SPACE AND NOT VARIABLE ROW HEIGHTS
-   --------------------------------------------------
-   `VirtualList` computes its spacer as `total * --pl-row-h` and places every
-   row at `i * rowH`. That is the whole reason it stays smooth. An expanded
-   group therefore may not be one *taller* row; it is one row plus N ordinary
-   rows, all the same height, and the only thing that changes is what index
-   maps to what record. Nothing in VirtualList needed to know about groups.
-
-   THE MAPPING
-   -----------
-   `expanded` remembers, per open group, the TOP-LEVEL index its header sits at
-   and how many members it adds. Flat index -> top-level index is then a walk
-   over the open groups in index order, accumulating their extra rows. The set
-   is user-sized (you can only open what you can see), so the walk is short
-   enough to run inside a scroll frame.
-
-   Those remembered indices are only valid for the query that produced them, so
-   `reset()` clears them — and because a page can also be replaced under us
-   after a save, every read re-checks that the id still sits where it was
-   recorded and drops the entry if not. A stale span self-heals into a plain
-   row rather than shuffling the list by one.
-   ========================================================================== */
-
-/** Members are attached to their representative hit when a page lands. */
 export const MEMBERS = "__members";
 
 export class GroupedView {
@@ -42,7 +13,6 @@ export class GroupedView {
     this.expanded = new Map();
   }
 
-  /* -- passthrough, so this can stand in for the PagedSource ---------------- */
 
   get busy() {
     return this.source.busy;
@@ -71,11 +41,9 @@ export class GroupedView {
     return this.source.reset();
   }
 
-  /* -- the mapping ---------------------------------------------------------- */
 
-  /**
-   * Open groups in top-level index order, dropping any whose representative
-   * has moved out from under the index we recorded.
+  /** Drop remembered spans only when their resident representative moved.
+   *
    * @returns {Array<{id: string, top: number, extra: number}>}
    */
   spans() {
@@ -94,7 +62,6 @@ export class GroupedView {
     return out;
   }
 
-  /** Rows the list should page over: top-level rows plus everything opened. */
   get total() {
     let n = this.source.total;
     for (const s of this.spans()) n += s.extra;
@@ -118,7 +85,6 @@ export class GroupedView {
     return { top: flat - acc, member: -1, id: null };
   }
 
-  /** Where a top-level row currently renders. */
   toFlat(top) {
     let acc = 0;
     for (const s of this.spans()) {
@@ -128,7 +94,6 @@ export class GroupedView {
     return top + acc;
   }
 
-  /* -- reads ---------------------------------------------------------------- */
 
   get(flat) {
     return this._at(flat, "get");
@@ -146,7 +111,6 @@ export class GroupedView {
     return (rec[MEMBERS] || [])[loc.member] || null;
   }
 
-  /** True when `flat` is a member row rather than a top-level one. */
   isMember(flat) {
     return this.locate(flat).member >= 0;
   }
@@ -155,7 +119,6 @@ export class GroupedView {
     return this.expanded.has(String(id));
   }
 
-  /** Members carried by the row at `flat`, or `[]`. */
   membersAt(flat) {
     const loc = this.locate(flat);
     if (loc.member >= 0) return [];
@@ -163,9 +126,7 @@ export class GroupedView {
     return (rec && rec[MEMBERS]) || [];
   }
 
-  /**
-   * Open or close the group at `flat`.
-   * @returns {boolean} whether anything changed — a plain row is not a group.
+  /** @returns {boolean} whether anything changed — a plain row is not a group.
    */
   toggle(flat) {
     const loc = this.locate(flat);
@@ -180,15 +141,8 @@ export class GroupedView {
     return true;
   }
 
-  /* -- selection ------------------------------------------------------------ */
 
-  /**
-   * The record ids one row stands for.
-   *
-   * A COLLAPSED GROUP STANDS FOR ITS WHOLE CLUSTER. Ticking a row that reads
-   * "4 copies" and having it select one hidden-arbitrary record of the four
-   * would be the same class of lie as the badge this feature exists to fix.
-   * Open the group and tick a member to act on exactly one.
+  /** A collapsed header represents its whole cluster; expanded members select singly.
    */
   idsAt(flat) {
     const loc = this.locate(flat);
@@ -211,7 +165,6 @@ export class GroupedView {
     return this.source.ensureRange(this.locate(lo).top, this.locate(hi).top);
   }
 
-  /** Ids for a flat range, in order and deduplicated. */
   async idsInRange(a, b) {
     await this.ensureRange(a, b);
     const lo = Math.max(0, Math.min(a, b));
@@ -230,12 +183,8 @@ export class GroupedView {
   }
 }
 
-/**
- * Hang each representative's members off its hit, in place.
- *
- * The server sends them as a sibling map (`groups[repId]`) because a
- * self-referential hit is not a shape the OpenAPI generator can render; the
- * list wants them on the row. One pass per page, not per scroll frame.
+/** Attach the server's sibling groups map to hits once per page, not per scroll.
+ * The wire schema keeps group members separate from representative hits.
  *
  * @param {{hits?: any[], groups?: object}} res a /search payload
  * @returns {any[]} the annotated hits

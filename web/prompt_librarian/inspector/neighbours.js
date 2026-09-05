@@ -1,14 +1,6 @@
-/* ==========================================================================
-   Prompt Librarian — reaching into the neighbouring features
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   pickers/ and compare/ are only ever reached through a lazy `import()`
-   inside a handler, in a try/catch, and every one of these handlers degrades
-   to a toast. The pane must stay usable on an install where either failed to
-   load — which is also why the save gate builds its dialogs inline instead of
-   coming through here.
-   ========================================================================== */
+/* Load optional pickers and dialogs inside handlers; their failure must not
+ * disable editing or the local save-conflict dialog.
+ */
 
 import { NOT_YET } from "./constants.js";
 import { unwrapRecord } from "./records.js";
@@ -38,9 +30,7 @@ export function createNeighbours(pane) {
       const fn = mod.openTagPicker || mod.tagPicker;
       if (typeof fn === "function") {
         try {
-          // The prompt-text label is permanent and sits immediately above the
-          // textarea. Chips and the "+ tag" button move as tags wrap and are
-          // replaced on every pick, so neither can provide a stable origin.
+          // Anchor to the permanent label; chips move and are replaced as tags change.
           fn(ctx, {
             anchor: els.textLabel,
             placement: "overlay-start",
@@ -49,7 +39,7 @@ export function createNeighbours(pane) {
             onRemove: pane.removeTag,
           });
           return;
-        } catch (err) { /* fall through */ }
+        } catch (err) {  }
       }
     }
     const tags = (pane.S().tags || [])
@@ -129,7 +119,6 @@ export function createNeighbours(pane) {
     } catch (err) { pane.toast("compare: " + NOT_YET); }
   }
 
-  /** Used by the conflict dialog's `compare` button. */
   async function compareConflict(fresh) {
     const mod = await tryImport("../compare/index.js");
     const fn = pickFn(mod, ["openCompare", "openDiff", "compareDialog"]);

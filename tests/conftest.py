@@ -9,7 +9,7 @@ real ComfyUI user directory — and in particular nothing here ever reads the ol
 node's ``prompts.json``.
 
 This conftest also puts the pack root on ``sys.path``, so any other test module
-here can simply ``from prompt_librarian import search`` / ``dedupe`` / ... at
+here can simply ``from prompt_librarian.features import search`` / ``dupes`` / ... at
 module level and get the same stubbed environment.
 """
 
@@ -43,14 +43,27 @@ _STUB.get_user_directory = lambda: _STUB_USER_DIR
 _STUB.__pl_test_stub__ = True
 sys.modules["folder_paths"] = _STUB
 
-from prompt_librarian import store as librarian_store  # noqa: E402  (follows the stub)
-from prompt_librarian.store import utils as store_utils  # noqa: E402
+from prompt_librarian import app as librarian_app  # noqa: E402  (follows the stub)
+from prompt_librarian.shared import paths as shared_paths  # noqa: E402
+from prompt_librarian.shared.library import Library  # noqa: E402
 
 
 @pytest.fixture
 def mod():
-    """The module under test."""
-    return librarian_store
+    """Every use-case, constant and error, under one name."""
+    from tests import uc
+
+    return uc
+
+
+@pytest.fixture(autouse=True)
+def no_current_app():
+    """No test inherits another's installed app; fixtures install their own."""
+    previous = librarian_app.use(None)
+    yield
+    installed = librarian_app.use(previous)
+    if installed is not None:
+        installed.lib.close()
 
 
 @pytest.fixture(autouse=True)
@@ -59,9 +72,9 @@ def user_dir(tmp_path, monkeypatch):
     target = tmp_path / "user"
     target.mkdir()
     monkeypatch.setattr(_STUB, "get_user_directory", lambda: str(target))
-    # The fallback lives on the leaf module now that `store` is a package;
-    # patching the facade would leave `utils.user_dir()` reading the real one.
-    monkeypatch.setattr(store_utils, "_FALLBACK_USER_DIR", str(target))
+    # The fallback lives in shared/paths.py; patching a re-export elsewhere
+    # would leave `user_dir()` reading the real one.
+    monkeypatch.setattr(shared_paths, "_FALLBACK_USER_DIR", str(target))
     return target
 
 
@@ -73,8 +86,10 @@ def lib_path(tmp_path):
 
 @pytest.fixture
 def store(lib_path):
-    """A store pointed at an empty temp directory."""
-    return librarian_store.LibrarianStore(path=lib_path, migrate_from=False)
+    """An app on an empty temp library (not installed as current)."""
+    built = librarian_app.build(path=lib_path, migrate_from=False)
+    yield built
+    built.lib.close()
 
 
 @pytest.fixture
@@ -82,6 +97,21 @@ def fresh(lib_path):
     """Factory for extra store instances over the same file (reload testing)."""
 
     def _make():
-        return librarian_store.LibrarianStore(path=lib_path, migrate_from=False)
+        return librarian_app.build(path=lib_path, migrate_from=False)
 
     return _make
+
+
+@pytest.fixture
+def lib(tmp_path):
+    """A bare Library (no store facade) in a temp dir."""
+    library = Library(str(tmp_path / "lib" / "library.sqlite3"))
+    yield library
+    library.close()
+
+
+@pytest.fixture
+def changes(lib):
+    seen = []
+    lib.events.subscribe(seen.append)
+    return seen

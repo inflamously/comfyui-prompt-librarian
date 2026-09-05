@@ -1,4 +1,4 @@
-"""Tests for prompt_librarian.labels.
+"""Tests for prompt_librarian.shared.labels.
 
 Free-standing like ``test_search``: plain dicts, no store, no ``folder_paths``.
 """
@@ -10,8 +10,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest  # noqa: E402
 
-from prompt_librarian import labels as L  # noqa: E402
-from prompt_librarian import search as S  # noqa: E402
+from prompt_librarian.features import search as S  # noqa: E402
+from prompt_librarian.shared import labels as L  # noqa: E402
 
 
 def rec(pid, body, tags=()):

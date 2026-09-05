@@ -1,13 +1,19 @@
-"""Version history: list the previews, read one entry, restore one entry.
+"""List previews only; fetch full version bodies on demand to bound responses."""
 
-The list never carries bodies. A record sitting at the 50-version cap would
-otherwise be a multi-megabyte response on every selection change, so the panel
-pages through previews and asks for a full entry only when one is opened.
-"""
-
-from ...store import STORE
+from ...features.prompts import versions as prompt_versions
 from .. import schemas
-from ..utils import _body, _int, _json, _labelled, _labeller, _offload, _query, _route, _str
+from ..utils import (
+    _body,
+    _int,
+    _json,
+    _labelled,
+    _labeller,
+    _lib,
+    _offload,
+    _query,
+    _route,
+    _str,
+)
 
 
 @_route("get", "/versions", op="listVersions",
@@ -17,13 +23,10 @@ async def versions(request):
     params = _query(request)
     pid = _str(params.get("id"))
     chars = _int(params.get("chars"), 160)
-    # A snapshotted body is labelled against the *current* library, not the one
-    # it was taken from: the point of the label is to tell the user what this
-    # entry was about relative to what they have now.
+    # Label history against the current corpus.
     label_fn = _labeller().label_for
-    # Previews only: a record at the 50-version cap would otherwise be a
-    # multi-megabyte response on every selection change.
-    return _json({"id": pid, "versions": STORE.version_previews(pid, chars, label_fn)})
+    previews = prompt_versions.version_previews(_lib(), pid, chars, label_fn)
+    return _json({"id": pid, "versions": previews})
 
 
 @_route("get", "/version", op="getVersion",
@@ -33,7 +36,8 @@ async def version(request):
     params = _query(request)
     pid = _str(params.get("id"))
     index = _int(params.get("index"), -1)
-    return _json({"id": pid, "index": index, "version": STORE.version(pid, index)})
+    entry = prompt_versions.get_version(_lib(), pid, index)
+    return _json({"id": pid, "index": index, "version": entry})
 
 
 @_route("post", "/versions/restore", op="restoreVersion",
@@ -44,4 +48,7 @@ async def versions_restore(request):
     pid = _str(data.get("id"))
     index = _int(data.get("index"), -1)
     # Snapshots the current body first, so the restore is itself undoable.
-    return _json(await _offload(lambda: _labelled(STORE.restore_version(pid, index))))
+    def _work():
+        return _labelled(prompt_versions.restore_version(_lib(), pid, index))
+
+    return _json(await _offload(_work))

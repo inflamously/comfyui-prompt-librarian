@@ -1,21 +1,6 @@
-/* ==========================================================================
-   attachMirror — syntax highlighting behind a transparent textarea
-   ==========================================================================
-   INERT ON IMPORT. Exports and `const` data only.
-
-   FRAGILE BY CONSTRUCTION, SO IT SELF-CHECKS.
-
-   A `.pl-ta-mirror` div sits behind the textarea. librarian.css only makes
-   `.pl-ta` transparent under `.pl-ta-wrap.is-mirrored`, so adding that class is
-   what ACTIVATES highlighting and removing it is a complete, safe rollback: the
-   textarea goes back to painting its own (perfectly correct) text.
-
-   If the mirror's wrapped height disagrees with the textarea's by more than
-   4 px after one frame, the two are laying text out differently — every
-   highlight below that point is in the wrong place — so the mirror is torn
-   down and the fact is logged once. Highlighting is a nicety; the textarea's
-   correctness is not negotiable.
-   ========================================================================== */
+/* is-mirrored makes the textarea transparent. If wrapped heights disagree
+ * by more than 4 px, remove the mirror and class so native text stays readable.
+ */
 
 import { clear, cls, h } from "../shared/dom.js";
 import { warnOnce } from "../shared/singleton.js";
@@ -28,10 +13,8 @@ const MIRROR_DEBOUNCE_MS = 60;
 const MIRROR_SLOP_PX = 4; // self-check tolerance; beyond it the mirror dies
 const VALIDATE_DEBOUNCE_MS = 300;
 
-// Every metric that can change where a line breaks. The stylesheet already
-// declares these identically on `.pl-ta` and `.pl-ta-mirror`; copying the
-// COMPUTED values makes the mirror survive a theme or user stylesheet that
-// only touches one of them.
+// Copy computed metrics so theme overrides cannot change line wrapping on one
+// side only.
 const COPY_STYLES = [
   "fontFamily",
   "fontSize",
@@ -80,7 +63,6 @@ export function attachMirror(wrap, ta, opts = {}) {
   const createdMirror = !mirror;
   if (!mirror) {
     mirror = h("div", { className: "pl-ta-mirror", "aria-hidden": "true" });
-    // Behind the textarea in DOM order; z-index in the stylesheet does the rest.
     if (ta.parentNode === wrap) wrap.insertBefore(mirror, ta);
     else wrap.appendChild(mirror);
   }
@@ -91,7 +73,6 @@ export function attachMirror(wrap, ta, opts = {}) {
   const missing = new Set(); // normalized wildcard names known to be absent
   let lastNamesKey = "";
 
-  /* -- style sync --------------------------------------------------------- */
 
   function syncStyles() {
     if (typeof getComputedStyle !== "function") return;
@@ -118,14 +99,12 @@ export function attachMirror(wrap, ta, opts = {}) {
     if (w) mirror.style.width = `${w}px`;
   }
 
-  /* -- render ------------------------------------------------------------- */
 
   function render() {
     if (dead) return;
     const text = String(ta.value == null ? "" : ta.value);
 
-    // Hard ceiling: tokenizing + re-rendering a novel on every keystroke is
-    // exactly the kind of thing that makes a text field feel broken.
+    // Skip large bodies to bound per-keystroke tokenization and DOM work.
     if (text.length > MIRROR_MAX_CHARS) {
       if (activeNow || mirror.firstChild) {
         clear(mirror);
@@ -162,11 +141,7 @@ export function attachMirror(wrap, ta, opts = {}) {
     }
   }
 
-  /**
-   * `.is-missing` is not in librarian.css — there is no rule for it — so the
-   * visual comes from an inline style built out of the sheet's own custom
-   * properties. The class is still set, so a future stylesheet rule takes over
-   * without touching this file.
+  /** Keep inline missing-token styles as a fallback when stylesheet rules are unavailable.
    */
   function markMissing(span) {
     span.classList.add("is-missing");
@@ -174,7 +149,6 @@ export function attachMirror(wrap, ta, opts = {}) {
     span.style.textDecoration = "underline wavy";
   }
 
-  /* -- scroll sync -------------------------------------------------------- */
 
   function syncScroll() {
     if (dead) return;
@@ -182,7 +156,6 @@ export function attachMirror(wrap, ta, opts = {}) {
     mirror.scrollLeft = ta.scrollLeft;
   }
 
-  /* -- self-check --------------------------------------------------------- */
 
   const raf =
     typeof requestAnimationFrame === "function" ? requestAnimationFrame : (cb) => setTimeout(cb, 16);
@@ -207,7 +180,6 @@ export function attachMirror(wrap, ta, opts = {}) {
     });
   }
 
-  /* -- validation --------------------------------------------------------- */
 
   function defaultValidate(names) {
     const ctx = opts.ctx;
@@ -242,7 +214,7 @@ export function attachMirror(wrap, ta, opts = {}) {
         if (!changed) return;
         missing.clear();
         for (const n of set) missing.add(n);
-        render(); // repaint with `.is-missing` where it belongs
+        render();
       })
       .catch(() => {
         /* validation is advisory; an unreachable backend just means no marks */
@@ -260,14 +232,11 @@ export function attachMirror(wrap, ta, opts = {}) {
     if (names.length) runValidate(names);
   }
 
-  /* -- wiring ------------------------------------------------------------- */
 
   const reRender = debounce(render, typeof opts.debounceMs === "number" ? opts.debounceMs : MIRROR_DEBOUNCE_MS);
   const onInput = () => reRender();
   const onScroll = () => syncScroll();
 
-  // `input` and `scroll` only. There is deliberately NO keydown listener here:
-  // the window-capture guard in modal/keys.js would eat it (see pickers/common.js).
   ta.addEventListener("input", onInput);
   ta.addEventListener("scroll", onScroll);
 
@@ -293,7 +262,6 @@ export function attachMirror(wrap, ta, opts = {}) {
       reRender.cancel();
       runValidate.cancel();
     } catch (_) {
-      /* ignore */
     }
     ta.removeEventListener("input", onInput);
     ta.removeEventListener("scroll", onScroll);
@@ -301,31 +269,26 @@ export function attachMirror(wrap, ta, opts = {}) {
       try {
         ro.disconnect();
       } catch (_) {
-        /* ignore */
       }
       ro = null;
     }
-    // Rollback, in the order that keeps the textarea readable at every instant:
-    // drop the class first (text becomes opaque), then empty the mirror.
+    // Remove transparency before clearing the mirror so text stays readable.
     cls(wrap, "is-mirrored", false);
     clear(mirror);
     for (const prop of COPY_STYLES) {
       try {
         mirror.style[prop] = "";
       } catch (_) {
-        /* ignore */
       }
     }
     try {
       mirror.style.width = "";
     } catch (_) {
-      /* ignore */
     }
     if (createdMirror && mirror.parentNode) {
       try {
         mirror.parentNode.removeChild(mirror);
       } catch (_) {
-        /* ignore */
       }
     }
   }
@@ -340,7 +303,6 @@ export function attachMirror(wrap, ta, opts = {}) {
       try {
         reRender.cancel();
       } catch (_) {
-        /* ignore */
       }
       syncStyles();
       render();

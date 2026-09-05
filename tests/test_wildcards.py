@@ -9,7 +9,7 @@ import os
 
 import pytest
 
-from prompt_librarian import wildcards as wc
+from prompt_librarian.features import wildcards as wc
 
 # --------------------------------------------------------------------------- #
 # Fixtures

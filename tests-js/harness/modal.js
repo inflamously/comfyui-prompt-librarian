@@ -23,14 +23,22 @@ const M = "prompt_librarian/modal/";
  *
  * @param {object} ctxPatch overrides merged onto the default fake ctx. The two
  *   hooks that matter are `isDirty()` and `requestSave(asNew)` — the duck-typed
- *   contract inspector/index.js registers and modal/close.js consumes.
+ *   contract inspector/index.js registers and modal/lifecycle/close.js consumes.
  */
 export async function openShell(ctxPatch = {}) {
-  const shell = await imp(M + "shell.js");
+  const shell = {
+    ...await imp(M + "shell/layout.js"),
+    ...await imp(M + "shell/navigation.js"),
+    ...await imp(M + "shell/responsive.js"),
+  };
   const state = await imp(M + "state.js");
-  const keys = await imp(M + "keys.js");
-  const close = await imp(M + "close.js");
-  const layers = await imp(M + "layers.js");
+  const keys = await imp(M + "input/keys.js");
+  const close = await imp(M + "lifecycle/close.js");
+  const layers = {
+    ...await imp(M + "overlays/layers.js"),
+    ...await imp(M + "overlays/dialogs.js"),
+    ...await imp(M + "overlays/toasts.js"),
+  };
 
   shell.buildShell();
   shell.wireShell();
@@ -80,7 +88,7 @@ export async function openShell(ctxPatch = {}) {
 
     /**
      * A full backdrop click. BOTH pointerdown and pointerup must land on the
-     * backdrop for shell.js to treat it as a dismiss.
+     * backdrop for shell/dismissal.js to treat it as a dismiss.
      */
     backdropClick() {
       const b = it.els.backdrop;

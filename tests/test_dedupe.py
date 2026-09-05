@@ -1,4 +1,4 @@
-"""Tests for prompt_librarian.dedupe.
+"""Tests for prompt_librarian.features.dupes.
 
 Free-standing: plain dict fixtures, no store, no conftest, no ``folder_paths``.
 """
@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest  # noqa: E402
 
-from prompt_librarian import dedupe as D  # noqa: E402
+from prompt_librarian.features import dupes as D  # noqa: E402
 
 # The plan's canonical near-duplicate pair.
 CANON_A = "make him dance ballet slowly drifting toward the camera, dusk light"

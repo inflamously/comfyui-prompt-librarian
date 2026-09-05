@@ -144,11 +144,41 @@ main { overflow: auto; padding: 16px; }
 
 .dev-node-del { margin-top: 8px; color: var(--dim); }
 
+.dev-node-image {
+  display: block;
+  max-width: 100%;
+  max-height: 260px;
+  margin: 0 auto;
+  border-radius: 4px;
+}
+
+.dev-node-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.dev-node-menu button {
+  background: #1e1f23;
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dev-node-menu button:hover { border-color: #4a4d55; }
+
 /* -- docked panels -------------------------------------------------------- */
 
 #dev-panels {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1.2fr;
   gap: 1px;
   height: 220px;
   background: var(--line);
@@ -198,6 +228,51 @@ main { overflow: auto; padding: 16px; }
 }
 
 .dev-panel li { padding: 1px 0; color: var(--dim); }
+
+#dev-pics-filter {
+  width: 12ch;
+  background: #1e1f23;
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+#dev-pics {
+  flex: 1;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
+  align-content: start;
+  padding: 6px 10px;
+}
+
+#dev-pics figure { margin: 0; min-width: 0; }
+#dev-pics figure[hidden] { display: none; }
+
+#dev-pics img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 4px;
+  background: #1e1f23;
+}
+
+#dev-pics figure.manual img { outline: 2px solid var(--warn); outline-offset: -2px; }
+
+#dev-pics figcaption {
+  overflow: hidden;
+  color: var(--dim);
+  font-size: 10px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .dev-panel li.ok { color: var(--ok); }
 .dev-panel li.warn { color: var(--warn); }
 .dev-panel li.err { color: var(--err); }

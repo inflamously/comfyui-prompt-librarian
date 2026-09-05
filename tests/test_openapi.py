@@ -21,6 +21,7 @@ pytest.importorskip("pydantic")
 from prompt_librarian.api import openapi, schemas  # noqa: E402
 from prompt_librarian.api.config import _ERROR_MAP, CAPABILITIES  # noqa: E402
 from prompt_librarian.api.utils import _ROUTES  # noqa: E402
+from tests import uc  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -166,14 +167,14 @@ def test_error_codes_match_the_live_table(doc):
 
 def test_prompt_type_matches_a_real_record(store):
     """The one model the store can be asked to prove: a created record."""
-    record = store.create(body="b", tags=["t"])
+    record = uc.create_prompt(store.lib, body="b", tags=["t"])
     declared = {entry.name for entry in fields(schemas.Prompt)}
     assert declared == set(record)
 
 
 def test_settings_type_matches_the_stored_block(store):
     declared = {entry.name for entry in fields(schemas.Settings)}
-    assert declared == set(store.settings())
+    assert declared == set(uc.read_settings(store.lib))
 
 
 def test_response_defaults_are_not_invented():

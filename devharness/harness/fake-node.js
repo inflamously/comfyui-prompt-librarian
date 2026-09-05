@@ -1,7 +1,7 @@
 /* ==========================================================================
    The fake LiteGraph node — the most-edited file in the harness.
 
-   node/bind.js names three shapes a multiline STRING widget has taken across
+   node/text-sync.js names three shapes a multiline STRING widget has taken across
    ComfyUI generations, and defends against all of them with three observation
    layers. Those defences are normally unreachable: any given install only ever
    exercises one shape. `flavour` makes each one reachable on demand, which is
@@ -21,7 +21,7 @@ let nextId = 1;
  * The "legacy" multiline widget: `value` is an ACCESSOR over a detached
  * textarea at `inputEl`.
  *
- * This is the shape bind.js's descriptor walk exists for — a naive
+ * This is the shape text-sync.js's descriptor walk exists for — a naive
  * Object.defineProperty over it silently disconnects the widget from its own
  * element, and nothing throws.
  */
@@ -43,7 +43,7 @@ function legacyText(name, value) {
 /**
  * The "domwidget" shape: `element` is a WRAPPER containing the textarea, and
  * `value` is a plain data property synced from the element on blur only — so
- * mid-typing the two legitimately disagree, which is the case poll() exists for.
+ * mid-typing the two legitimately disagree, which is the case pollNodeText() exists for.
  */
 function domText(name, value) {
   const element = document.createElement("div");
@@ -59,7 +59,7 @@ function domText(name, value) {
 
 /**
  * The "opaque" shape: no element at all and `value` defined non-configurable,
- * so bind.js's layer B must decline and fall back to polling.
+ * so text-sync.js's value interception must decline and fall back to polling.
  */
 function opaqueText(name, value) {
   const w = { type: "customtext", name, callback: null, options: {} };
@@ -86,7 +86,7 @@ const TEXT_FLAVOURS = { legacy: legacyText, domwidget: domText, opaque: opaqueTe
  *   "ghost" accepts the call and never mounts the element — the only way to
  *   reach face.js's post-rAF isConnected teardown.
  * @param {number} [opts.lateWidgets] ms to delay populating `widgets`, or -1 to
- *   never populate. Reproduces the quirk hydrate.js's three triggers exist for.
+ *   never populate. Reproduces the quirk setup.js's three triggers exist for.
  */
 export function makeNode(opts = {}) {
   const {
@@ -96,7 +96,9 @@ export function makeNode(opts = {}) {
     body = "a dancer in the rain",
   } = opts;
 
-  const node = {
+  // Built on the type's prototype, so beforeRegisterNodeDef hooks (the word
+  // picture menu items) apply to it as they do to a LiteGraph node.
+  const node = Object.assign(Object.create(app.__dev.nodeType("PromptLibrarian").prototype), {
     id: nextId++,
     type: "PromptLibrarian",
     comfyClass: "PromptLibrarian",
@@ -124,7 +126,7 @@ export function makeNode(opts = {}) {
     },
 
     onRemoved: null,
-  };
+  });
 
   /* -- the fake canvas: one <div> per node, one row per widget ------------- */
   node.__el = document.createElement("div");
@@ -193,6 +195,38 @@ export function makeNode(opts = {}) {
   else if (lateWidgets > 0) setTimeout(populate, lateWidgets);
   // lateWidgets < 0: never populated. The node must still not throw.
 
+  return node;
+}
+
+/**
+ * A Preview Image node showing one picture, as ComfyUI keeps it: `imgs` holds
+ * <img> elements whose src is a /view URL, `images` the refs behind them.
+ */
+export function makeImageNode(ref) {
+  const query = new URLSearchParams({ filename: ref.filename, subfolder: ref.subfolder || "", type: ref.type || "output" });
+  const img = document.createElement("img");
+  img.src = `${window.__DEV__.apiPrefix}/view?${query}`;
+  img.className = "dev-node-image";
+  const node = Object.assign(Object.create(app.__dev.nodeType("PreviewImage").prototype), {
+    id: nextId++,
+    type: "PreviewImage",
+    comfyClass: "PreviewImage",
+    title: "Preview Image",
+    widgets: [],
+    properties: {},
+    flags: {},
+    imgs: [img],
+    images: [{ ...ref }],
+    imageIndex: 0,
+    onRemoved: null,
+  });
+  node.__el = document.createElement("div");
+  node.__el.className = "dev-node";
+  node.__el.innerHTML = '<div class="dev-node-title"></div>';
+  node.__el.appendChild(img);
+  node.__render = () => {
+    node.__el.querySelector(".dev-node-title").textContent = `#${node.id} ${node.title}`;
+  };
   return node;
 }
 

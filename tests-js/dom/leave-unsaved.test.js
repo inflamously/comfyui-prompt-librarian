@@ -237,3 +237,44 @@ describe("the unsaved-changes gate", () => {
     assert.ok(h.calls.drafts.some((d) => d[0] === "a"), "and the edit is parked, not dropped");
   });
 });
+
+/* Opening the modal seeds the editor from the bound node's text. That text
+   already lives on the node, so with no record selected it is the clean state:
+   picking a row must not ask about "unsaved" changes nobody made.
+   ========================================================================== */
+describe("text seeded from the node", () => {
+  test("picking a row after the seed switches with no dialog", async () => {
+    const a = record("a", "first");
+    const h = await mount({ answer: "save", records: { a } });
+
+    h.pane.setBody("a dancer in the rain", { fromNode: true });
+    assert.equal(h.pane.isDirty(), false, "node text is not an edit");
+
+    await h.pane.selectPrompt("a");
+    assert.equal(h.calls.asks.length, 0);
+    assert.equal(h.calls.create.length, 0, "the seed must never be saved implicitly");
+    assert.equal(h.pane.getBuffer().body, "first");
+  });
+
+  test("typing over the seed is still an unsaved edit", async () => {
+    const a = record("a", "first");
+    const h = await mount({ records: { a } });
+
+    h.pane.setBody("a dancer in the rain", { fromNode: true });
+    h.pane.setBody("a dancer in the snow");
+    assert.equal(h.pane.isDirty(), true);
+
+    await h.pane.selectPrompt("a");
+    assert.equal(h.calls.asks.length, 1);
+  });
+
+  test("a selected record's baseline ignores the node seed", async () => {
+    const a = record("a", "first");
+    const h = await mount({ records: { a } });
+
+    h.pane.setBody("a dancer in the rain", { fromNode: true });
+    await h.pane.selectPrompt("a");
+    h.pane.setBody("a dancer in the rain", { fromNode: true });
+    assert.equal(h.pane.isDirty(), true, "the node now differs from the record");
+  });
+});

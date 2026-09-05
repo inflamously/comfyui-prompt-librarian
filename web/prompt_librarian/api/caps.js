@@ -1,22 +1,11 @@
-/* ==========================================================================
-   Prompt Librarian — backend capability flags
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-   ========================================================================== */
-
 import { singleton } from "../shared/singleton.js";
 
-/**
- * Backend capability flags, filled in by `API.ping()`.
- *
- * Every known key starts `true` and is only turned off by a ping that says so.
- * Optimistic-by-default matters: if `/ping` itself fails (old backend, route
- * registration skipped) we must not disable the entire UI — the individual
- * calls will fail with an ApiError the user can actually read, which is far
- * more diagnosable than a panel full of greyed-out buttons.
+/** Default capabilities to enabled when ping fails; individual request errors
+ * are more useful than silently disabling the entire panel.
  */
 export const caps = singleton("caps", () => ({
   search: true,
+  autocomplete: true,
   dupes: true,
   compare: true,
   merge: true,
@@ -30,14 +19,14 @@ export const caps = singleton("caps", () => ({
   usage: true,
   import_export: true,
   storage: true,
+  word_images: true,
+  dictionary: true,
 }));
 
-/** `false` only when the backend explicitly said so. */
 export function capable(name) {
   return caps[name] !== false;
 }
 
-/** Fold a `/ping` payload's capability map into `caps`. */
 export function applyCaps(payload) {
   const src =
     payload && typeof payload === "object"

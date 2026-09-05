@@ -13,11 +13,14 @@
    ========================================================================== */
 
 import { app } from "./fake-app.js";
-import { makeNode } from "./fake-node.js";
+import { makeImageNode, makeNode } from "./fake-node.js";
+
+/** The node classes the fake canvas can hold, registered like ComfyUI's. */
+const NODE_DEFS = ["PromptLibrarian", "PreviewImage"];
 
 /**
  * Read the config LAZILY. `window.__DEV__` is written by an inline script that
- * devserver.py templates into <head>, and reading it at module scope would make
+ * devkit/server.py templates into <head>, and reading it at module scope would make
  * this file's correctness depend on script ordering — and unimportable anywhere
  * without a DOM, which is how tests-js/devharness.test.js checks it at all.
  */
@@ -48,6 +51,18 @@ export async function loadPack({ bust = false } = {}) {
 }
 
 export async function setupExtensions() {
+  // ComfyUI registers node definitions before calling setup().
+  for (const name of NODE_DEFS) {
+    for (const ext of app._exts) {
+      try {
+        if (typeof ext.beforeRegisterNodeDef === "function") {
+          await ext.beforeRegisterNodeDef(app.__dev.nodeType(name), { name }, app);
+        }
+      } catch (err) {
+        out(`${ext.name} beforeRegisterNodeDef(${name}) threw: ${err}`, "err");
+      }
+    }
+  }
   for (const ext of app._exts) {
     try {
       if (typeof ext.setup === "function") await ext.setup();
@@ -72,6 +87,26 @@ export function createNode(opts) {
   node.__render();
   out(`created node #${node.id} (${opts && opts.flavour ? opts.flavour : "legacy"})`, "ok");
   return node;
+}
+
+/** A Preview Image node showing a fresh placeholder from the fake output folder. */
+export async function createImageNode(label) {
+  const res = await fetch(`/__dev/sample_image?label=${encodeURIComponent(label)}`, { method: "POST" });
+  const ref = await res.json();
+  if (!res.ok) throw new Error(ref.error || `sample image: HTTP ${res.status}`);
+  const node = makeImageNode(ref);
+  app.__dev.addNode(node);
+  document.getElementById("dev-canvas").appendChild(node.__el);
+  node.__render();
+  out(`created image node #${node.id} (${ref.filename})`, "ok");
+  return node;
+}
+
+/** The node's LiteGraph context-menu items (getExtraMenuOptions), or []. */
+export function menuOptions(node) {
+  const options = [];
+  if (typeof node.getExtraMenuOptions === "function") node.getExtraMenuOptions(app.canvas, options);
+  return options.filter((o) => o && o.content);
 }
 
 export function removeNode(node) {

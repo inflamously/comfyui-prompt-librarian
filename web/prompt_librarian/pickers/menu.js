@@ -1,20 +1,8 @@
-/* ==========================================================================
-   Prompt Librarian — the shared menu body
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   Filter input + keyboard-navigable option rows, shared by the tag
-   and snippet pickers.
-   ========================================================================== */
-
 import { NO_AUTOFILL, clear, cls, h } from "../shared/dom.js";
 import { isFn } from "./common.js";
 
-/**
- * Build the filter + listbox body shared by every picker.
- *
- * `items` are `{label, meta, selected, disabled, className, run}`. `run` is
- * called on click or Enter; returning `false` keeps the popover open.
+/** items are {label, meta, selected, disabled, className, run}.
+ * Returning false from run keeps the popover open.
  *
  * @returns {{input: HTMLInputElement, list: HTMLElement, setItems: Function,
  *            query: () => string, onKey: (e: KeyboardEvent) => void}}
@@ -97,8 +85,7 @@ export function buildMenu(el, opts = {}) {
           type: "button",
           role: "option",
           "aria-selected": item.selected ? "true" : "false",
-          // The activating event is handed to `run` so a consumer can read
-          // modifier keys (snippets: shift = insert the [[reference]]).
+          // Pass the activating event so consumers can inspect modifiers.
           onclick: (ev) => {
             if (isFn(item.run)) item.run(ev);
           },
@@ -140,9 +127,7 @@ export function buildMenu(el, opts = {}) {
       const row = rows[active];
       if (!row) return;
       if (isFn(e.preventDefault)) e.preventDefault();
-      // Call `run` with the KEY event rather than going through .click(), so
-      // Enter and Shift+Enter are distinguishable (a synthetic click carries
-      // no modifier state).
+      // Pass the key event directly: a synthetic click loses Shift state.
       if (row.__plItem && isFn(row.__plItem.run)) row.__plItem.run(e);
       else row.click();
     }
@@ -155,7 +140,6 @@ export function buildMenu(el, opts = {}) {
       try {
         input.focus();
       } catch (_) {
-        /* ignore */
       }
     }, 0);
   }
@@ -171,7 +155,6 @@ export function buildMenu(el, opts = {}) {
   };
 }
 
-/** Case-insensitive substring filter used by every picker. */
 export function matches(label, query) {
   const q = String(query || "").trim().toLowerCase();
   if (!q) return true;

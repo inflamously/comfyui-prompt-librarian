@@ -23,7 +23,7 @@ dev = [
     # itself must keep running without it, which is why it is not a dependency.
     "pydantic>=2.0",
     # ComfyUI supplies aiohttp at runtime, so it stays out of `dependencies` —
-    # but `scripts/devserver.py` and `tests/test_api.py` need it outside ComfyUI.
+    # but `scripts/dev.py` and `tests/test_api.py` need it outside ComfyUI.
     "aiohttp>=3.9",
 ]
 
@@ -108,12 +108,11 @@ known-third-party = ["folder_paths", "server", "comfy", "nodes"]
 "prompt_librarian/api/**/*.py" = ["ARG001", "TID252"]
 # Feature packages also reach their domain siblings through the parent package;
 # absolute imports are not reliable under ComfyUI's file-location loader.
-"prompt_librarian/dedupe/**/*.py" = ["TID252"]
-"prompt_librarian/wildcards/**/*.py" = ["TID252"]
-"prompt_librarian/search/**/*.py" = ["TID252"]
+"prompt_librarian/shared/**/*.py" = ["TID252"]
+"prompt_librarian/features/**/*.py" = ["TID252"]
 # Same rule for the dev server's aiohttp handlers, plus its seed word lists,
 # which are prose kept readable as one split string rather than a list literal.
-"scripts/devserver.py" = ["ARG001", "SIM905"]
+"scripts/devkit/*.py" = ["ARG001", "SIM905"]
 # Registration only; the import order in the pack root is load-bearing. (The
 # domain `__init__.py` facades need none of this — their re-exports are covered
 # by `__all__` — but ruff matches this pattern on the basename alone.)
@@ -138,14 +137,16 @@ name = "Librarian layers"
 type = "layers"
 containers = ["prompt_librarian"]
 layers = [
-    "node",
-    "api",
-    "wildcards",
-    "dedupe",
-    "search",
-    "labels",
-    "store",
+    "node : api",
+    "app",
+    "features",
+    "shared",
 ]
+
+[[tool.importlinter.contracts]]
+name = "Features never import each other"
+type = "independence"
+modules = ["prompt_librarian.features.*"]
 
 # The two nodes share nothing but the pack root: separate store files, separate
 # routes, separate web assets. A failure in one must not be able to reach the

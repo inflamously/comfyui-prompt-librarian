@@ -1,18 +1,17 @@
-"""Store-wide facts and whole-library moves.
-
-``/ping`` is the first request the panel makes and decides what it builds;
-``/export`` and ``/import`` are the whole envelope in and out; ``/settings``
-persists the two knobs the panel exposes. Expensive work is offloaded, and the
-file transport streams bounded batches rather than building another copy of
-the whole library in memory.
-"""
+"""Offload expensive work and stream file transfers in bounded batches."""
 
 import contextlib
 import json
 import os
 import tempfile
 
-from ...store import SCHEMA_VERSION, STORE
+from ... import app
+from ...features.library.settings import update_settings
+from ...features.prompts.get import count_prompts, get_prompts, prompt_ids
+from ...features.storage.export import export_library, export_metadata
+from ...features.storage.importing import import_library
+from ...shared.db.schema import SCHEMA_VERSION
+from ...shared.errors import StoreWriteError
 from .. import schemas
 from ..config import CAPABILITIES
 from ..utils import (
@@ -20,6 +19,7 @@ from ..utils import (
     _bool,
     _get_web,
     _json,
+    _lib,
     _offload,
     _opt,
     _query,
@@ -38,7 +38,7 @@ def _json_text(value):
 
 def _export_snapshot():
     """Small envelope state plus stable ids; never materialises prompt bodies."""
-    return STORE.export_metadata(), STORE.ids()
+    return export_metadata(_lib()), prompt_ids(_lib())
 
 
 def _export_prefix(meta):
@@ -52,7 +52,7 @@ def _export_prefix(meta):
 
 def _export_batch(ids):
     """Serialize one bounded batch away from the event loop."""
-    records = STORE.get_many(ids)
+    records = get_prompts(_lib(), ids)
     return [_json_text(records[pid]).encode("utf-8") for pid in ids if pid in records]
 
 
@@ -110,17 +110,32 @@ async def _spool_upload(request):
 
 
 def _storage_status():
-    return STORE.storage_status()
+    return app.storage_status(app.current())
+
+
+def _count():
+    try:
+        return count_prompts(_lib())
+    except StoreWriteError:
+        return 0
+
+
+def _readonly():
+    try:
+        return _lib().readonly()
+    except StoreWriteError:
+        return False
+
 
 
 def _ping_status():
     return {
         "ok": True,
         "schema": SCHEMA_VERSION,
-        "count": STORE.count(),
-        "path": STORE.store_path(),
-        "corrupt": STORE.is_corrupt(),
-        "readonly": STORE.is_readonly(),
+        "count": _count(),
+        "path": _lib().path,
+        "corrupt": _lib().corrupt(),
+        "readonly": _readonly(),
         "threshold": _threshold(None),
         "capabilities": dict(CAPABILITIES),
         "storage": _storage_status(),
@@ -145,7 +160,7 @@ async def storage(request):
         summary="Explicitly merge a legacy JSONL/JSON library into SQLite.",
         returns=schemas.MigrateStorageResponse)
 async def migrate_storage(request):
-    result = await _offload(STORE.migrate_legacy)
+    result = await _offload(app.migrate_legacy, app.current())
     return _json({**result, "storage": await _offload(_storage_status)})
 
 
@@ -153,7 +168,7 @@ async def migrate_storage(request):
         summary="Run explicit storage optimization (SQLite VACUUM).",
         returns=schemas.CompactStorageResponse)
 async def compact_storage(request):
-    result = await _offload(STORE.compact)
+    result = await _offload(app.compact, app.current())
     return _json({**result, "storage": await _offload(_storage_status)})
 
 
@@ -161,7 +176,7 @@ async def compact_storage(request):
         summary="The whole library envelope, ready to write to a file.",
         returns=schemas.ExportResponse)
 async def export(request):
-    return _json({"library": await _offload(STORE.export_raw)})
+    return _json({"library": await _offload(export_library, _lib())})
 
 
 @_route("get", "/export/file", op="exportLibraryFile",
@@ -198,7 +213,8 @@ async def settings(request):
     """Persist the dupe threshold / version cap the panel exposes."""
     data = await _body(request)
     return _json({"settings": await _offload(
-        STORE.set_settings,
+        update_settings,
+        _lib(),
         _opt(data, "dupe_threshold"),
         _opt(data, "version_cap"),
     )})
@@ -211,7 +227,7 @@ async def import_route(request):
     data = await _body(request)
     raw = data.get("library", data.get("raw"))
     replace = _bool(data.get("replace"), True)
-    return _json({"count": await _offload(STORE.import_raw, raw, replace)})
+    return _json({"count": await _offload(import_library, _lib(), raw, replace)})
 
 
 @_route("post", "/import/file", op="importLibraryFile",
@@ -224,7 +240,7 @@ async def import_file(request):
     path = await _spool_upload(request)
     try:
         raw = await _offload(_read_uploaded_json, path)
-        count = await _offload(STORE.import_raw, raw, mode == "replace")
+        count = await _offload(import_library, _lib(), raw, mode == "replace")
     finally:
         await _offload(_remove_upload, path)
     return _json({"count": count})

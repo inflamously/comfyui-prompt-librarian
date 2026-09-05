@@ -1,15 +1,6 @@
-/* ==========================================================================
-   Prompt Library (the OLD node) — transport
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   The only file in this domain besides the entry that imports from ComfyUI.
-   `api.fetchApi` is used rather than bare `fetch` so ComfyUI's base URL (and
-   any reverse-proxy prefix) is applied.
-
-   These routes are registered in the pack's `__init__.py` and are entirely
-   separate from the Librarian's `/prompt_librarian/*` ones.
-   ========================================================================== */
+/* Use api.fetchApi so ComfyUI and reverse-proxy URL prefixes are preserved.
+ * These routes belong to the independent PromptLibrary node.
+ */
 
 import { api } from "../../../scripts/api.js";
 import { EMPTY_LABEL } from "./labels.js";

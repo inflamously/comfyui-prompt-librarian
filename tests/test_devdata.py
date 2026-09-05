@@ -1,8 +1,9 @@
 """The dev playground dataset is synthetic and always uses a temp store."""
 
-from prompt_librarian import dedupe
-from scripts.devdata import DEFAULT_PROMPT_COUNT, SHOWCASE_PROMPTS, prompt_seeds
-from scripts.devserver import seed
+from prompt_librarian.features import dupes as dedupe
+from scripts.devkit.data import DEFAULT_PROMPT_COUNT, SHOWCASE_PROMPTS, prompt_seeds
+from scripts.devkit.server import seed
+from tests import uc
 
 
 def test_showcase_has_fifty_varied_well_formed_prompts():
@@ -25,12 +26,12 @@ def test_prompt_seeds_honours_small_and_large_counts():
 def test_seed_populates_the_showcase_features(store):
     seed(store, DEFAULT_PROMPT_COUNT)
 
-    records = store.list_all()
+    records = uc.all_prompts(store.lib)
     assert len(records) == DEFAULT_PROMPT_COUNT
     assert {item["rating"] for item in records} == {0, 1, 2, 3, 4, 5}
     assert any(item["pinned"] for item in records)
     assert any(item["used"] >= 30 for item in records)
     assert sorted(len(item["versions"]) for item in records)[-2:] == [2, 50]
-    assert len(store.snippets()) == 4
-    assert len(store.ignored_pairs()) == 1
-    assert len(dedupe.dupe_counts(store, 0.9, exhaustive=True)["groups"]) == 2
+    assert len(uc.list_snippets(store.lib)) == 4
+    assert len(uc.ignored_pairs(store.lib)) == 1
+    assert len(dedupe.dupe_counts(store.dupe_source, 0.9, exhaustive=True)["groups"]) == 2

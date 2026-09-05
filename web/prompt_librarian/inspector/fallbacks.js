@@ -1,12 +1,3 @@
-/* ==========================================================================
-   Prompt Librarian — inspector fallbacks
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   Used only when shared/ is unavailable or partially loaded, so a half-broken
-   helper module degrades instead of taking the pane with it.
-   ========================================================================== */
-
 export function fallbackH(tag, props, ...children) {
   const el = document.createElement(tag);
   if (props) {

@@ -1,0 +1,369 @@
+{
+  "bulk_tags": {
+    "outcome": {
+      "retagged": 1,
+      "tag_listed": true
+    },
+    "steps": {
+      "retag": {
+        "connections": 0,
+        "ms": 0.7,
+        "statements": 39
+      },
+      "total": {
+        "connections": 2,
+        "ms": 3.7,
+        "statements": 179
+      }
+    }
+  },
+  "delete": {
+    "outcome": {
+      "deleted": true,
+      "found_after": 0
+    },
+    "steps": {
+      "delete": {
+        "connections": 0,
+        "ms": 0.8,
+        "statements": 46
+      },
+      "total": {
+        "connections": 2,
+        "ms": 3.8,
+        "statements": 208
+      }
+    }
+  },
+  "dupes_after_usage": {
+    "outcome": {
+      "groups": 2,
+      "hits": 2
+    },
+    "steps": {
+      "grouped_after_usage": {
+        "connections": 0,
+        "ms": 2.2,
+        "statements": 145
+      },
+      "grouped_cold": {
+        "connections": 0,
+        "ms": 3.7,
+        "statements": 272
+      },
+      "total": {
+        "connections": 2,
+        "ms": 15.9,
+        "statements": 1392
+      },
+      "usage": {
+        "connections": 0,
+        "ms": 0.8,
+        "statements": 37
+      }
+    }
+  },
+  "duplicates_and_compare": {
+    "outcome": {
+      "diff": true,
+      "groups": 0,
+      "matches": 1
+    },
+    "steps": {
+      "all_pairs": {
+        "connections": 0,
+        "ms": 0.9,
+        "statements": 66
+      },
+      "find_similar": {
+        "connections": 0,
+        "ms": 0.9,
+        "statements": 47
+      },
+      "total": {
+        "connections": 2,
+        "ms": 5.1,
+        "statements": 247
+      }
+    }
+  },
+  "edit_and_history": {
+    "outcome": {
+      "body_updated": true,
+      "versions": 1
+    },
+    "steps": {
+      "total": {
+        "connections": 2,
+        "ms": 4.4,
+        "statements": 310
+      },
+      "update": {
+        "connections": 0,
+        "ms": 1.1,
+        "statements": 137
+      }
+    }
+  },
+  "export_and_restore": {
+    "outcome": {
+      "after_delete": 0,
+      "after_restore": 1,
+      "exported": true
+    },
+    "steps": {
+      "export": {
+        "connections": 0,
+        "ms": 0.7,
+        "statements": 10
+      },
+      "import": {
+        "connections": 0,
+        "ms": 1.3,
+        "statements": 366
+      },
+      "total": {
+        "connections": 2,
+        "ms": 6.7,
+        "statements": 660
+      }
+    }
+  },
+  "locked_writer": {
+    "outcome": {
+      "corrupt": false,
+      "count": 2,
+      "status": 200,
+      "waited_for_lock": true
+    },
+    "steps": {
+      "create_under_lock": {
+        "connections": 2,
+        "ms": 433.0,
+        "statements": 109
+      },
+      "total": {
+        "connections": 3,
+        "ms": 434.2,
+        "statements": 158
+      }
+    }
+  },
+  "node_run": {
+    "outcome": {
+      "counted": [
+        true
+      ],
+      "deterministic": true,
+      "edited_counted": [
+        false
+      ],
+      "resolved": true,
+      "used": 2
+    },
+    "steps": {
+      "run_saved": {
+        "connections": 0,
+        "ms": 0.5,
+        "statements": 35
+      },
+      "total": {
+        "connections": 2,
+        "ms": 4.1,
+        "statements": 217
+      }
+    }
+  },
+  "pick_row": {
+    "outcome": {
+      "counted": true,
+      "page": 50,
+      "unsaved_edit_counted": false,
+      "used_delta": 1
+    },
+    "steps": {
+      "browse": {
+        "connections": 1,
+        "ms": 10.2,
+        "statements": 1700
+      },
+      "count_use": {
+        "connections": 1,
+        "ms": 1.7,
+        "statements": 77
+      },
+      "load": {
+        "connections": 0,
+        "ms": 1.1,
+        "statements": 178
+      },
+      "total": {
+        "connections": 2,
+        "ms": 13.5,
+        "statements": 1963
+      }
+    }
+  },
+  "playground": {
+    "outcome": {
+      "config_injected": true,
+      "corrupt": false,
+      "count": 1,
+      "entry_js": [
+        200,
+        true
+      ],
+      "hits": 1,
+      "page": 200
+    },
+    "steps": {
+      "browse": {
+        "connections": 0,
+        "ms": 0.7,
+        "statements": 53
+      },
+      "ping": {
+        "connections": 2,
+        "ms": 2.4,
+        "statements": 76
+      },
+      "total": {
+        "connections": 2,
+        "ms": 6.3,
+        "statements": 129
+      }
+    }
+  },
+  "rate_then_save": {
+    "outcome": {
+      "rating_kept": 4,
+      "save_after_rate": 200,
+      "stale": 409
+    },
+    "steps": {
+      "rate": {
+        "connections": 0,
+        "ms": 1.0,
+        "statements": 77
+      },
+      "save": {
+        "connections": 0,
+        "ms": 1.1,
+        "statements": 132
+      },
+      "total": {
+        "connections": 2,
+        "ms": 5.3,
+        "statements": 348
+      }
+    }
+  },
+  "resolve": {
+    "outcome": {
+      "missing": [],
+      "snippet_expanded": true,
+      "snippet_listed": true
+    },
+    "steps": {
+      "resolve": {
+        "connections": 0,
+        "ms": 0.7,
+        "statements": 6
+      },
+      "total": {
+        "connections": 2,
+        "ms": 3.5,
+        "statements": 60
+      }
+    }
+  },
+  "save_and_find": {
+    "outcome": {
+      "first_hit_is_new": true,
+      "labelled": true,
+      "meta": true,
+      "suggestion": {
+        "scope": "word",
+        "source_count": 1,
+        "text": "smokecheck"
+      }
+    },
+    "steps": {
+      "autocomplete": {
+        "connections": 0,
+        "ms": 0.4,
+        "statements": 9
+      },
+      "create": {
+        "connections": 2,
+        "ms": 3.1,
+        "statements": 131
+      },
+      "search": {
+        "connections": 0,
+        "ms": 0.7,
+        "statements": 55
+      },
+      "total": {
+        "connections": 2,
+        "ms": 4.7,
+        "statements": 241
+      }
+    }
+  },
+  "scale": {
+    "outcome": {
+      "grouped_total": 145,
+      "total": 4
+    },
+    "steps": {
+      "browse": {
+        "connections": 1,
+        "ms": 129.7,
+        "statements": 1354
+      },
+      "grouped_cold": {
+        "connections": 1,
+        "ms": 727.2,
+        "statements": 10977
+      },
+      "grouped_warm": {
+        "connections": 0,
+        "ms": 282.0,
+        "statements": 2849
+      },
+      "query": {
+        "connections": 0,
+        "ms": 4.3,
+        "statements": 720
+      },
+      "taxonomy": {
+        "connections": 0,
+        "ms": 0.6,
+        "statements": 9
+      },
+      "total": {
+        "connections": 2,
+        "ms": 1143.9,
+        "statements": 15909
+      }
+    }
+  },
+  "settings": {
+    "outcome": {
+      "dupe_threshold": 0.85
+    },
+    "steps": {
+      "save": {
+        "connections": 2,
+        "ms": 2.2,
+        "statements": 42
+      },
+      "total": {
+        "connections": 2,
+        "ms": 2.2,
+        "statements": 42
+      }
+    }
+  }
+}

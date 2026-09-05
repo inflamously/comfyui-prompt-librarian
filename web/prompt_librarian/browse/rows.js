@@ -1,12 +1,5 @@
-/* ==========================================================================
-   Prompt Librarian — the list row
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-
-   textContent ONLY. Never innerHTML after creation: it is both the XSS
-   defence for user-authored prompt bodies and the reason recycling is fast
-   (assigning textContent on an existing node skips the HTML parser).
-   ========================================================================== */
+/* Render user-authored bodies and tags through textContent, never innerHTML.
+ */
 
 import { h } from "../shared/dom.js";
 import { firstLine, labelOf } from "../shared/text.js";
@@ -15,7 +8,6 @@ import { fmtInt, relTime } from "../shared/format.js";
 const MULT = String.fromCharCode(0x00d7); // "×"
 const MIDDOT = String.fromCharCode(0x00b7); // "·"
 
-/** A blank row, with its parts cached on `row.__parts`. */
 export function createRow() {
   const row = h(
     "div",
@@ -30,9 +22,7 @@ export function createRow() {
     h(
       "div",
       { className: "pl-row-name" },
-      // Inside `.pl-row-name` (a flex box) rather than as a grid child: the
-      // row's `grid-template-areas` is load-bearing for its height, and a
-      // fourth column would have meant re-tuning every area.
+      // Keep the twisty inside the name cell to preserve the row grid and height.
       h("span", { className: "pl-row-twisty", hidden: true, "aria-hidden": "true" }),
       h("span", { className: "pl-row-nm" }),
       h("span", { className: "pl-row-match", hidden: true })
@@ -41,9 +31,7 @@ export function createRow() {
     h("div", { className: "pl-row-body" }),
     h("div", { className: "pl-row-meta" })
   );
-  // Cache the parts so updateRow never queries the DOM. Recycled rows are
-  // updated on every scroll frame; a querySelector per field per row is the
-  // difference between a smooth list and a janky one.
+  // Cache parts: recycled rows update every scroll frame.
   // Rows are absolutely placed inside the window so a recycled node can be
   // appended at the end without appearing out of order.
   row.style.position = "absolute";
@@ -65,14 +53,7 @@ export function createRow() {
 const TWISTY_OPEN = String.fromCharCode(0x25be); // "▾"
 const TWISTY_SHUT = String.fromCharCode(0x25b8); // "▸"
 
-/**
- * Paint one row. `state` is the modal state — passed in rather than read from
- * a closure so this stays a pure function of (row, item, index, state, view).
- *
- * `view` is the GroupedView, and it is what decides whether this index is a
- * duplicate-cluster header, a member inside an opened one, or an ordinary row.
- * Omit it and every row paints flat, which is exactly what the compare dialog's
- * reuse of this renderer wants.
+/** Use GroupedView to interpret flat row indices; they are not record indices.
  */
 export function updateRow(row, item, index, state, view) {
   const p = row.__parts;
@@ -98,9 +79,7 @@ export function updateRow(row, item, index, state, view) {
   row.dataset.id = id;
   row.id = "pl-r-" + id;
 
-  // The backend's derived handle: the terms this body has that the rest of
-  // the library does not. It is a *label*, not an identity — never key
-  // anything off it, and never let a user believe they set it.
+  // Derived labels are display-only; key records by ID.
   p.label.textContent = labelOf(item) || "(empty prompt)";
 
   const pct = item.match_pct;
@@ -112,9 +91,6 @@ export function updateRow(row, item, index, state, view) {
     p.match.textContent = "";
   }
 
-  // Three row kinds, and the badge says which: a cluster header counts the
-  // whole cluster, a member inside an open one says nothing (its header just
-  // did), an ordinary row keeps the near-dupe badge.
   const size = Number(item.group_size) || 1;
   const member = !!view && view.isMember(index);
   const header = !!view && !member && size > 1;
@@ -157,8 +133,6 @@ export function updateRow(row, item, index, state, view) {
   p.check.checked = state.selectionMode === "filter" || state.selection.has(id);
 }
 
-/* Kept for callers that only want the row markup (the compare dialog reuses
-   the same shape). Exported so it cannot drift silently. */
 export const ROW_CLASSES = Object.freeze({
   row: "pl-row",
   skeleton: "pl-row-skel",

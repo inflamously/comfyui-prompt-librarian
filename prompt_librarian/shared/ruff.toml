@@ -1,0 +1,13 @@
+# Migrated code follows the stricter rules in AGENTS.md (rule 8): type
+# annotations, Google docstrings, and a complexity ceiling of 8. `features/`
+# and `shared/` carry the same file; no module is exempt.
+extend = "../../pyproject.toml"
+
+[lint]
+extend-select = ["ANN", "D"]
+
+[lint.mccabe]
+max-complexity = 8
+
+[lint.pydocstyle]
+convention = "google"

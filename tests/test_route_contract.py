@@ -8,7 +8,7 @@ button, and the frontend hedges against exactly that by sending duplicate keys
 either side must not break the hot path.
 
 This is that check. The JS side is enumerated by *executing* it — a subprocess
-runs ``tests-js/tools/dump-routes.mjs``, which invokes all 30 ``API`` methods
+runs ``tests-js/tools/dump-routes.mjs``, which invokes every ``API`` method
 against a recording transport and prints what would go on the wire. No regex
 parsing, and no dependency on ``openapi.json`` (gitignored, generated on demand,
 needs pydantic).
@@ -34,9 +34,9 @@ from prompt_librarian import api  # noqa: E402
 from prompt_librarian.api.utils import _ROUTES  # noqa: E402
 
 # The frontend has one method per route, except that setSnippet and delSnippet
-# both POST to /snippet — so 35 methods describe 34 routes.
-EXPECTED_ROUTES = 34
-EXPECTED_METHODS = 35
+# both POST to /snippet — so 46 methods describe 45 routes.
+EXPECTED_ROUTES = 45
+EXPECTED_METHODS = 46
 
 
 def _node():
@@ -123,3 +123,8 @@ def test_each_python_route_has_a_frontend_caller(route, js_records):
     # in one set difference.
     js = {(r["method"], r["path"]) for r in js_records}
     assert route in js, f"no frontend method calls {route[0].upper()} {route[1]}"
+
+
+def test_autocomplete_query_contract(js_records):
+    rec = next(r for r in js_records if r["fn"] == "autocomplete")
+    assert rec["query"] == ["limit", "phrase_prefix", "word_prefix"]

@@ -12,5 +12,5 @@ __pycache__
 # under web/ imports it, and ComfyUI never sees it.
 /node_modules/
 
-# Scratch libraries written by scripts/devserver.py. Never the real one.
+# Scratch libraries written by scripts/dev.py (play mode). Never the real one.
 /.devserver/

@@ -8,7 +8,8 @@
     "test": "node --test \"tests-js/**/*.test.js\"",
     "test:watch": "node --test --watch \"tests-js/**/*.test.js\"",
     "routes": "node tests-js/tools/dump-routes.mjs",
-    "dev": "python scripts/devserver.py"
+    "dev": "python scripts/dev.py",
+    "sim": "python scripts/dev.py sim"
   },
   "devDependencies": {
     "jsdom": "^26.1.0"

@@ -1,15 +1,11 @@
-"""The ``__wildcard__`` files, and the resolver preview built on them.
-
-``from ... import wildcards`` deliberately binds the *domain* module over this
-one's own name: the handlers read ``wildcards.FILES`` through the module rather
-than importing the names, so a test (or a user changing the wildcard directory)
-can swap the file index and have both endpoints see it.
+"""Bind the domain wildcards module, not individual exports, so both endpoints
+see a replaced FILES index.
 """
 
-from ... import wildcards
-from ...store import STORE
+from ...features import wildcards
+from ...features.library.snippets import list_snippets
 from .. import schemas
-from ..utils import _body, _int, _json, _route, _str
+from ..utils import _body, _int, _json, _lib, _route, _str
 
 
 @_route("get", "/wildcards", op="listWildcards",
@@ -32,7 +28,7 @@ async def resolve(request):
     text = _str(data.get("text"))
     seed = _int(data.get("seed"), 0)
     count = max(1, min(_int(data.get("n"), 1), 50))
-    snips = STORE.snippets()
+    snips = list_snippets(_lib())
     first = wildcards.resolve_verbose(text, seed, snippets=snips)
     samples = [first["text"]]
     for offset in range(1, count):

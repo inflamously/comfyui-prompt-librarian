@@ -1,9 +1,3 @@
-/* ==========================================================================
-   Prompt Librarian — openMergeEditor(): the editable union
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-   ========================================================================== */
-
 import { h } from "../shared/dom.js";
 import {
   ARROW,
@@ -20,13 +14,8 @@ import {
   unwrapRecord,
 } from "./common.js";
 
-/**
- * Editable union of two bodies, saved as a NEW record.
- *
- * The seed is deliberately naive — every `equal` run plus both sides' inserts
- * (a `delete` is the left side's insert; a `replace` contributes both) in
- * opcode order. It is a starting point for a human edit, not a merge
- * algorithm, and the dialog says so.
+/** Seed an editable union from equal runs and both sides' inserts.
+ * Save as a new record so the inputs remain intact.
  *
  * @param {object} ctx
  * @param {{left: object, right: object, opcodes?: Array, onSaved?: Function}} opts
@@ -44,9 +33,6 @@ export function openMergeEditor(ctx, opts = {}) {
   let busy = false;
   let disposed = false;
 
-  // No name field: the merged prompt is named by what it says, the same as
-  // every other prompt. The editable thing here is the body, and that is the
-  // whole point of the dialog.
   const ta = h("textarea", {
     className: "pl-ta",
     value: seed,
@@ -154,7 +140,6 @@ export function openMergeEditor(ctx, opts = {}) {
         try {
           fn();
         } catch (_) {
-          /* ignore */
         }
       }
       if (typeof o.onClose === "function") o.onClose();
@@ -164,13 +149,11 @@ export function openMergeEditor(ctx, opts = {}) {
   try {
     ta.focus();
   } catch (_) {
-    /* ignore */
   }
 
   return { el, close: () => layer.close(), textarea: ta };
 }
 
-/** All `equal` runs plus both sides' inserts, in opcode order. */
 function mergeSeed(opcodes, aText, bText) {
   if (!Array.isArray(opcodes) || !opcodes.length) {
     const a = str(aText);

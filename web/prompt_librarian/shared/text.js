@@ -1,20 +1,10 @@
-/* ==========================================================================
-   Prompt Librarian — text helpers, all of them grapheme/code-point safe
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-   ========================================================================== */
-
-// Intl.Segmenter gives real user-perceived character counts (a flag emoji is
-// one grapheme built from two code points; "é" may be two). It is not in every
-// engine ComfyUI might run in, so every use is behind a probe with an
-// Array.from fallback (code points — still never splits a surrogate pair).
+// Prefer graphemes; the code-point fallback still preserves surrogate pairs.
 const SEGMENTER = (() => {
   try {
     if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") {
       return new Intl.Segmenter(undefined, { granularity: "grapheme" });
     }
   } catch (_) {
-    /* fall through */
   }
   return null;
 })();
@@ -36,10 +26,8 @@ export function graphemes(str) {
   return Array.from(s);
 }
 
-/**
- * Character count in user-perceived characters (graphemes) when Intl.Segmenter
- * exists, code points otherwise. Deliberately NOT `str.length`, which counts
- * UTF-16 code units and reports "🎬" as 2.
+/** Count graphemes when available, otherwise code points, not UTF-16 units.
+ *
  * @param {string} str
  * @returns {number}
  */
@@ -54,10 +42,8 @@ export function charCount(str) {
   return Array.from(s).length;
 }
 
-/**
- * Truncate to `n` characters, appending "…" when it actually cut something.
- * Slices grapheme/code-point units, never UTF-16 units, so an emoji at the cut
- * boundary is kept or dropped whole and never rendered as a lone surrogate.
+/** Truncate without splitting graphemes or surrogate pairs.
+ *
  * @param {string} str
  * @param {number} n
  * @param {string} [ellipsis="…"]
@@ -71,10 +57,7 @@ export function truncate(str, n, ellipsis = "…") {
   return units.slice(0, n).join("") + ellipsis;
 }
 
-/**
- * Collapse a body to a single line: newlines and runs of whitespace become one
- * space, then optionally truncate. Used for node-face and row previews.
- * @param {string} str
+/** @param {string} str
  * @param {number} [n] optional character cap
  * @returns {string}
  */
@@ -87,19 +70,8 @@ export function firstLine(str, n) {
 /** Cap on a derived label — mirrors `labels.LABEL_CHARS` on the backend. */
 export const LABEL_CHARS = 96;
 
-/**
- * A body's opening words, cut on a word boundary. The client half of a label.
- *
- * A record has no name; what it is *called* is derived from what it says. The
- * good version of that is corpus-wide (which terms this body has that no other
- * body does) and can only be computed where the whole library is — so the
- * backend sends a `label` on every row, match and version it returns, and this
- * is the fallback for the one case that has no backend answer: text that has
- * never been saved.
- *
- * Kept in step with `labels.head_label` in Python, deliberately: the moment a
- * draft is saved its label is recomputed server-side, and a user watching that
- * happen should not see the handle jump.
+/** Fallback for unsaved bodies; keep word-boundary behavior aligned with
+ * Python labels.head_label.
  *
  * @param {string} body
  * @param {number} [n=LABEL_CHARS]
@@ -133,20 +105,8 @@ export function labelOf(item, n = LABEL_CHARS) {
   return headLabel(item.body != null ? item.body : item.preview, n);
 }
 
-/**
- * Rough token count for the UI's `~61 tokens` readout.
- *
- * THIS IS AN ESTIMATE, NOT A TOKENIZER. No tokenizer is guaranteed available
- * in ComfyUI's browser environment, and the answer depends on which model the
- * text is destined for (CLIP, T5, a video model's own vocab) — a single true
- * number does not exist. The UI must therefore always render this with a `~`
- * prefix; showing it bare would be dishonest precision.
- *
- * Heuristic: whitespace words cost 1 token each plus 1 extra per 6 characters
- * beyond the 6th (long/compound words split), punctuation runs cost 1 each,
- * and CJK characters cost ~1 token apiece since they do not use spaces. That
- * lands within roughly ±15% of BPE counts on prompt-shaped English text,
- * which is all the readout needs.
+/** Model-dependent estimate: always display with a ~ prefix.
+ * Counts words, long-word fragments, punctuation runs, and CJK characters.
  *
  * @param {string} str
  * @returns {number}
@@ -172,8 +132,7 @@ export function estimateTokens(str) {
   return n + cjk;
 }
 
-// Built from code points rather than pasted glyphs so they survive this file
-// being served with a wrong or absent charset header.
+// Use code points so glyphs survive an incorrect response charset.
 export const STAR_FULL = String.fromCharCode(0x2605); // BLACK STAR
 export const STAR_EMPTY = String.fromCharCode(0x2606); // WHITE STAR
 

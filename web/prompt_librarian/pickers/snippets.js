@@ -1,9 +1,3 @@
-/* ==========================================================================
-   Prompt Librarian — snippet picker
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-   ========================================================================== */
-
 import { NS } from "../shared/ns.js";
 import { h } from "../shared/dom.js";
 import { firstLine } from "../shared/text.js";
@@ -12,14 +6,7 @@ import { insertAtCaret } from "./caret.js";
 import { buildMenu, matches } from "./menu.js";
 import { openPopover } from "./popover.js";
 
-/**
- * `GET /snippets` → `{snippets: {name: {body, updated}}}`.
- *
- * Enter or click inserts the snippet BODY at the caret. Shift+Enter /
- * shift-click inserts the `[[name]]` reference instead, which the backend
- * resolver expands at run time (and which the mirror highlights).
- *
- * Escape closes only this popover — the modal stays open.
+/** Insert the body normally; Shift inserts a [[name]] reference for runtime expansion.
  *
  * @param {object} ctx
  * @param {{anchor: HTMLElement, textarea: HTMLTextAreaElement,
@@ -31,8 +18,7 @@ export function openSnippets(ctx, { anchor, textarea, onInsert } = {}) {
   let loaded = false;
 
   const insert = (text) => {
-    // inspector/ hands us an onInsert that also syncs its edit buffer and
-    // dirty flag; prefer it. Standalone we drive the textarea directly.
+    // Prefer onInsert because it also updates the inspector buffer and dirty state.
     if (isFn(onInsert)) onInsert(text);
     else insertAtCaret(textarea, text);
   };
@@ -70,8 +56,6 @@ export function openSnippets(ctx, { anchor, textarea, onInsert } = {}) {
           .map((e) => ({
             label: e.name,
             meta: firstLine(e.body, 28),
-            // The activating event decides: shift inserts the `[[name]]`
-            // reference (resolved at run time), otherwise the literal body.
             run: (ev) => {
               handle.close();
               insert(ev && ev.shiftKey ? `[[${e.name}]]` : e.body);

@@ -1,10 +1,5 @@
-/* ==========================================================================
-   Prompt Librarian — inspector glyphs and fixed strings
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. `const` data only.
-
-   Glyphs by code point so they survive a wrong/absent charset header.
-   ========================================================================== */
+/* Use code points so glyphs survive an incorrect response charset.
+ */
 
 export const MUL = String.fromCharCode(0x00d7); // ×  (used 41×)
 export const CARET = String.fromCharCode(0x25be); // ▾

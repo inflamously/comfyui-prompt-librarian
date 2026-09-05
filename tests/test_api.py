@@ -8,15 +8,17 @@ installed in this sandbox.
 
 import asyncio
 import json
-import sys
 import types
 
 import pytest
 
 pytest.importorskip("aiohttp")
 
-from prompt_librarian import api, dedupe, search  # noqa: E402
-from prompt_librarian import store as librarian_store  # noqa: E402
+from prompt_librarian import api  # noqa: E402
+from prompt_librarian import app as librarian_app  # noqa: E402
+from prompt_librarian.features import dupes as dedupe  # noqa: E402
+from prompt_librarian.features import search  # noqa: E402
+from tests import uc  # noqa: E402
 
 # --------------------------------------------------------------------------- #
 # Harness
@@ -120,47 +122,22 @@ def routes():
     return table
 
 
-def _modules_binding_store():
-    """Every api module that did ``from ...store import STORE``.
-
-    ``STORE`` is a module-level singleton each module imports *by name*, so
-    every binding has to be replaced independently — patching only some would
-    leave part of the route layer talking to the process-wide store. Discovered
-    rather than listed, so a new route module cannot silently opt out of the
-    swap and start writing to the real library.
-    """
-    return [
-        module
-        for name, module in sorted(sys.modules.items())
-        if name.startswith("prompt_librarian.api")
-        and getattr(module, "STORE", None) is librarian_store.STORE
-    ]
-
-
 @pytest.fixture
-def store(tmp_path, monkeypatch, routes):
-    """A real store in a temp dir, swapped into every api module that binds it.
+def store(tmp_path, routes):
+    """An app on a temp library, installed as the one every route uses.
 
     SQLite is the only live backend. Legacy JSON/JSONL coverage belongs to the
     explicit migration tests rather than the whole route suite.
     """
-    target = librarian_store.LibrarianStore(
+    target = librarian_app.build(
         path=str(tmp_path / "lib" / "library.sqlite3"), migrate_from=False
     )
-    modules = _modules_binding_store()
-    # A silent empty list here would point the handlers at the user's real
-    # library.json, so assert the two ends of the layering were found.
-    assert api.utils in modules
-    assert api.routes.prompts in modules
-    for module in modules:
-        monkeypatch.setattr(module, "STORE", target)
-    # id(store)-keyed caches must not survive between tests: CPython can hand a
-    # new object the address of a collected one.
+    librarian_app.use(target)
+    # Caches key on revision numbers, which every fresh library reuses.
     search.invalidate_index()
     dedupe.invalidate()
     yield target
-    if hasattr(target, "close"):
-        target.close()
+    target.lib.close()
 
 
 @pytest.fixture
@@ -212,12 +189,12 @@ def test_register_returns_the_handler_map(routes):
 def test_ping(call, store):
     payload = ok(call("get", "/ping"))
     assert payload["ok"] is True
-    assert payload["schema"] == librarian_store.SCHEMA_VERSION
+    assert payload["schema"] == uc.SCHEMA_VERSION
     assert payload["count"] == 0
     assert payload["corrupt"] is False
     assert payload["readonly"] is False
     assert 0.0 <= payload["threshold"] <= 1.0
-    assert payload["path"] == store.store_path()
+    assert payload["path"] == store.lib.path
     caps = payload["capabilities"]
     assert caps["soft_delete"] is False
     for name in ("search", "versions", "diff", "wildcards", "snippets", "bulk", "dupes"):
@@ -231,8 +208,8 @@ def test_search_empty_library(call, store):
 
 
 def test_search_finds_and_shapes_hits(call, store):
-    store.create(body="make him dance ballet slowly", tags=["dance"])
-    store.create(body="a completely different thing")
+    uc.create_prompt(store.lib, body="make him dance ballet slowly", tags=["dance"])
+    uc.create_prompt(store.lib, body="a completely different thing")
     payload = ok(call("get", "/search", {"q": "ballet"}))
     assert payload["total"] == 1
     hit = payload["hits"][0]
@@ -258,7 +235,7 @@ def test_search_finds_and_shapes_hits(call, store):
 
 def test_search_filters_and_paginates(call, store):
     for index in range(5):
-        store.create(body=f"body {index}", tags=["c"])
+        uc.create_prompt(store.lib, body=f"body {index}", tags=["c"])
     payload = ok(call("get", "/search", {"tags": "c", "limit": "2", "offset": "1", "sort": "az"}))
     assert payload["total"] == 5
     assert len(payload["hits"]) == 2
@@ -266,9 +243,9 @@ def test_search_filters_and_paginates(call, store):
 
 
 def test_search_dupes_only(call, store):
-    store.create(body="make him dance ballet drifting toward the camera")
-    store.create(body="make him dance ballet drifting towards the camera")
-    store.create(body="totally unrelated subject matter here")
+    uc.create_prompt(store.lib, body="make him dance ballet drifting toward the camera")
+    uc.create_prompt(store.lib, body="make him dance ballet drifting towards the camera")
+    uc.create_prompt(store.lib, body="totally unrelated subject matter here")
     payload = ok(call("get", "/search", {"dupes_only": "1"}))
     assert payload["total"] == 2
     assert payload["dupes_partial"] is False
@@ -282,7 +259,7 @@ def test_a_write_re_keys_every_cached_threshold(call, store):
     old rev, which is a full rescan on the next keystroke rather than a missed
     optimisation.
     """
-    store.create(body="make him dance ballet toward the camera")
+    uc.create_prompt(store.lib, body="make him dance ballet toward the camera")
     ok(call("get", "/search", {"group": "1", "threshold": "0.9"}))
     ok(call("get", "/search", {"group": "1", "threshold": "0.8"}))
     assert sorted(t for t, _ in dedupe.cached_all_settings()) == [0.8, 0.9]
@@ -298,13 +275,70 @@ def test_a_write_re_keys_every_cached_threshold(call, store):
 
 
 def _rev_of(store):
-    return store.rev()
+    return store.lib.revision()
+
+
+def _dupe_pair(store):
+    first = uc.create_prompt(store.lib, body="make him dance ballet toward the camera")
+    second = uc.create_prompt(store.lib, body="make him dance ballet towards the camera")
+    return first, second
+
+
+def test_usage_carries_the_all_pairs_scan_forward(call, store):
+    """A run or a row pick changes no body; it must not force a full rescan."""
+    first, second = _dupe_pair(store)
+    ok(call("get", "/search", {"group": "1", "threshold": "0.9"}))
+
+    ok(call("post", "/usage", body={"id": first["id"], "body": first["body"]}))
+    uc.record_usage(store.lib, second["id"])  # the node's path: straight to the store
+
+    assert dedupe.cached_all_settings(store.lib.revision()) == [(0.9, False)]
+    hits = dedupe.cache_stats()["all_hits"]
+    payload = ok(call("get", "/dupes/all"))
+    assert dedupe.cache_stats()["all_hits"] == hits + 1, "served from the carried scan"
+    assert payload["counts"][first["id"]] == 1
+
+
+def test_rating_and_retagging_carry_the_scan_forward(call, store):
+    first, _second = _dupe_pair(store)
+    ok(call("get", "/search", {"group": "1", "threshold": "0.9"}))
+
+    ok(call("post", "/rate", body={"id": first["id"], "rating": 4}))
+    assert dedupe.cached_all_settings(store.lib.revision()) == [(0.9, False)]
+    ok(call("post", "/bulk/retag", body={"ids": [first["id"]], "add": ["x"]}))
+    assert dedupe.cached_all_settings(store.lib.revision()) == [(0.9, False)]
+
+
+def test_a_body_change_is_patched_not_carried_forward(call, store):
+    """Any write path (here: straight to the store) patches the cached scan."""
+    first, second = _dupe_pair(store)
+    ok(call("get", "/search", {"group": "1", "threshold": "0.9"}))
+
+    uc.update_prompt(store.lib, first["id"], body="a completely different subject")
+    assert dedupe.cached_all_settings(store.lib.revision()) == [(0.9, False)]
+    hits = dedupe.cache_stats()["all_hits"]
+    payload = ok(call("get", "/dupes/all"))
+    assert dedupe.cache_stats()["all_hits"] == hits + 1, "served from the patched scan"
+    assert payload["counts"].get(first["id"], 0) == 0
+    assert payload["counts"].get(second["id"], 0) == 0
+
+
+def test_another_connections_commit_is_never_carried_forward(call, store, tmp_path):
+    first, second = _dupe_pair(store)
+    ok(call("get", "/search", {"group": "1", "threshold": "0.9"}))
+
+    other = uc.build(path=store.lib.path, migrate_from=False)
+    uc.update_prompt(other.lib, second["id"], body="an unrelated body from another process")
+    uc.record_usage(store.lib, first["id"])
+
+    payload = ok(call("get", "/dupes/all"))
+    assert payload["counts"].get(first["id"], 0) == 0, "the external edit is seen"
 
 
 def test_search_group_folds_a_duplicate_cluster(call, store):
     """Four copies of one prompt are one row, not four."""
-    ids = [store.create(body="a dancer in the rain")["id"] for _ in range(4)]
-    store.create(body="a bowl of fruit on a table")
+    ids = [uc.create_prompt(store.lib, body="a dancer in the rain")["id"] for _ in range(4)]
+    uc.create_prompt(store.lib, body="a bowl of fruit on a table")
 
     flat = ok(call("get", "/search", {}))
     assert flat["total"] == 5 and flat["record_total"] == 5
@@ -325,7 +359,7 @@ def test_keep_both_does_not_shrink_the_badge(call, store):
     Four identical prompts with four of their six pairs muted reported
     "1 near-dupe" per row — a number matching nothing the user could see.
     """
-    ids = [store.create(body="a dancer in the rain")["id"] for _ in range(4)]
+    ids = [uc.create_prompt(store.lib, body="a dancer in the rain")["id"] for _ in range(4)]
     for a, b in ((0, 1), (0, 2), (1, 3), (2, 3)):
         ok(call("post", "/dupes/ignore", body={"a": ids[a], "b": ids[b]}))
 
@@ -345,7 +379,7 @@ def test_keep_both_does_not_shrink_the_badge(call, store):
 def test_bulk_selectors_never_fold_clusters(call, store):
     """ "Everything currently filtered" is records, not one per cluster."""
     for _ in range(3):
-        store.create(body="a dancer in the rain")
+        uc.create_prompt(store.lib, body="a dancer in the rain")
     payload = ok(
         call(
             "post",
@@ -360,8 +394,8 @@ def test_bulk_selectors_never_fold_clusters(call, store):
 
 
 def test_search_match_id_populates_match_pct(call, store):
-    first = store.create(body="make him dance ballet toward the camera")
-    store.create(body="make him dance ballet towards the camera")
+    first = uc.create_prompt(store.lib, body="make him dance ballet toward the camera")
+    uc.create_prompt(store.lib, body="make him dance ballet towards the camera")
     payload = ok(call("get", "/search", {"match_id": first["id"]}))
     pcts = {hit["id"]: hit["match_pct"] for hit in payload["hits"]}
     other = next(pid for pid in pcts if pid != first["id"])
@@ -370,7 +404,7 @@ def test_search_match_id_populates_match_pct(call, store):
 
 
 def test_prompt(call, store):
-    rec = store.create(body="b")
+    rec = uc.create_prompt(store.lib, body="b")
     payload = ok(call("get", "/prompt", {"id": rec["id"]}))
     assert payload["prompt"]["id"] == rec["id"]
 
@@ -381,8 +415,8 @@ def test_every_single_record_response_carries_a_label(call, store):
     Inside, it would be written to the file by `/export` -> `/import`, which is
     a stored name again by another route.
     """
-    store.create(body="a bowl of fruit on a wooden table")
-    rec = store.create(body="a lone ballerina in a ruined theatre")
+    uc.create_prompt(store.lib, body="a bowl of fruit on a wooden table")
+    rec = uc.create_prompt(store.lib, body="a lone ballerina in a ruined theatre")
     pid = rec["id"]
 
     reads = [call("get", "/prompt", {"id": pid})]
@@ -400,8 +434,8 @@ def test_every_single_record_response_carries_a_label(call, store):
 
 def test_the_label_is_derived_from_the_corpus_not_the_body_head(call, store):
     """Two prompts opening identically still read apart."""
-    first = store.create(body="a lone ballerina drifting through a ruined theatre")
-    second = store.create(body="a lone ballerina drifting through a sunlit field")
+    first = uc.create_prompt(store.lib, body="a lone ballerina drifting through a ruined theatre")
+    second = uc.create_prompt(store.lib, body="a lone ballerina drifting through a sunlit field")
     a = ok(call("get", "/prompt", {"id": first["id"]}))["label"]
     b = ok(call("get", "/prompt", {"id": second["id"]}))["label"]
     assert a != b
@@ -412,7 +446,7 @@ def test_a_label_moves_when_the_library_around_it_does(call, store):
     """It is derived, and derived from the *corpus* — so it is not stable and
     nothing may key off it. Saving an unrelated prompt that happens to share
     these words is enough to change what this one is called."""
-    rec = store.create(
+    rec = uc.create_prompt(store.lib,
         body="a lone ballerina drifting through a ruined theatre at dusk, "
         "cracked marble columns, dust motes swirling, volumetric haze"
     )
@@ -435,8 +469,8 @@ def test_prompt_unknown_id_is_404(call, store):
 
 
 def test_versions_and_version(call, store):
-    rec = store.create(body="first")
-    store.update(rec["id"], body="second")
+    rec = uc.create_prompt(store.lib, body="first")
+    uc.update_prompt(store.lib, rec["id"], body="second")
     payload = ok(call("get", "/versions", {"id": rec["id"]}))
     assert len(payload["versions"]) == 1
     entry = payload["versions"][0]
@@ -449,22 +483,22 @@ def test_versions_and_version(call, store):
 
 
 def test_version_bad_index_is_404(call, store):
-    rec = store.create(body="b")
+    rec = uc.create_prompt(store.lib, body="b")
     status, payload = call("get", "/version", {"id": rec["id"], "index": "9"})
     assert status == 404
     assert payload["code"] == "not_found"
 
 
 def test_taxonomy(call, store):
-    store.create(body="x", tags=["t1", "t2"])
+    uc.create_prompt(store.lib, body="x", tags=["t1", "t2"])
     payload = ok(call("get", "/taxonomy"))
     assert payload["total"] == 1
     assert {t["tag"] for t in payload["tags"]} == {"t1", "t2"}
 
 
 def test_dupes_all(call, store):
-    first = store.create(body="make him dance ballet toward the camera")
-    second = store.create(body="make him dance ballet towards the camera")
+    first = uc.create_prompt(store.lib, body="make him dance ballet toward the camera")
+    second = uc.create_prompt(store.lib, body="make him dance ballet towards the camera")
     payload = ok(call("get", "/dupes/all"))
     assert payload["counts"][first["id"]] == 1
     assert payload["counts"][second["id"]] == 1
@@ -473,8 +507,8 @@ def test_dupes_all(call, store):
 
 
 def test_dupes_all_coalesces_concurrent_callers(call, store, monkeypatch):
-    store.create(body="make him dance ballet toward the camera")
-    store.create(body="make him dance ballet towards the camera")
+    uc.create_prompt(store.lib, body="make him dance ballet toward the camera")
+    uc.create_prompt(store.lib, body="make him dance ballet towards the camera")
     calls = []
     real = dedupe.dupe_counts
 
@@ -493,7 +527,7 @@ def test_dupes_all_coalesces_concurrent_callers(call, store, monkeypatch):
 
 
 def test_wildcards(call, store, tmp_path, monkeypatch):
-    from prompt_librarian import wildcards as wc
+    from prompt_librarian.features import wildcards as wc
 
     root = tmp_path / "wc"
     root.mkdir()
@@ -506,10 +540,10 @@ def test_wildcards(call, store, tmp_path, monkeypatch):
 
 
 def test_snippets_and_export(call, store):
-    store.set_snippet("cine", "volumetric haze")
+    uc.set_snippet(store.lib, "cine", "volumetric haze")
     assert ok(call("get", "/snippets"))["snippets"]["cine"]["body"] == "volumetric haze"
     library = ok(call("get", "/export"))["library"]
-    assert library["schema"] == librarian_store.SCHEMA_VERSION
+    assert library["schema"] == uc.SCHEMA_VERSION
     assert "prompts" in library
 
 
@@ -535,34 +569,34 @@ def test_create(call, store):
     rec = payload["prompt"]
     assert rec["body"] == "b" and rec["tags"] == ["x", "y"] and rec["rating"] == 3
     assert "name" not in rec
-    assert store.count() == 1
+    assert uc.count_prompts(store.lib) == 1
 
 
 def test_create_ignores_a_name_from_an_older_client(call, store):
     """The field is gone from the api, not merely unused by the panel."""
     payload = ok(call("post", "/create", body={"body": "b", "name": "n"}))
     assert "name" not in payload["prompt"]
-    assert "name" not in store.all()[0]
+    assert "name" not in uc.all_prompts(store.lib)[0]
 
 
 def test_create_oversized_body_is_413(call, store):
     status, payload = call(
-        "post", "/create", body={"body": "x" * (librarian_store.MAX_BODY_CHARS + 1)}
+        "post", "/create", body={"body": "x" * (uc.MAX_BODY_CHARS + 1)}
     )
     assert status == 413
     assert payload["code"] == "too_large"
-    assert store.count() == 0  # rejected before anything was written
+    assert uc.count_prompts(store.lib) == 0  # rejected before anything was written
 
 
 def test_update(call, store):
-    rec = store.create(body="one")
+    rec = uc.create_prompt(store.lib, body="one")
     payload = ok(call("post", "/update", body={"id": rec["id"], "body": "two"}))
     assert payload["prompt"]["body"] == "two"
     assert len(payload["prompt"]["versions"]) == 1
 
 
 def test_update_partial_fields_only(call, store):
-    rec = store.create(body="one", tags=["t"])
+    rec = uc.create_prompt(store.lib, body="one", tags=["t"])
     payload = ok(call("post", "/update", body={"id": rec["id"], "rating": 5}))
     assert payload["prompt"]["body"] == "one"
     assert payload["prompt"]["tags"] == ["t"]
@@ -570,8 +604,8 @@ def test_update_partial_fields_only(call, store):
 
 
 def test_update_expect_updated_conflict_is_409(call, store):
-    rec = store.create(body="one")
-    store.update(rec["id"], body="two")  # another tab got there first
+    rec = uc.create_prompt(store.lib, body="one")
+    uc.update_prompt(store.lib, rec["id"], body="two")  # another tab got there first
     # `updated` is second-precision, so a same-second edit can collide; the
     # baseline the losing tab holds is explicitly older than any real stamp.
     status, payload = call(
@@ -585,11 +619,11 @@ def test_update_expect_updated_conflict_is_409(call, store):
     )
     assert status == 409
     assert payload["code"] == "conflict"
-    assert store.get(rec["id"])["body"] == "two"  # never a silent overwrite
+    assert uc.get_prompt(store.lib, rec["id"])["body"] == "two"  # never a silent overwrite
 
 
 def test_update_expect_updated_matching_succeeds(call, store):
-    rec = store.create(body="one")
+    rec = uc.create_prompt(store.lib, body="one")
     payload = ok(
         call(
             "post",
@@ -611,21 +645,21 @@ def test_update_unknown_id_is_404(call, store):
 
 
 def test_rate(call, store):
-    rec = store.create(body="b")
+    rec = uc.create_prompt(store.lib, body="b")
     payload = ok(call("post", "/rate", body={"id": rec["id"], "rating": 4}))
     assert payload["prompt"]["rating"] == 4
     assert payload["prompt"]["versions"] == []  # rating never snapshots
 
 
 def test_delete(call, store):
-    rec = store.create(body="b")
+    rec = uc.create_prompt(store.lib, body="b")
     payload = ok(call("post", "/delete", body={"id": rec["id"]}))
     assert payload["deleted"] is True
-    assert store.count() == 0
+    assert uc.count_prompts(store.lib) == 0
 
 
 def test_usage(call, store):
-    rec = store.create(body="body")
+    rec = uc.create_prompt(store.lib, body="body")
     payload = ok(call("post", "/usage", body={"id": rec["id"], "body": "body"}))
     assert payload["counted"] is True
     assert payload["prompt"]["used"] == 1
@@ -636,8 +670,10 @@ def test_usage(call, store):
 
 
 def test_meta(call, store):
-    first = store.create(body="make him dance ballet toward the camera", tags=["t"], rating=2)
-    second = store.create(body="make him dance ballet towards the camera")
+    first = uc.create_prompt(
+        store.lib, body="make him dance ballet toward the camera", tags=["t"], rating=2
+    )
+    second = uc.create_prompt(store.lib, body="make him dance ballet towards the camera")
     payload = ok(call("post", "/meta", body={"ids": [first["id"], second["id"], "nope"]}))
     entry = payload["meta"][first["id"]]
     assert set(entry) == {"label", "rating", "used", "tags", "near_dupes", "updated"}
@@ -659,14 +695,14 @@ def test_malformed_body_is_not_a_500(call, store):
 
 @pytest.fixture
 def five(store):
-    return [store.create(body=f"body {i}", tags=["c"]) for i in range(5)]
+    return [uc.create_prompt(store.lib, body=f"body {i}", tags=["c"]) for i in range(5)]
 
 
 def test_bulk_delete_by_ids(call, store, five):
     ids = [rec["id"] for rec in five[:2]]
     payload = ok(call("post", "/bulk/delete", body={"ids": ids}))
     assert payload["count"] == 2
-    assert store.count() == 3
+    assert uc.count_prompts(store.lib) == 3
 
 
 def test_bulk_delete_by_query(call, store, five):
@@ -674,26 +710,26 @@ def test_bulk_delete_by_query(call, store, five):
     payload = ok(call("post", "/bulk/delete", body={"query": {"tags": ["c"]}}))
     assert payload["count"] == 5
     assert len(payload["ids"]) == 5
-    assert store.count() == 0
+    assert uc.count_prompts(store.lib) == 0
 
 
 def test_bulk_retag_by_query(call, store, five):
     payload = ok(call("post", "/bulk/retag", body={"query": {"q": "body"}, "add": ["tagged"]}))
     assert payload["count"] == 5
-    assert all("tagged" in store.get(rec["id"])["tags"] for rec in five)
+    assert all("tagged" in uc.get_prompt(store.lib, rec["id"])["tags"] for rec in five)
 
 
 def test_bulk_retag_replace(call, store, five):
     ids = [rec["id"] for rec in five]
     ok(call("post", "/bulk/retag", body={"ids": ids, "add": ["a", "b"]}))
     ok(call("post", "/bulk/retag", body={"ids": ids, "replace": ["only"]}))
-    assert store.get(ids[0])["tags"] == ["only"]
+    assert uc.get_prompt(store.lib, ids[0])["tags"] == ["only"]
 
 
 def test_bulk_merge(call, store):
-    first = store.create(body="one", tags=["x"])
-    second = store.create(body="two", tags=["y"])
-    store.record_usage(second["id"], body="two")
+    first = uc.create_prompt(store.lib, body="one", tags=["x"])
+    second = uc.create_prompt(store.lib, body="two", tags=["y"])
+    uc.record_usage(store.lib, second["id"], body="two")
     payload = ok(
         call(
             "post", "/bulk/merge", body={"ids": [first["id"], second["id"]], "winner": first["id"]}
@@ -703,11 +739,11 @@ def test_bulk_merge(call, store):
     assert rec["id"] == first["id"]
     assert rec["tags"] == ["x", "y"]
     assert rec["used"] == 1
-    assert store.count() == 1
+    assert uc.count_prompts(store.lib) == 1
 
 
 def test_bulk_merge_needs_two_records(call, store):
-    rec = store.create(body="one")
+    rec = uc.create_prompt(store.lib, body="one")
     status, payload = call("post", "/bulk/merge", body={"ids": [rec["id"]]})
     assert status == 400
     assert payload["code"] == "same_record"
@@ -716,7 +752,7 @@ def test_bulk_merge_needs_two_records(call, store):
 def test_bulk_with_no_ids_is_a_noop(call, store, five):
     payload = ok(call("post", "/bulk/delete", body={}))
     assert payload["count"] == 0
-    assert store.count() == 5
+    assert uc.count_prompts(store.lib) == 5
 
 
 # --------------------------------------------------------------------------- #
@@ -725,7 +761,7 @@ def test_bulk_with_no_ids_is_a_noop(call, store, five):
 
 
 def test_dupes_by_text(call, store):
-    store.create(body="make him dance ballet drifting toward the camera")
+    uc.create_prompt(store.lib, body="make him dance ballet drifting toward the camera")
     payload = ok(
         call(
             "post",
@@ -755,13 +791,13 @@ def test_dupes_by_text(call, store):
 
 
 def test_dupes_excludes_self(call, store):
-    rec = store.create(body="make him dance ballet toward the camera")
+    rec = uc.create_prompt(store.lib, body="make him dance ballet toward the camera")
     payload = ok(call("post", "/dupes", body={"id": rec["id"], "exclude_id": rec["id"]}))
     assert payload["matches"] == []
 
 
 def test_dupes_summaries_can_be_skipped(call, store):
-    store.create(body="make him dance ballet drifting toward the camera")
+    uc.create_prompt(store.lib, body="make him dance ballet drifting toward the camera")
     payload = ok(
         call(
             "post",
@@ -776,11 +812,11 @@ def test_dupes_summaries_can_be_skipped(call, store):
 
 
 def test_dupes_ignore_round_trip(call, store):
-    first = store.create(body="make him dance ballet toward the camera")
-    second = store.create(body="make him dance ballet towards the camera")
+    first = uc.create_prompt(store.lib, body="make him dance ballet toward the camera")
+    second = uc.create_prompt(store.lib, body="make him dance ballet towards the camera")
     payload = ok(call("post", "/dupes/ignore", body={"a": first["id"], "b": second["id"]}))
     assert payload["changed"] is True and payload["ignored"] is True
-    assert store.is_ignored(first["id"], second["id"])
+    assert uc.is_ignored(store.lib, first["id"], second["id"])
 
     # Still reported, now flagged: /dupes describes the library, and the save
     # gate is what acts on the flag.
@@ -795,12 +831,12 @@ def test_dupes_ignore_round_trip(call, store):
 
     payload = ok(call("post", "/dupes", body={"id": first["id"], "exclude_id": first["id"]}))
     assert payload["matches"][0]["ignored"] is False
-    assert not store.is_ignored(first["id"], second["id"])
+    assert not uc.is_ignored(store.lib, first["id"], second["id"])
 
 
 def test_compare_by_id_and_text(call, store):
-    first = store.create(body="drifting toward the camera")
-    second = store.create(body="drifting towards the camera")
+    first = uc.create_prompt(store.lib, body="drifting toward the camera")
+    second = uc.create_prompt(store.lib, body="drifting towards the camera")
     payload = ok(call("post", "/compare", body={"a_id": first["id"], "b_id": second["id"]}))
     assert set(payload) >= {"score", "pct", "summary", "diff"}
     assert payload["pct"] > 80
@@ -817,23 +853,23 @@ def test_compare_unknown_id_is_404(call, store):
 
 
 def test_merge(call, store):
-    first = store.create(body="one")
-    second = store.create(body="two")
+    first = uc.create_prompt(store.lib, body="one")
+    second = uc.create_prompt(store.lib, body="two")
     payload = ok(call("post", "/merge", body={"winner": first["id"], "loser": second["id"]}))
     assert payload["prompt"]["id"] == first["id"]
-    assert store.count() == 1
+    assert uc.count_prompts(store.lib) == 1
 
 
 def test_merge_into_itself_is_400(call, store):
-    rec = store.create(body="one")
+    rec = uc.create_prompt(store.lib, body="one")
     status, payload = call("post", "/merge", body={"winner": rec["id"], "loser": rec["id"]})
     assert status == 400
     assert payload["code"] == "same_record"
 
 
 def test_merge_new(call, store):
-    first = store.create(body="one")
-    second = store.create(body="two")
+    first = uc.create_prompt(store.lib, body="one")
+    second = uc.create_prompt(store.lib, body="two")
     payload = ok(
         call(
             "post",
@@ -846,12 +882,12 @@ def test_merge_new(call, store):
         )
     )
     assert payload["prompt"]["body"] == "one two"
-    assert store.count() == 1
+    assert uc.count_prompts(store.lib) == 1
 
 
 def test_merge_new_without_a_body_is_400(call, store):
-    first = store.create(body="one")
-    second = store.create(body="two")
+    first = uc.create_prompt(store.lib, body="one")
+    second = uc.create_prompt(store.lib, body="two")
     status, payload = call(
         "post",
         "/merge_new",
@@ -866,8 +902,8 @@ def test_merge_new_without_a_body_is_400(call, store):
 
 
 def test_versions_restore(call, store):
-    rec = store.create(body="first")
-    store.update(rec["id"], body="second")
+    rec = uc.create_prompt(store.lib, body="first")
+    uc.update_prompt(store.lib, rec["id"], body="second")
     payload = ok(call("post", "/versions/restore", body={"id": rec["id"], "index": 0}))
     assert payload["prompt"]["body"] == "first"
     # Restore snapshots the current body first: history is never erased.
@@ -898,7 +934,7 @@ def test_resolve_samples(call, store):
 
 
 def test_resolve_uses_stored_snippets(call, store):
-    store.set_snippet("cine", "volumetric haze")
+    uc.set_snippet(store.lib, "cine", "volumetric haze")
     payload = ok(call("post", "/resolve", body={"text": "[[cine]]", "n": 1}))
     assert payload["text"] == "volumetric haze"
 
@@ -929,15 +965,15 @@ def test_settings(call, store):
 
 
 def test_import_and_export_round_trip(call, store):
-    store.create(body="one", tags=["t"])
+    uc.create_prompt(store.lib, body="one", tags=["t"])
     library = ok(call("get", "/export"))["library"]
 
-    store.import_raw({"prompts": []}, replace=True)
-    assert store.count() == 0
+    uc.import_library(store.lib, {"prompts": []}, replace=True)
+    assert uc.count_prompts(store.lib) == 0
 
     payload = ok(call("post", "/import", body={"library": library, "replace": True}))
     assert payload["count"] == 1
-    assert store.all()[0]["body"] == "one"
+    assert uc.all_prompts(store.lib)[0]["body"] == "one"
 
 
 def test_storage_status_and_manual_compaction(call, store):
@@ -945,12 +981,12 @@ def test_storage_status_and_manual_compaction(call, store):
     assert status["records"] == 0
     assert "index" in status and "reclaimable_bytes" in status
 
-    rec = store.create(body="before")
-    store.update(rec["id"], body="after")
+    rec = uc.create_prompt(store.lib, body="before")
+    uc.update_prompt(store.lib, rec["id"], body="after")
     result = ok(call("post", "/storage/compact", body={"op": "compact"}))
     assert result["after"] > 0
     assert result["storage"]["reclaimable_bytes"] == 0
-    assert store.get(rec["id"])["body"] == "after"
+    assert uc.get_prompt(store.lib, rec["id"])["body"] == "after"
 
 
 def test_explicit_legacy_migration_route(call, store, tmp_path, monkeypatch):
@@ -965,26 +1001,25 @@ def test_explicit_legacy_migration_route(call, store, tmp_path, monkeypatch):
         ),
         encoding="utf-8",
     )
-    migrate = store.migrate_legacy
-    monkeypatch.setattr(store, "migrate_legacy", lambda: migrate(str(legacy)))
+    store.migrate_from = str(legacy)  # the app migrates this file, not a neighbour
 
     result = ok(call("post", "/storage/migrate", body={"source": "legacy"}))
     assert result["imported"] == 1
     assert result["already_migrated"] is False
-    assert store.get("legacy")["body"] == "from the old library"
+    assert uc.get_prompt(store.lib, "legacy")["body"] == "from the old library"
     # Merge migration deliberately keeps the active store settings.
-    assert store.settings()["dupe_threshold"] == 0.9
+    assert uc.read_settings(store.lib)["dupe_threshold"] == 0.9
 
 
 def test_streamed_file_export_is_the_portable_envelope(routes, store, monkeypatch):
-    rec = store.create(body="cinematic rain", tags=["weather"])
-    store.set_snippet("intro", "35mm")
-    store.ignore_pair(rec["id"], "ghost")
+    rec = uc.create_prompt(store.lib, body="cinematic rain", tags=["weather"])
+    uc.set_snippet(store.lib, "intro", "35mm")
+    uc.ignore_pair(store.lib, rec["id"], "ghost")
 
     def forbidden():
-        raise AssertionError("streaming export must not call export_raw")
+        raise AssertionError("streaming export must not build the whole envelope")
 
-    monkeypatch.setattr(store, "export_raw", forbidden)
+    monkeypatch.setattr(api.routes.library, "export_library", forbidden)
     monkeypatch.setattr(
         api.routes.library,
         "_get_web",
@@ -1004,7 +1039,7 @@ def test_streamed_file_export_is_the_portable_envelope(routes, store, monkeypatc
 
 
 def test_multipart_file_import_merges_and_cleans_its_spool(routes, store, tmp_path, monkeypatch):
-    store.create(body="resident")
+    uc.create_prompt(store.lib, body="resident")
     incoming = json.dumps(
         {
             "schema": 1,
@@ -1024,13 +1059,13 @@ def test_multipart_file_import_merges_and_cleans_its_spool(routes, store, tmp_pa
 
     assert response.status == 200
     assert payload["count"] == 1 and "rev" in payload
-    assert [rec["body"] for rec in store.all()] == ["resident", "from upload"]
+    assert [rec["body"] for rec in uc.all_prompts(store.lib)] == ["resident", "from upload"]
     assert ignored.released is True
     assert not list(tmp_path.glob("prompt-librarian-import-*.json"))
 
 
 def test_multipart_file_import_replace_and_bad_mode(routes, store, tmp_path, monkeypatch):
-    store.create(body="remove me")
+    uc.create_prompt(store.lib, body="remove me")
     incoming = json.dumps(
         {
             "schema": 1,
@@ -1049,7 +1084,7 @@ def test_multipart_file_import_replace_and_bad_mode(routes, store, tmp_path, mon
         )
     )
     assert replaced.status == 200
-    assert [rec["body"] for rec in store.all()] == ["keep me"]
+    assert [rec["body"] for rec in uc.all_prompts(store.lib)] == ["keep me"]
 
     rejected = asyncio.run(
         handler(
@@ -1072,12 +1107,12 @@ def test_multipart_file_import_replace_and_bad_mode(routes, store, tmp_path, mon
 @pytest.mark.parametrize(
     ("exc", "status", "code"),
     [
-        (librarian_store.NotFoundError("x"), 404, "not_found"),
-        (librarian_store.BodyTooLargeError("x"), 413, "too_large"),
-        (librarian_store.ReadOnlyError("x"), 409, "readonly"),
-        (librarian_store.ConflictError("x"), 409, "conflict"),
-        (librarian_store.SameRecordError("x"), 400, "same_record"),
-        (librarian_store.StoreWriteError("x"), 500, "write_failed"),
+        (uc.NotFoundError("x"), 404, "not_found"),
+        (uc.BodyTooLargeError("x"), 413, "too_large"),
+        (uc.ReadOnlyError("x"), 409, "readonly"),
+        (uc.ConflictError("x"), 409, "conflict"),
+        (uc.SameRecordError("x"), 400, "same_record"),
+        (uc.StoreWriteError("x"), 500, "write_failed"),
         (ValueError("x"), 400, "bad_request"),
         (RuntimeError("x"), 500, "internal"),
     ],
@@ -1086,7 +1121,7 @@ def test_store_exceptions_map_to_codes(call, store, monkeypatch, exc, status, co
     def _raise():
         raise exc
 
-    monkeypatch.setattr(store, "taxonomy", _raise)
+    monkeypatch.setattr(api.routes.taxonomy.library_taxonomy, "taxonomy", lambda _lib: _raise())
     got_status, payload = call("get", "/taxonomy")
     assert got_status == status
     assert payload["code"] == code
@@ -1095,7 +1130,41 @@ def test_store_exceptions_map_to_codes(call, store, monkeypatch, exc, status, co
 
 
 def test_a_handler_bug_never_escapes_the_guard(call, store, monkeypatch):
-    monkeypatch.setattr(store, "count", lambda: 1 / 0)
+    monkeypatch.setattr(api.routes.library, "_count", lambda: 1 / 0)
     status, payload = call("get", "/ping")
     assert status == 500
     assert payload["code"] == "internal"
+
+
+@pytest.mark.parametrize(("limit", "count"), [(None, 8), ("100", 20), ("0", 1), ("bad", 8)])
+def test_autocomplete_limits_and_envelope(call, store, limit, count):
+    uc.create_prompt(store.lib, ",".join(f"volume{i:02}" for i in range(25)))
+    query = {"word_prefix": "vo", "phrase_prefix": "vo"}
+    if limit is not None:
+        query["limit"] = limit
+    result = ok(call("get", "/autocomplete", query=query))
+    assert len(result["suggestions"]) == count
+    assert len({item["text"] for item in result["suggestions"]}) == count
+    assert result["suggestions"][0] == {
+        "text": "volume00", "scope": "word", "source_count": 1,
+    }
+
+
+def test_autocomplete_empty_and_literal_query(call, store):
+    uc.create_prompt(store.lib, "100% lighting, 100x lighting")
+    assert ok(call("get", "/autocomplete"))["suggestions"] == []
+    result = ok(call("get", "/autocomplete", query={"phrase_prefix": "100%"}))
+    assert result["suggestions"] == [
+        {"text": "100% lighting", "scope": "phrase", "source_count": 1},
+    ]
+
+
+def test_autocomplete_suggests_dictionary_entries_instead_of_saved_sentences(call, store):
+    uc.create_prompt(
+        store.lib, "Volumetric lighting fills the entire room, volumetric golden light"
+    )
+    result = ok(call("get", "/autocomplete", query={"word_prefix": "vol", "phrase_prefix": "vol"}))
+    assert result["suggestions"] == [
+        {"text": "Volumetric", "scope": "word", "source_count": 1},
+        {"text": "volumetric golden light", "scope": "phrase", "source_count": 1},
+    ]

@@ -5,7 +5,9 @@ import sys
 import types
 from pathlib import Path
 
-from prompt_librarian import search
+from prompt_librarian.features import search
+from prompt_librarian.features.prompts.create import create_prompt
+from prompt_librarian.shared.library import Library
 
 
 def test_public_scoring_weights_affect_search_and_direct_scoring(monkeypatch):
@@ -35,20 +37,19 @@ def test_public_token_tiers_affect_document_scores(monkeypatch):
     assert after < before
 
 
-def test_public_invalidation_reaches_store_search_cache():
-    records = [{"id": "a", "body": "ballet"}]
-    store = types.SimpleNamespace(rev=lambda: 7, list_all=lambda: records)
+def test_public_invalidation_reaches_the_library_search_cache(tmp_path):
+    lib = Library(str(tmp_path / "library.sqlite3"))
+    create_prompt(lib, "ballet")
+    source = search.LibrarySearchSource(lib)
     search.invalidate_index()
     try:
-        index = search.get_index(store)
-        assert search.search(store, "ballet")["total"] == 1
-        records.append({"id": "b", "body": "ballet dancer"})
-        assert search.get_index(store) is index
-        search.invalidate_index(7)
-        assert search.search(store, "ballet")["total"] == 2
-        assert search.get_index(store) is not index
+        index = search.get_index(source)
+        assert search.get_index(source) is index
+        search.invalidate_index(lib.revision())
+        assert search.get_index(source) is not index
     finally:
         search.invalidate_index()
+        lib.close()
 
 
 def test_search_loads_under_comfyui_style_package_name(monkeypatch):
@@ -56,10 +57,11 @@ def test_search_loads_under_comfyui_style_package_name(monkeypatch):
     # the ComfyUI pack entry point and its storage backends are never invoked.
     name = "_search_test_domain"
     parent = types.ModuleType(name)
-    parent.__path__ = [str(Path(search.__file__).parent.parent)]
+    # The whole librarian tree, as ComfyUI mounts it: search reaches shared/.
+    parent.__path__ = [str(Path(search.__file__).parents[2])]
     monkeypatch.setitem(sys.modules, name, parent)
     try:
-        module = importlib.import_module(name + ".search")
+        module = importlib.import_module(name + ".features.search")
         index = module.build_index([{"id": "a", "body": "ballet dancer"}], rev=4)
         assert isinstance(index, module.SearchIndex)
         result = module.search(index, "ballet")

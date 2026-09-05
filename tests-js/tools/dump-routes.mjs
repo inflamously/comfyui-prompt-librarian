@@ -27,6 +27,7 @@ import { imp, seedHost } from "../harness/mount.js";
  */
 const CALLS = {
   ping: [],
+  autocomplete: [{ word_prefix: "vo", phrase_prefix: "vo", limit: 8 }],
   search: [{ q: "x", tags: ["t"], limit: 10 }],
   get: ["ID"],
   meta: [["ID"]],
@@ -61,6 +62,16 @@ const CALLS = {
   compactStorage: [],
   importRaw: [{ prompts: [] }, "replace"],
   importFile: [new Blob(["{}"], { type: "application/json" }), "merge"],
+  wordImages: [],
+  wordImage: ["cat", 1],
+  wordPictureCandidates: [500],
+  attachWordImage: [{ word: "cat", filename: "a.png", subfolder: "", type: "output" }],
+  removeWordImage: ["cat"],
+  orderWordImages: ["cat", ["a", "b"]],
+  gallery: [2000],
+  define: ["cat"],
+  searchDictionary: ["ca", 20],
+  installDictionary: [],
 };
 
 const seen = [];

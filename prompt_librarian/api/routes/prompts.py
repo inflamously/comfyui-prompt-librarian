@@ -1,16 +1,17 @@
-"""A single record's life: read it, write it, merge it away.
-
-Every write here is offloaded and every one that touches exactly one record
-calls :func:`..indexing._patch_dupes` inside the same executor hop, so the
-all-pairs cache is re-keyed rather than thrown away. ``/meta`` is the odd one
-out: a POST that only reads, because a node face wants ten records at once and
-that is a body, not a query string.
+"""Record routes. Caches follow the library's change events, not these handlers.
+/meta uses POST for a batch of IDs despite being read-only.
 """
 
-from ... import dedupe
-from ...store import STORE, NotFoundError
+from ... import app
+from ...features import dupes
+from ...features.prompts.create import create_prompt
+from ...features.prompts.delete import delete_prompt
+from ...features.prompts.get import get_prompt, get_prompts
+from ...features.prompts.merge import merge_into_new, merge_prompts
+from ...features.prompts.update import rate_prompt, update_prompt
+from ...features.prompts.usage import record_usage
+from ...shared.errors import NotFoundError
 from .. import schemas
-from ..indexing import _patch_dupes
 from ..utils import (
     _body,
     _bool,
@@ -18,6 +19,7 @@ from ..utils import (
     _json,
     _labelled,
     _labeller,
+    _lib,
     _list,
     _offload,
     _opt,
@@ -34,7 +36,7 @@ from ..utils import (
         query=schemas.GetPromptQuery, returns=schemas.PromptResponse)
 async def prompt(request):
     pid = _str(_query(request).get("id"))
-    rec = STORE.get(pid)
+    rec = get_prompt(_lib(), pid)
     if rec is None:
         raise NotFoundError(f"no prompt with id {pid!r}")
     return _json(_labelled(rec))
@@ -46,12 +48,11 @@ async def meta(request):
     """Batch metadata for node faces. Ten Librarian nodes = one request."""
     data = await _body(request)
     ids = [_str(pid) for pid in (data.get("ids") or []) if _str(pid)]
-    records = STORE.get_many(ids)
-    counts = dedupe.page_dupe_counts(STORE, list(records), _threshold(data.get("threshold")),
-                                     rev=_rev())
-    # The same rev-keyed index `/search` labels its rows from, so a node face
-    # and the list row above it can never disagree about what a record is
-    # called.
+    records = get_prompts(_lib(), ids)
+    counts = dupes.page_dupe_counts(
+        app.current().dupe_source, list(records), _threshold(data.get("threshold")), rev=_rev()
+    )
+    # Use the same revision-keyed labels as search and node faces.
     index = _labeller(records.values())
     out = {}
     for pid, rec in records.items():
@@ -73,15 +74,14 @@ async def create(request):
     data = await _body(request)
 
     def _work():
-        old_rev = _rev()
-        rec = STORE.create(
+        rec = create_prompt(
+            _lib(),
             body=_str(data.get("body")),
             tags=_list(data.get("tags")),
             rating=_int(data.get("rating"), 0),
             notes=_str(data.get("notes")),
             pinned=_bool(data.get("pinned")),
         )
-        _patch_dupes(None, rec, old_rev)
         return _labelled(rec)
 
     return _json(await _offload(_work))
@@ -95,9 +95,8 @@ async def update(request):
     pid = _str(data.get("id"))
 
     def _work():
-        old_rev = _rev()
-        old = STORE.get(pid)
-        rec = STORE.update(
+        rec = update_prompt(
+            _lib(),
             pid,
             body=_opt(data, "body"),
             tags=(_list(data.get("tags")) if "tags" in data else None),
@@ -105,11 +104,9 @@ async def update(request):
             notes=_opt(data, "notes"),
             pinned=(_bool(data.get("pinned")) if "pinned" in data else None),
             snapshot=_bool(data.get("snapshot"), True),
-            # The half of "never a silent overwrite" that covers two tabs
-            # editing the same record: a mismatch raises ConflictError -> 409.
+            # Reject stale writes from other tabs with ConflictError (409).
             expect_updated=_opt(data, "expect_updated"),
         )
-        _patch_dupes(old, rec, old_rev)
         return _labelled(rec)
 
     return _json(await _offload(_work))
@@ -122,7 +119,12 @@ async def rate(request):
     data = await _body(request)
     pid = _str(data.get("id"))
     rating = _int(data.get("rating"), 0)
-    return _json(await _offload(lambda: _labelled(STORE.set_rating(pid, rating))))
+
+    def _work():
+        rec = rate_prompt(_lib(), pid, rating)
+        return _labelled(rec)
+
+    return _json(await _offload(_work))
 
 
 @_route("post", "/delete", op="deletePrompt",
@@ -133,10 +135,7 @@ async def delete(request):
     pid = _str(data.get("id"))
 
     def _work():
-        old_rev = _rev()
-        old = STORE.get(pid)
-        STORE.delete(pid)
-        _patch_dupes(old, None, old_rev)
+        delete_prompt(_lib(), pid)
         return True
 
     await _offload(_work)
@@ -150,7 +149,7 @@ async def usage(request):
     data = await _body(request)
     pid = _str(data.get("id"))
     body = data.get("body")
-    rec = await _offload(STORE.record_usage, pid,
+    rec = await _offload(record_usage, _lib(), pid,
                          _str(body) if body is not None else None)
     return _json({"prompt": rec, "counted": rec is not None})
 
@@ -162,7 +161,7 @@ async def merge(request):
     data = await _body(request)
     winner = _str(data.get("winner") or data.get("winner_id"))
     loser = _str(data.get("loser") or data.get("loser_id"))
-    return _json(await _offload(lambda: _labelled(STORE.merge(winner, loser))))
+    return _json(await _offload(lambda: _labelled(merge_prompts(_lib(), winner, loser))))
 
 
 @_route("post", "/merge_new", op="mergeIntoNewPrompt",
@@ -170,7 +169,8 @@ async def merge(request):
         body=schemas.MergeNewBody, returns=schemas.PromptResponse)
 async def merge_new(request):
     data = await _body(request)
-    return _json(await _offload(lambda: _labelled(STORE.merge_new(
+    return _json(await _offload(lambda: _labelled(merge_into_new(
+        _lib(),
         _str(data.get("a") or data.get("a_id")),
         _str(data.get("b") or data.get("b_id")),
         _str(data.get("body")),

@@ -17,7 +17,7 @@ import { buildView } from "./view.js";
  * Mount the inspector into `el` (the `.pl-inspect` element).
  *
  * @param {HTMLElement} el
- * @param {object} ctx  see the modal/ctx.js contract
+ * @param {object} ctx  see the prompt_modal/context.js contract
  * @returns {{unmount:()=>void, selectPrompt:(id:string)=>Promise<void>,
  *            isDirty:()=>boolean, getBuffer:()=>object,
  *            setBody:(t:string)=>void, focusBody:()=>void}}
@@ -376,7 +376,7 @@ export function mountInspector(el, ctx) {
       pane.publishDupes([], false);
       return;
     }
-    // modal/ctx.js may both patch `currentId` (which we subscribe to) and call
+    // prompt_modal/context.js may both patch `currentId` (which we subscribe to) and call
     // ctx.inspector.select() for the same click; one fetch is enough.
     if (pane.pendingId != null && pane.pendingId === String(id)) return;
     // Re-selecting an edited record must not reload and discard its buffer.

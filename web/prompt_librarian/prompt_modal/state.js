@@ -1,8 +1,7 @@
 import { NS } from "../shared/ns.js";
 import { singleton } from "../shared/singleton.js";
 
-/** localStorage key for the link toggle. Survives a reload; not per-workflow. */
-const LINK_KEY = "pl:link";
+import { readLinkPref } from "./target/preferences.js";
 
 export function freshState() {
   return {
@@ -24,31 +23,12 @@ export function freshState() {
     dupes: { threshold: 0.9, matches: [], loading: false },
     caps: {},
     storage: null,
+    storageBusy: false,
     targetNodeId: null,
     targetOk: true,
+    target: { label: "", hasNodes: false },
     link: readLinkPref(), // two-way binding between the textarea and the node
   };
-}
-
-/** Default to linked so the panel starts from the text the workflow will render.
- */
-export function readLinkPref() {
-  try {
-    if (typeof localStorage === "undefined") return true;
-    const raw = localStorage.getItem(LINK_KEY);
-    return raw == null ? true : raw !== "0";
-  } catch (_) {
-    return true; // private mode / blocked storage — the default still applies
-  }
-}
-
-export function writeLinkPref(on) {
-  try {
-    if (typeof localStorage === "undefined") return;
-    localStorage.setItem(LINK_KEY, on ? "1" : "0");
-  } catch (_) {
-    /* best effort — the toggle still works for this session */
-  }
 }
 
 /* Keep state on the shared bag across cache-busted module instances.
@@ -59,10 +39,14 @@ export function inst() {
     built: false,
     wired: false,
     open: false,
+    session: null, // identity token invalidated on close
+    opening: null, // initialization shared by concurrent opens
+    paneLoads: {}, // pending independent optional-module imports
     root: null,
     els: {},
     state: freshState(),
     subs: new Map(), // key -> Set<fn>
+    toastCleanup: new Set(),
     layers: [], // [{el, onClose, closeOnOutside}]
     keyHandlers: new WeakMap(), // element -> {type: [{fn, capture}]}
     teardown: [], // functions run by closeModal()
@@ -72,8 +56,8 @@ export function inst() {
     ctx: null,
     mounted: { list: false, inspector: false },
     backdropDown: false,
-    closing: false, // a save-on-close is in flight; see modal/close.js
-    binding: null, // {nodeId, node, unbind} — see modal/binding.js
+    closing: false, // a save-on-close is in flight; see prompt_modal/lifecycle/close.js
+    binding: null, // {nodeId, node, unbind} — see prompt_modal/target/binding.js
   }));
 }
 

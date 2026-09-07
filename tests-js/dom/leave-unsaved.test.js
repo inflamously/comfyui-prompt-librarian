@@ -26,7 +26,7 @@ import { setupDom } from "../harness/env.js";
 import { imp } from "../harness/mount.js";
 
 const I = "prompt_librarian/inspector/";
-const M = "prompt_librarian/modal/";
+const M = "prompt_librarian/prompt_modal/";
 
 let env;
 beforeEach(() => {

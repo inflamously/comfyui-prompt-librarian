@@ -175,7 +175,7 @@ let bust = 0;
  * on `api/lanes.js`'s `lanes` or `api/caps.js`'s `caps`, which are module-level
  * `const`s and therefore survive a bag reset in a cached graph.
  *
- * @param {string} rel e.g. "prompt_librarian/modal/shell.js"
+ * @param {string} rel e.g. "prompt_librarian/prompt_modal/shell/layout.js"
  */
 export function imp(rel, { fresh = false } = {}) {
   return import(url(rel) + (fresh ? `?t=${++bust}` : ""));

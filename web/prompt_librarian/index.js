@@ -26,14 +26,14 @@ async function openLibrarian(node) {
   ensureStyles();
   ensureHydrated(node);
   try {
-    const modal = await import("./modal/index.js");
+    const modal = await import("./prompt_modal/index.js");
     if (typeof modal.setHost === "function") modal.setHost({ app });
     if (typeof modal.openModal !== "function") throw new Error("openModal missing");
     await modal.openModal({ targetNodeId: node ? node.id : null });
   } catch (err) {
     warnOnce(
       "modal-missing",
-      "the librarian panel could not be opened (web/prompt_librarian/modal/). The node still works: `text` is the prompt and is saved with the workflow.",
+      "the librarian panel could not be opened (web/prompt_librarian/prompt_modal/). The node still works: `text` is the prompt and is saved with the workflow.",
       err && err.message
     );
   }

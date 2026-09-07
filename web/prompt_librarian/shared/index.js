@@ -1,4 +1,4 @@
-/* modal/ctx.js exposes this namespace as ctx.dom. Import leaf modules when
+/* prompt_modal/context.js exposes this namespace as ctx.dom. Import leaf modules when
  * only individual helpers are needed.
  */
 

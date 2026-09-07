@@ -2,11 +2,12 @@
  * returns "saved" or "clean"; conflicts and failed writes must remain visible.
  */
 
-import { NS } from "../shared/ns.js";
-import { singletonBag } from "../shared/singleton.js";
-import { cancelAllLanes } from "../api/lanes.js";
-import { popLayer } from "./layers.js";
-import { inst, setModalVisible } from "./state.js";
+import { NS } from "../../shared/ns.js";
+import { singletonBag } from "../../shared/singleton.js";
+import { cancelAllLanes } from "../../api/lanes.js";
+import { clearToasts } from "../overlays/toasts.js";
+import { popLayer } from "../overlays/layers.js";
+import { inst, setModalVisible } from "../state.js";
 
 export function isDirty() {
   const it = inst();
@@ -48,6 +49,7 @@ export function attemptClose() {
     return true;
   }
 
+  const session = it.session;
   it.closing = true;
   setClosingBusy(true);
   Promise.resolve()
@@ -55,12 +57,13 @@ export function attemptClose() {
     // prompt. Identical text is adopted rather than duplicated (save.js).
     .then(() => save(true))
     .then((status) => {
-      if (status === "saved" || status === "clean") closeModal();
+      if (it.session === session && (status === "saved" || status === "clean")) closeModal();
     })
     .catch((err) => {
       console.error(`${NS} save on close failed`, err);
     })
     .finally(() => {
+      if (it.session !== session) return;
       it.closing = false;
       setClosingBusy(false);
     });
@@ -75,9 +78,13 @@ export function closeModal() {
   if (!it || !it.built || !it.open) return;
 
   it.open = false;
+  it.session = null;
+  it.opening = null;
+  it.backdropDown = false;
   it.closing = false;
   setClosingBusy(false);
 
+  clearToasts();
   while (it.layers.length) popLayer(it.layers[it.layers.length - 1]);
 
   for (const fn of it.teardown.splice(0)) {

@@ -2,7 +2,7 @@
  * could register the extension again under a cache-busted URL.
  */
 
-import { singleton } from "../shared/singleton.js";
+import { singleton } from "../../shared/singleton.js";
 
 function host() {
   return singleton("host", () => ({ app: null }));

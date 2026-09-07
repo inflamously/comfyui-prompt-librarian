@@ -1,11 +1,9 @@
-import { NS } from "../shared/ns.js";
-import { fmtInt } from "../shared/format.js";
-import { ABORTED, ApiError } from "../api/request.js";
-import { lanes } from "../api/lanes.js";
-import { API } from "../api/routes.js";
-import { MIDDOT } from "./glyphs.js";
-import { toast } from "./layers.js";
-import { inst, setState } from "./state.js";
+import { NS } from "../../shared/ns.js";
+import { ABORTED, ApiError } from "../../api/request.js";
+import { lanes } from "../../api/lanes.js";
+import { API } from "../../api/routes.js";
+import { toast } from "../overlays/toasts.js";
+import { inst, setState } from "../state.js";
 
 function normaliseTags(list) {
   if (!Array.isArray(list)) return [];
@@ -19,18 +17,9 @@ function normaliseTags(list) {
     .filter((t) => t && t.name);
 }
 
-export function paintHeader() {
-  const it = inst();
-  if (!it.built) return;
-  const st = it.state;
-  const prompts = `${fmtInt(st.total)} prompt${st.total === 1 ? "" : "s"}`;
-  const tags = `${fmtInt(st.tagCount)} tag${st.tagCount === 1 ? "" : "s"}`;
-  it.els.sub.textContent = `// ${prompts} ${MIDDOT} ${tags}`;
-}
-
-export async function loadTaxonomy() {
+export async function loadTaxonomy(isActive = () => true) {
   const res = await lanes.taxonomy((signal) => API.taxonomy(signal));
-  if (res === ABORTED || !res) return;
+  if (!isActive() || res === ABORTED || !res) return;
   const tags = normaliseTags(res.tags);
   setState({
     tags,
@@ -38,7 +27,6 @@ export async function loadTaxonomy() {
     total: Number(res.total) || 0,
     rev: Number(res.rev) || inst().state.rev,
   });
-  paintHeader();
 }
 
 export async function refreshAll() {

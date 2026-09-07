@@ -12,7 +12,7 @@
        "failed"  the write errored — MUST STAY OPEN
        "busy"    a save is already in flight — MUST STAY OPEN
 
-   modal/ compares that as a plain string and never imports the constant,
+   prompt_modal/ compares that as a plain string and never imports the constant,
    because inspector/ is lazily loaded and may legitimately be absent. These
    tests pin both halves of that contract.
    ========================================================================== */

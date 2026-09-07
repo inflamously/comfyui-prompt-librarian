@@ -1,4 +1,4 @@
-/* modal/keys.js intercepts native keys at window capture. Use ctx.onKey
+/* prompt_modal/input/keys.js intercepts native keys at window capture. Use ctx.onKey
  * or the pl:keydown mirror; native subtree key listeners will not fire.
  * Popover Escape must stop propagation to avoid also closing the modal.
  */

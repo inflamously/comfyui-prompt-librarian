@@ -1,4 +1,4 @@
-/* Picker key handlers must use the bus in common.js; see modal/keys.js.
+/* Picker key handlers must use the bus in common.js; see prompt_modal/input/keys.js.
  */
 
 export { openPopover } from "./popover.js";

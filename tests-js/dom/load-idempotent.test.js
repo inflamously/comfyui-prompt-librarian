@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { setupDom } from "../harness/env.js";
 import { imp } from "../harness/mount.js";
 
-const M = "prompt_librarian/modal/";
+const M = "prompt_librarian/prompt_modal/";
 
 let env;
 beforeEach(() => {
@@ -43,8 +43,8 @@ function fakeNode({ id = 1, body = "", promptId = "" } = {}) {
 
 async function setup(node) {
   const state = await imp(M + "state.js");
-  const target = await imp(M + "target.js");
-  const host = await imp(M + "host.js");
+  const target = await imp(M + "target/load.js");
+  const host = await imp(M + "target/host.js");
   host.setHost({ app: env.app });
   env.app.graph = {
     _nodes: [node],
@@ -63,7 +63,7 @@ describe("pushToNode — the sidebar-selection path", () => {
   test("a record push counts usage once, and a re-push counts nothing", async () => {
     const node = fakeNode();
     await setup(node);
-    const binding = await imp(M + "binding.js");
+    const binding = await imp(M + "target/binding.js");
     env.api.route("/prompt_librarian/usage", { ok: true });
 
     const first = binding.pushToNode("a cat", "abc");
@@ -80,7 +80,7 @@ describe("pushToNode — the sidebar-selection path", () => {
   test("a plain keystroke push never counts usage", async () => {
     const node = fakeNode();
     await setup(node);
-    const binding = await imp(M + "binding.js");
+    const binding = await imp(M + "target/binding.js");
     env.api.route("/prompt_librarian/usage", { ok: true });
 
     binding.pushToNode("typed text");
@@ -93,7 +93,7 @@ describe("pushToNode — the sidebar-selection path", () => {
   test("selecting then pressing Enter on the same row counts once", async () => {
     const node = fakeNode();
     const target = await setup(node);
-    const binding = await imp(M + "binding.js");
+    const binding = await imp(M + "target/binding.js");
     env.api.route("/prompt_librarian/usage", { ok: true });
 
     binding.pushToNode("a cat", "abc"); // the row click

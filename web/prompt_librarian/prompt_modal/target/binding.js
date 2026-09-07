@@ -3,13 +3,13 @@
  * can outlive its deletion from the graph.
  */
 
-import { cls } from "../shared/dom.js";
-import { warnOnce } from "../shared/singleton.js";
-import { bindNode, poll as pollNode, readNodeText, writeNodeText } from "../node/bind.js";
-import { BROKEN, LINKED } from "./glyphs.js";
+import { warnOnce } from "../../shared/singleton.js";
+import { bindNode, poll as pollNode, readNodeText, writeNodeText } from "../../node/bind.js";
 import { hostApp } from "./host.js";
-import { inst, setState, writeLinkPref } from "./state.js";
-import { noteUsage, resolveTarget } from "./target.js";
+import { inst, setState } from "../state.js";
+import { resolveTarget } from "./nodes.js";
+import { noteUsage } from "./load.js";
+import { writeLinkPref } from "./preferences.js";
 
 export function isLinked() {
   return inst().state.link !== false;
@@ -24,7 +24,6 @@ export function setLinked(on) {
   setState({ link: next });
   writeLinkPref(next);
   syncBinding();
-  paintLink();
   return next;
 }
 
@@ -120,7 +119,8 @@ function attachBinding() {
  */
 export function syncBinding() {
   const it = inst();
-  if (!it.open || !isLinked()) {
+  // Do not consume the initial node seed before the optional inspector registers.
+  if (!it.open || !isLinked() || !it.ctx?.inspector) {
     detachBinding();
     return;
   }
@@ -136,19 +136,3 @@ export function syncBinding() {
   }
 }
 
-export function paintLink() {
-  const it = inst();
-  const chip = it.els && it.els.link;
-  if (!chip) return;
-  const on = isLinked();
-  cls(chip, "is-on", on);
-  chip.setAttribute("aria-pressed", on ? "true" : "false");
-  const span = chip.firstChild;
-  if (span) span.textContent = on ? `${LINKED} linked` : `${BROKEN} unlinked`;
-  chip.title = on
-    ? "The editor and the node's text mirror each other, and picking a prompt " +
-      "loads it straight into the node. Click to work on the library without " +
-      "touching the node."
-    : "The editor and the node are independent — browsing, editing and saving " +
-      "library records leaves the node alone. Click to mirror them again.";
-}

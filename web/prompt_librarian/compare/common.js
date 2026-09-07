@@ -1,4 +1,4 @@
-/* Use bindKey/ctx.onKey, not native key listeners: prompt_modal/input/keys.js stops
+/* Use bindKey/ctx.onKey, not native key listeners: modal/input/keys.js stops
  * native events at window capture. pl:keydown is the fallback mirror.
  * Render prompt and version text through textContent, never innerHTML.
  */

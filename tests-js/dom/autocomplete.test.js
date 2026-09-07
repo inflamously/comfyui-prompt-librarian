@@ -117,7 +117,7 @@ test("suggestions render saved text literally", async () => {
 
 test("real panel key bus isolates completion, Escape leaves panel open, input updates linked node", async () => {
   const shell = await openShell();
-  const { onKey } = await imp("prompt_librarian/prompt_modal/input/keys.js");
+  const { onKey } = await imp("prompt_librarian/modal/input/keys.js");
   const { mountInspector } = await imp("prompt_librarian/inspector/index.js");
   const host = document.createElement("div"); shell.els.card.appendChild(host);
   const pushed = [], states = [];

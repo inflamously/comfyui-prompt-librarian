@@ -165,14 +165,14 @@ describe("tier 0 — structure", () => {
   });
 });
 
-test("prompt_modal replaces every production modal path without a compatibility shim", () => {
-  assert.equal(fs.existsSync(path.join(WEB, "prompt_librarian", "modal")), false);
-  const oldPath = /(?:^|[^\w])modal\//;
+test("modal paths and architecture references stay consistent", () => {
+  assert.equal(fs.existsSync(path.join(WEB, "prompt_librarian", "prompt_modal")), false);
+  const oldPath = /(?:^|[^\w])prompt_modal\//;
   for (const rel of allModules()) assert.equal(oldPath.test(readWeb(rel)), false, rel);
   const diagram = fs.readFileSync(path.join(ROOT, "structure.html"), "utf8");
   const source = JSON.parse(diagram.match(/<script id="source-data" type="application\/json">(.*?)<\/script>/s)[1]);
   const files = source.files.modal;
-  assert.deepEqual(files, allModules().filter(p => p.startsWith("prompt_librarian/prompt_modal/")).map(p => "web/" + p));
+  assert.deepEqual(files, allModules().filter(p => p.startsWith("prompt_librarian/modal/")).map(p => "web/" + p));
   for (const edge of source.edges) {
     if (edge.source.startsWith("web/")) {
       assert.ok(fs.existsSync(path.join(ROOT, edge.source)), edge.source);

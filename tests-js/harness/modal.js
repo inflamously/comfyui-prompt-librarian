@@ -16,14 +16,14 @@
 
 import { imp } from "./mount.js";
 
-const M = "prompt_librarian/prompt_modal/";
+const M = "prompt_librarian/modal/";
 
 /**
  * Build the shell and hand back the handles a test needs.
  *
  * @param {object} ctxPatch overrides merged onto the default fake ctx. The two
  *   hooks that matter are `isDirty()` and `requestSave(asNew)` — the duck-typed
- *   contract inspector/index.js registers and prompt_modal/lifecycle/close.js consumes.
+ *   contract inspector/index.js registers and modal/lifecycle/close.js consumes.
  */
 export async function openShell(ctxPatch = {}) {
   const shell = {

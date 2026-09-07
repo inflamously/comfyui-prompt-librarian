@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { setupDom } from "../harness/env.js";
 import { imp } from "../harness/mount.js";
 
-const M = "prompt_librarian/prompt_modal/";
+const M = "prompt_librarian/modal/";
 
 let env;
 beforeEach(() => {

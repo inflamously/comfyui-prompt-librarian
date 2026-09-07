@@ -88,7 +88,7 @@ describe("key isolation", () => {
   });
 
   test("the bus runs capture root→target, then bubble target→root", async () => {
-    const { onKey } = await imp("prompt_librarian/prompt_modal/input/keys.js");
+    const { onKey } = await imp("prompt_librarian/modal/input/keys.js");
     const s = await openShell();
 
     const mid = document.createElement("div");
@@ -118,7 +118,7 @@ describe("key isolation", () => {
   });
 
   test("stopPropagation and stopImmediatePropagation work on the bus", async () => {
-    const { onKey } = await imp("prompt_librarian/prompt_modal/input/keys.js");
+    const { onKey } = await imp("prompt_librarian/modal/input/keys.js");
     const s = await openShell();
     const leaf = document.createElement("textarea");
     s.els.inspect.appendChild(leaf);
@@ -139,7 +139,7 @@ describe("key isolation", () => {
 
   test("a throwing bus handler is logged and does not stop the others", async () => {
     env.expectError(/key handler failed/);
-    const { onKey } = await imp("prompt_librarian/prompt_modal/input/keys.js");
+    const { onKey } = await imp("prompt_librarian/modal/input/keys.js");
     const s = await openShell();
     const leaf = document.createElement("textarea");
     s.els.inspect.appendChild(leaf);
@@ -158,7 +158,7 @@ describe("key isolation", () => {
 
   test("preventDefault from a bus handler reaches the original event", async () => {
     // The reason the guard delivers the original object rather than a clone.
-    const { onKey } = await imp("prompt_librarian/prompt_modal/input/keys.js");
+    const { onKey } = await imp("prompt_librarian/modal/input/keys.js");
     const s = await openShell();
     const leaf = document.createElement("textarea");
     s.els.inspect.appendChild(leaf);

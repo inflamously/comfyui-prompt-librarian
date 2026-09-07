@@ -4,7 +4,7 @@ import { setupDom } from "../harness/env.js";
 import { imp } from "../harness/mount.js";
 import { deferred, flush } from "../harness/modal.js";
 
-const M = "prompt_librarian/prompt_modal/";
+const M = "prompt_librarian/modal/";
 let env, modal, state, it, mounts, refreshes, seeds;
 const node = (id, body = `node ${id}`) => ({
   id, comfyClass: "PromptLibrarian", title: `Target ${id}`,

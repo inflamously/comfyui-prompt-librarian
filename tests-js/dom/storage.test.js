@@ -5,7 +5,7 @@ import { imp } from "../harness/mount.js";
 import { http } from "../harness/net.js";
 import { openShell, deferred, flush } from "../harness/modal.js";
 
-const M = "prompt_librarian/prompt_modal/";
+const M = "prompt_librarian/modal/";
 let env, shell, actions;
 const snapshot = (overrides = {}) => ({
   database_bytes: 2048, records: 4, reclaimable_bytes: 1024, should_compact: true,

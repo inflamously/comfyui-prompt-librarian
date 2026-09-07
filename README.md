@@ -107,7 +107,7 @@ Search supports operators: `tag:dance`, `-word` to exclude, and `"quoted phrase"
 
 **Ctrl+S** (⌘S) follows the active surface: while the panel is open it saves the prompt and
 suppresses the browser's *Save Page* dialog; after the panel closes, the untouched chord belongs to
-ComfyUI's `Comfy.SaveWorkflow` command. The key isolation described under `prompt_modal/input/keys.js` below also stops
+ComfyUI's `Comfy.SaveWorkflow` command. The key isolation described under `modal/input/keys.js` below also stops
 every other keystroke inside the overlay before the canvas can act on it.
 
 **Closing saves.** With suggestions dismissed, Escape, the `×` and a backdrop click all save first and then close; a panel with
@@ -329,7 +329,7 @@ web/prompt_librarian/         the Librarian's frontend — one directory per fea
   shared/                     h(), text/number formatting, timing, the singleton bag
   api/                        request primitive, lanes, caps, routes, meta cache
   node/                       the node's face, widgets, hydration, the node ⇄ panel binding
-  prompt_modal/               overlay shell, state store, key isolation, layers, target
+  modal/                      overlay shell, state store, key isolation, layers, target
   browse/                     the left rail: search, filters, virtualised list, bulk bar
   inspector/                  the right pane: fields, dupe panel, THE SAVE FLOW
   pickers/                    the popover primitive and its five consumers
@@ -516,7 +516,7 @@ allowed a side effect.
 `app.registerExtension({name: "prompt-librarian.ui"})`, one stylesheet injection, one `nodeCreated`
 hook. It captures ComfyUI's `app` onto the shared singleton bag (nothing else imports this file —
 that would re-run `registerExtension` under a second cache-busted URL), builds the node face, adds
-`Open Librarian`, and drives the three hydration triggers. `prompt_modal/` is imported lazily inside a
+`Open Librarian`, and drives the three hydration triggers. `modal/` is imported lazily inside a
 try/catch: a missing panel logs once and the node still works.
 
 **`node/`** (4 files, 962 lines) — everything attached to the node itself. `widgets.js` owns the two
@@ -560,7 +560,7 @@ try/catch. `lanes.js` coalesces per concern using both an `AbortController` and 
 type-fast-get-stale-results race). `caps.js` is optimistic-by-default feature detection, `routes.js`
 is one method per route, and `meta.js` batches every node face on the canvas into one `POST /meta`.
 
-**`prompt_modal/`** — the retained panel shell and its use cases. `index.js` is the thin
+**`modal/`** — the retained panel shell and its use cases. `index.js` is the thin
 public entry, including `openModal({ targetNodeId })`. `state.js` keeps the existing singleton
 and the `getState` / `setState` / `subscribe` store: equal references still notify, and silent
 patches remain silent. `context.js` documents the stable, extensible object handed to panes.
@@ -588,7 +588,7 @@ The save hook resolves to `saved | clean | blocked | failed | busy`; only `saved
 permit closing after a save attempt. These are plain strings so the modal does not need a
 static import of the optional Inspector. The existing missing-hook draft fallback is retained.
 
-`prompt_modal/input/keys.js` is the file to read before touching anything key-related. It installs the **key isolation**
+`modal/input/keys.js` is the file to read before touching anything key-related. It installs the **key isolation**
 guard — a window-capture listener that calls `stopImmediatePropagation()` on every key event
 originating inside `.pl-root`, so ComfyUI's global shortcuts (Delete removes the node, Ctrl+Z undoes
 the graph, Space pans the canvas) can't fire while you type — and re-delivers those events on its own
@@ -750,7 +750,7 @@ prefixes would hide exactly that bug. `--api-prefix ""` simulates the other inst
 where the widget shapes `node/bind.js` defends against are written down, and the UI can switch
 between them (`legacy` / `domwidget` / `opaque`), make `addDOMWidget` absent, throw, or accept and
 never mount, delay the widgets to reproduce the `nodeCreated`-before-widgets quirk, and select which
-of the four graph probes `prompt_modal/target/nodes.js` will find. Those defences are otherwise unreachable.
+of the four graph probes `modal/target/nodes.js` will find. Those defences are otherwise unreachable.
 
 **It cannot touch a real library.** Four independent layers have to fail first: the explicit
 `LibrarianStore(path=…)` override, a stub `folder_paths` injected before the pack imports, a pinned

@@ -1,7 +1,7 @@
 /* ==========================================================================
    The fake ComfyUI `app`, `graph` and `canvas`.
 
-   prompt_modal/target/nodes.js probes the graph FOUR different ways, in order, because
+   modal/target/nodes.js probes the graph FOUR different ways, in order, because
    ComfyUI's frontend has changed shape more than once:
 
        graph._nodes            (array)

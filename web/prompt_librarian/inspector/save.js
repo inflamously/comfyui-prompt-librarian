@@ -3,7 +3,7 @@
  * Conflict dialogs are local so they work even if compare/ fails to load.
  *
  * Only "saved" and "clean" permit closing. "blocked" (conflict/empty body),
- * "failed", and "busy" keep the modal open. prompt_modal/ compares these strings
+ * "failed", and "busy" keep the modal open. modal/ compares these strings
  * without importing this optional feature.
  */
 

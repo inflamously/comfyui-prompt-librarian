@@ -58,6 +58,7 @@ export function createLane(name) {
  */
 export const lanes = singleton("lanes", () => ({
   search: createLane("search"),
+  autocomplete: createLane("autocomplete"),
   dupe: createLane("dupe"),
   record: createLane("record"),
   preview: createLane("preview"),

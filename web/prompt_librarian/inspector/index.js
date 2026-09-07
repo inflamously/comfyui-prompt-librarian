@@ -1,3 +1,4 @@
+import { attachAutocomplete } from "./autocomplete.js";
 /* Feature modules share one mutable pane object, created here.
  * Render prompt bodies and tags as text, never HTML.
  */
@@ -124,6 +125,7 @@ export function mountInspector(el, ctx) {
   applyCaps();
 
   const ta = els.ta;
+  const autocomplete = attachAutocomplete(ta, ctx, el);
 
 
   function renderCounts() {
@@ -282,6 +284,7 @@ export function mountInspector(el, ctx) {
    *     never rewrite the node.
    */
   function adoptRecord(rec, opts = {}) {
+    autocomplete.dismiss();
     pane.current = rec || null;
     pane.baseline = rec ? JSON.parse(JSON.stringify(rec)) : null;
     const nb = bufferFrom(rec);
@@ -366,6 +369,7 @@ export function mountInspector(el, ctx) {
   async function selectPrompt(id) {
     if (pane.disposed) return;
     if (id == null || id === "") {
+      autocomplete.dismiss();
       pane.pendingId = null;
       pane.dupeSeq++;
       adoptRecord(null);
@@ -389,15 +393,18 @@ export function mountInspector(el, ctx) {
     if (!mayLeave || pane.disposed) return;
     // Only the no-dialog fallback can still have an outgoing dirty buffer.
     if (pane.current && pane.current.id && String(pane.current.id) !== String(id) && isDirty()) pane.saveDraft();
+    autocomplete.dismiss();
     pane.pendingId = String(id);
     let r;
     try {
       r = await lane("record", (signal) => ctx.API.get(String(id), signal));
     } catch (err) {
+      autocomplete.dismiss();
       pane.pendingId = null;
       if (!pane.disposed) toast("could not load prompt: " + errMsg(err), "error");
       return;
     }
+    autocomplete.dismiss();
     pane.pendingId = null;
     if (r === ctx.ABORTED || pane.disposed) return;
     let rec;
@@ -535,6 +542,7 @@ export function mountInspector(el, ctx) {
     }
     if (!mayLeave || pane.disposed) return;
 
+    autocomplete.dismiss();
     pane.pendingId = null;
     pane.dupeSeq++; // any in-flight dupe answer is about the old body
     // Notify state subscribers so the old row highlight clears.
@@ -566,12 +574,14 @@ export function mountInspector(el, ctx) {
       try {
         if (typeof document !== "undefined" && document.activeElement === ta) return;
       } catch (_) { /* no document.activeElement — apply it */ }
+      autocomplete.dismiss();
       pane.lastInbound = next;
       pane.buf.body = next;
       ta.value = next;
       afterEdit(true);
       return;
     }
+    autocomplete.dismiss();
     pane.buf.body = next;
     ta.value = pane.buf.body;
     afterEdit(true);
@@ -696,6 +706,7 @@ export function mountInspector(el, ctx) {
   function unmount() {
     if (pane.disposed) return;
     pane.disposed = true;
+    autocomplete.detach();
     pane.dupeSeq++; // any in-flight response is now stale by definition
     try { scheduleDupes.cancel(); } catch (_) {}
     try { scheduleDraft.cancel(); } catch (_) {}

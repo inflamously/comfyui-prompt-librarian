@@ -280,6 +280,13 @@ class LibrarianStore(LibraryOperations):
         self.ensure_loaded()
         return os.path.exists(self.store_path()) and not self._corrupt
 
+    def autocomplete(self, word_prefix="", phrase_prefix="", limit=8):
+        with self._lock:
+            self.ensure_loaded()
+            if self._readonly or not self._ensure_sqlite():
+                return []
+            return self._index.autocomplete(word_prefix, phrase_prefix, max(1, min(20, limit)))
+
     def list_search_records(self):
         """Preview-sized projections for empty-query browsing."""
         self.ensure_loaded()

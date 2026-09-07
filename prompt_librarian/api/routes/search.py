@@ -2,9 +2,10 @@
 searches do not launch duplicate scans.
 """
 
+from ...store import STORE
 from .. import schemas
 from ..queries import _all_pairs, _run_search
-from ..utils import _bool, _json, _offload, _query, _route, _threshold
+from ..utils import _bool, _int, _json, _offload, _query, _route, _threshold
 
 
 @_route("get", "/search", op="searchPrompts",
@@ -17,3 +18,15 @@ async def search_route(request):
         return _json(_run_search(params))
     scan = await _all_pairs(_threshold(params.get("threshold")))
     return _json(await _offload(_run_search, params, all_pairs=scan))
+
+
+@_route("get", "/autocomplete", op="autocompletePrompts",
+        summary="Suggest words and phrases from current saved prompt bodies.",
+        query=schemas.AutocompleteQuery, returns=schemas.AutocompleteResponse)
+async def autocomplete_route(request):
+    params = _query(request)
+    suggestions = await _offload(
+        STORE.autocomplete, str(params.get("word_prefix", "")),
+        str(params.get("phrase_prefix", "")), max(1, min(20, _int(params.get("limit"), 8))),
+    )
+    return _json({"suggestions": suggestions})

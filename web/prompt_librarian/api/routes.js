@@ -26,6 +26,10 @@ export const API = {
     return req("search", { query: params || {}, signal });
   },
 
+  autocomplete(params, signal) {
+    return req("autocomplete", { query: params || {}, signal });
+  },
+
   get(id, signal) {
     return req("prompt", { query: { id }, signal });
   },

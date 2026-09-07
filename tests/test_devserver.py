@@ -109,6 +109,10 @@ async def _save_and_find(client, api):
     assert found["hits"][0]["id"] == pid
     assert found["hits"][0]["label"]
     assert pid in (await api("/meta", body={"ids": [pid]}))["meta"]
+    completion = await api("/autocomplete", word_prefix="smoke", phrase_prefix="smoke")
+    assert completion["suggestions"][0] == {
+        "text": "smokecheck", "scope": "word", "source_count": 1,
+    }
 
 
 async def _edit_and_history(client, api):

@@ -6,7 +6,7 @@
     python scripts/devserver.py --reload           # re-exec on a .py change
     python scripts/devserver.py --check            # assert and exit; CI-able
 
-Mounts the REAL 34 ``/prompt_librarian/*`` routes against a scratch SQLite
+Mounts the REAL 35 ``/prompt_librarian/*`` routes against a scratch SQLite
 store, serves the REAL ``web/`` tree at ComfyUI's URL layout, and
 supplies stub ``/scripts/{app,api}.js`` from ``devharness/``. Edit a file under
 ``web/`` and refresh; ComfyUI is never involved.
@@ -507,7 +507,7 @@ def main(argv=None):
     if cfg.check:
         from prompt_librarian.api.utils import _ROUTES
 
-        assert len(_ROUTES) == 34, f"expected 34 routes, found {len(_ROUTES)}"
+        assert len(_ROUTES) == 35, f"expected 35 routes, found {len(_ROUTES)}"
         assert manifest, "no .js found under web/"
         assert (
             os.path.realpath(lib).startswith(os.path.realpath(_SCRATCH_ROOT)) or cfg.allow_outside

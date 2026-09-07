@@ -5,6 +5,7 @@ import { singleton } from "../shared/singleton.js";
  */
 export const caps = singleton("caps", () => ({
   search: true,
+  autocomplete: true,
   dupes: true,
   compare: true,
   merge: true,

@@ -13,6 +13,7 @@ PREFIX = "/prompt_librarian"
 BULK_QUERY_LIMIT = 100000
 
 CAPABILITIES = {
+    "autocomplete": True,
     "search": True,
     "versions": True,
     "diff": True,

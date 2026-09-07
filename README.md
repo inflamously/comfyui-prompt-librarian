@@ -81,6 +81,28 @@ Click **Open Librarian** on the node. The panel is a full-screen overlay:
 - **Right pane** — the derived label, tags, the prompt text with char and token counts, the
   duplicate check panel, four stat tiles (used / last run / versions / rating), and the action bar.
 
+**Saved-prompt autocomplete** is enabled in the panel editor. As soon as you type two characters,
+it requests individual words and short comma/newline-separated phrases from current saved bodies.
+Suggestions contain one to three words; longer fragments contribute individual words only:
+`vol` can offer `volumetric` and `volumetric lighting`. Up/Down selects, **Enter** or a click accepts,
+and **Escape** dismisses suggestions. **Shift+Enter** inserts a newline; Enter also inserts a newline
+when no suggestions are open. **Tab** keeps normal focus navigation. Phrase completion is
+available at the end of a fragment; acceptance preserves its surrounding spaces and separators.
+Suggestions pause during IME composition and text selection, and editing still works offline.
+
+The vocabulary follows saves, edits, imports, merges, version restores, and deletions. It excludes
+tags, notes, historical versions, snippets, and unsaved drafts, and treats template syntax literally
+without opening wildcard files. Unicode normalization and case folding remove duplicates; ranking
+uses the number of source prompts, then alphabetical order. Existing SQLite libraries backfill
+in bounded batches within one transaction, and subsequent saves index only changed bodies. The
+versioned `autocomplete_keywords` and `autocomplete_sources` tables rebuild automatically to remove
+previously learned long sentences. They are derived data and stay out
+of JSON exports. No dictionary or model is needed.
+
+`GET /prompt_librarian/autocomplete` accepts `word_prefix`, `phrase_prefix`, and `limit` (default 8,
+clamped to 1–20). The response envelope contains `suggestions` with `text`, `scope` (`word` or
+`phrase`), and `source_count`. Prefix matching is literal and uses the normalized keyword index.
+
 Search supports operators: `tag:dance`, `-word` to exclude, and `"quoted phrase"`.
 
 **Ctrl+S** (⌘S) follows the active surface: while the panel is open it saves the prompt and
@@ -88,7 +110,7 @@ suppresses the browser's *Save Page* dialog; after the panel closes, the untouch
 ComfyUI's `Comfy.SaveWorkflow` command. The key isolation described under `keys.js` below also stops
 every other keystroke inside the overlay before the canvas can act on it.
 
-**Closing saves.** Escape, the `×` and a backdrop click all save first and then close; a panel with
+**Closing saves.** With suggestions dismissed, Escape, the `×` and a backdrop click all save first and then close; a panel with
 nothing to write closes straight away. There is no `Discard unsaved edits?` prompt, because being
 unable to dismiss the panel is a worse failure than a save you did not ask for. The two gates in
 *Never a silent overwrite* below still apply: a near-duplicate or a record changed elsewhere opens

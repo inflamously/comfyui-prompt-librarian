@@ -1099,3 +1099,35 @@ def test_a_handler_bug_never_escapes_the_guard(call, store, monkeypatch):
     status, payload = call("get", "/ping")
     assert status == 500
     assert payload["code"] == "internal"
+
+
+@pytest.mark.parametrize(("limit", "count"), [(None, 8), ("100", 20), ("0", 1), ("bad", 8)])
+def test_autocomplete_limits_and_envelope(call, store, limit, count):
+    store.create(",".join(f"volume{i:02}" for i in range(25)))
+    query = {"word_prefix": "vo", "phrase_prefix": "vo"}
+    if limit is not None:
+        query["limit"] = limit
+    result = ok(call("get", "/autocomplete", query=query))
+    assert len(result["suggestions"]) == count
+    assert len({item["text"] for item in result["suggestions"]}) == count
+    assert result["suggestions"][0] == {
+        "text": "volume00", "scope": "word", "source_count": 1,
+    }
+
+
+def test_autocomplete_empty_and_literal_query(call, store):
+    store.create("100% lighting, 100x lighting")
+    assert ok(call("get", "/autocomplete"))["suggestions"] == []
+    result = ok(call("get", "/autocomplete", query={"phrase_prefix": "100%"}))
+    assert result["suggestions"] == [
+        {"text": "100% lighting", "scope": "phrase", "source_count": 1},
+    ]
+
+
+def test_autocomplete_suggests_dictionary_entries_instead_of_saved_sentences(call, store):
+    store.create("Volumetric lighting fills the entire room, volumetric golden light")
+    result = ok(call("get", "/autocomplete", query={"word_prefix": "vol", "phrase_prefix": "vol"}))
+    assert result["suggestions"] == [
+        {"text": "Volumetric", "scope": "word", "source_count": 1},
+        {"text": "volumetric golden light", "scope": "phrase", "source_count": 1},
+    ]

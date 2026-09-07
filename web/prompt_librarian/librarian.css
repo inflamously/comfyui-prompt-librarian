@@ -1816,3 +1816,29 @@
   text-decoration: underline wavy var(--pl-warn);
   text-underline-offset: 2px;
 }
+
+/* Saved-body completion keeps keyboard focus in the panel editor. */
+.pl-root .pl-autocomplete {
+  position: fixed;
+  z-index: 10000;
+  width: max-content;
+  min-width: min(220px, calc(100vw - 16px));
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--pl-border);
+  border-radius: 6px;
+  background: var(--pl-bg-chrome);
+  color: var(--pl-text);
+  box-shadow: 0 4px 16px #0006;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+.pl-root .pl-autocomplete[hidden] { display: none; }
+.pl-root .pl-autocomplete [role="option"] {
+  padding: 6px 9px;
+  cursor: pointer;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: 3px;
+}
+.pl-root .pl-autocomplete [aria-selected="true"] { background: var(--pl-accent-soft); color: var(--pl-accent); }

@@ -213,6 +213,8 @@ class TagCount(_Schema):
 class Capabilities(_Schema):
     """What the frontend probes on startup. Mirrors ``config.CAPABILITIES``."""
 
+    autocomplete: bool
+
     search: bool
     versions: bool
     diff: bool
@@ -678,3 +680,25 @@ class ImportBody(_Schema):
 class ImportResponse(Envelope):
     count: int
     """Records imported."""
+
+
+@dataclass
+class AutocompleteQuery(_Schema):
+    word_prefix: str = ""
+    phrase_prefix: str = ""
+    limit: int = 8
+    """Result count, clamped to 1–20."""
+
+
+@dataclass
+class AutocompleteSuggestion(_Schema):
+    text: str
+    """An individual word or saved phrase containing at most three words."""
+    scope: Literal["word", "phrase"]
+    source_count: int
+    """Distinct current prompts containing this keyword."""
+
+
+@dataclass
+class AutocompleteResponse(Envelope):
+    suggestions: list[AutocompleteSuggestion]

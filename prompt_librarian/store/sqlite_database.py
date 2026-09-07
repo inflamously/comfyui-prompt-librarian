@@ -14,6 +14,7 @@ import sqlite3
 import threading
 import unicodedata
 
+from . import autocomplete
 from .models import _coerce_record, index_entry
 from .types import SCHEMA_VERSION
 from .utils import _as_int, _as_str, log
@@ -143,6 +144,12 @@ class SQLiteDatabase:
                 return self.fts5
 
             with self._connection() as con:
+                # Newer libraries must remain readable without derived-index DDL.
+                if self._newer_schema(con):
+                    self.fts5 = bool(con.execute(
+                        "SELECT 1 FROM sqlite_master WHERE name='prompt_fts'"
+                    ).fetchone())
+                    return self.fts5
                 # WAL lets search readers proceed during the one writer.
                 if con.execute("PRAGMA journal_mode").fetchone()[0].lower() != "wal":
                     con.execute("PRAGMA journal_mode=WAL")
@@ -219,6 +226,7 @@ class SQLiteDatabase:
                     "INSERT OR IGNORE INTO state(key,value) VALUES('library_schema',?)",
                     (str(SCHEMA_VERSION),),
                 )
+                autocomplete.initialize(con)
             stat = os.stat(self.path)
             _INITIALIZED[self.path] = (
                 (stat.st_dev, stat.st_ino),
@@ -226,6 +234,25 @@ class SQLiteDatabase:
                 self._retired_entry_columns,
             )
         return self.fts5
+
+    @staticmethod
+    def _newer_schema(con):
+        if not con.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='metadata'"
+        ).fetchone():
+            return False
+        row = con.execute("SELECT payload FROM metadata WHERE singleton=1").fetchone()
+        try:
+            return bool(row and _as_int(json.loads(row[0]).get("schema"), 0) > SCHEMA_VERSION)
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise sqlite3.DatabaseError("invalid library metadata") from exc
+
+    def autocomplete(self, word_prefix, phrase_prefix, limit):
+        self.initialize()
+        with self._connection() as con:
+            if self._newer_schema(con):
+                return []
+            return autocomplete.suggest(con, word_prefix, phrase_prefix, limit)
 
     @staticmethod
     def _set_state(con, key, value):
@@ -266,6 +293,7 @@ class SQLiteDatabase:
         )
 
     def _put(self, con, rec, entry, order_no):
+        previous = con.execute("SELECT body FROM entries WHERE id=?", (rec["id"],)).fetchone()
         p = projection(rec, entry)
         record_json = json.dumps(rec, ensure_ascii=False, separators=(",", ":"))
         values = (
@@ -306,6 +334,8 @@ class SQLiteDatabase:
             f"ON CONFLICT(id) DO UPDATE SET {update_sql}",
             values,
         )
+        if previous is None or previous[0] != p["body"]:
+            autocomplete.put(con, p["id"], p["body"])
         con.execute("DELETE FROM tags WHERE prompt_id=?", (p["id"],))
         con.executemany(
             "INSERT INTO tags(prompt_id,tag) VALUES(?,?)",

@@ -27,6 +27,7 @@ import { imp, seedHost } from "../harness/mount.js";
  */
 const CALLS = {
   ping: [],
+  autocomplete: [{ word_prefix: "vo", phrase_prefix: "vo", limit: 8 }],
   search: [{ q: "x", tags: ["t"], limit: 10 }],
   get: ["ID"],
   meta: [["ID"]],

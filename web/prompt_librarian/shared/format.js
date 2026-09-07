@@ -1,19 +1,11 @@
-/* ==========================================================================
-   Prompt Librarian — number / date / query formatting
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-   ========================================================================== */
-
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-/**
- * Relative time in the spec's meta-line style: "just now", "5m", "3h", "2d",
- * then an absolute "Mar 4" past a week, plus the year past ~11 months.
- * Returns "" for missing/unparseable input — a meta line with a blank slot is
- * always better than "Invalid Date".
+/** Return relative time, or an absolute date for older timestamps.
+ * Missing or invalid input returns an empty string.
+ *
  * @param {string} iso ISO-8601 (the store writes "…Z")
  * @param {Date|number} [now]
  * @returns {string}
@@ -37,9 +29,7 @@ export function relTime(iso, now) {
   return label;
 }
 
-// U+2009 THIN SPACE, spelled out because an invisible literal in source is a
-// trap for the next reader (and for grep). A regular space would also let the
-// number wrap across two lines mid-value; a thin space will not.
+// U+2009 groups digits with a visibly narrow separator.
 export const THIN_SPACE = String.fromCharCode(0x2009);
 
 /**

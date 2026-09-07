@@ -1,11 +1,4 @@
-"""Store-wide facts and whole-library moves.
-
-``/ping`` is the first request the panel makes and decides what it builds;
-``/export`` and ``/import`` are the whole envelope in and out; ``/settings``
-persists the two knobs the panel exposes. Expensive work is offloaded, and the
-file transport streams bounded batches rather than building another copy of
-the whole library in memory.
-"""
+"""Offload expensive work and stream file transfers in bounded batches."""
 
 import contextlib
 import json

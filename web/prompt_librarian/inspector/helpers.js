@@ -1,13 +1,5 @@
-/* ==========================================================================
-   Prompt Librarian — the inspector's helper table
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   The pane reads its DOM/format helpers off `ctx.dom` (which modal/ctx.js
-   fills from shared/) rather than importing them directly, so a partially
-   loaded helper module degrades to the hand-rolled fallback instead of
-   throwing at mount time.
-   ========================================================================== */
+/* Read helpers from ctx.dom so missing shared helpers can fall back locally.
+ */
 
 import { fallbackDebounce, fallbackH, fallbackRafThrottle } from "./fallbacks.js";
 

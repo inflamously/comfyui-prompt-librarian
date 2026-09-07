@@ -1,12 +1,5 @@
-/* ==========================================================================
-   Prompt Librarian — the transport barrel
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Re-exports only.
-
-   The panes reach the backend through `ctx.API` / `ctx.lanes`, which
-   modal/ctx.js fills from here. Import a single file directly when that is
-   all you need — `api/request.js` is the only one that pulls in ComfyUI.
-   ========================================================================== */
+/* Panes receive API and request lanes through their modal context.
+ */
 
 export { ABORTED, ApiError, BASE, download, req, upload } from "./request.js";
 export { cancelAllLanes, createLane, lanes } from "./lanes.js";

@@ -2,8 +2,7 @@
 
 import os
 
-# The store is optional: this module must stay importable (and testable) with
-# no ComfyUI and no `folder_paths` anywhere in sight.
+# Keep the store optional so standalone resolution needs no ComfyUI.
 try:
     from ..store import STORE as _STORE
     from ..store import wildcards_dir as _store_wildcards_dir

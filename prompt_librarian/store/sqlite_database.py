@@ -128,10 +128,8 @@ class SQLiteDatabase:
 
     def initialize(self):
         """Create the library schema. Returns whether FTS5 is available."""
-        # Schema DDL and switching journal mode are lock-upgrading operations.
-        # Running them before every point read/write can race a perfectly valid
-        # transaction from another store instance. Cache the initialized file
-        # identity and keep ordinary connections on the data path only.
+        # Cache initialized file identity: repeating DDL/journal-mode changes on normal
+        # connections can race another instance's transaction.
         with _INIT_LOCK:
             try:
                 stat = os.stat(self.path)
@@ -201,11 +199,8 @@ class SQLiteDatabase:
                 """
                 )
                 columns = {row[1] for row in con.execute("PRAGMA table_info(entries)")}
-                # The first authoritative SQLite schema shared its entries table
-                # with the retired JSONL index.  Its byte-location columns have
-                # no default, so omitting them makes even an UPSERT fail its
-                # preliminary NOT NULL checks.  Preserve that database in place:
-                # old rows keep their offsets and new rows receive inert zeros.
+                # Old entries tables require byte-location columns even during UPSERT. Keep
+                # existing offsets and supply inert zeros for new rows.
                 self._retired_entry_columns = tuple(
                     column for column in _RETIRED_ENTRY_COLUMNS if column in columns
                 )

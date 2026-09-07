@@ -1,31 +1,7 @@
-/* ==========================================================================
-   Prompt Librarian — the handful of things every picker needs
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-
-   ==========================================================================
-   KEYBOARD: THE ONE THING THAT MUST NOT BE GOT WRONG
-   --------------------------------------------------------------------------
-   modal/keys.js installs a window-CAPTURE guard that calls
-   stopImmediatePropagation() on every keydown/keyup/keypress originating
-   inside `.pl-root`. The event therefore NEVER reaches our subtree, and
-
-       el.addEventListener("keydown", fn)     // <-- DEAD CODE inside the modal
-
-   will never fire. There is no such listener anywhere in this directory, and
-   adding one would silently break every picker's arrow-key navigation.
-
-   Keys arrive by exactly two supported routes, both used by bindKeys() below:
-     1. `ctx.onKey(el, "keydown", fn)` — modal/keys.js re-delivers the ORIGINAL
-        event along the path from e.target up to `.pl-root`, honouring
-        capture/bubble order, stopPropagation() and preventDefault().
-     2. the namespaced mirror CustomEvent `"pl:keydown"`, whose
-        `detail.event` is the original. Used only when no ctx is available.
-
-   Escape is handled on the popover element itself (see popover.js) and calls
-   stopPropagation() so the modal's root-level Escape handler does not ALSO pop
-   a layer — that would close the popover and then the modal.
-   ========================================================================== */
+/* modal/keys.js intercepts native keys at window capture. Use ctx.onKey
+ * or the pl:keydown mirror; native subtree key listeners will not fire.
+ * Popover Escape must stop propagation to avoid also closing the modal.
+ */
 
 import { NS } from "../shared/ns.js";
 
@@ -60,7 +36,6 @@ export function viewport() {
   return { vw, vh };
 }
 
-/** Rendered size of an element, preferring the box the browser actually laid out. */
 export function measure(el) {
   let w = 0;
   let ht = 0;
@@ -76,9 +51,8 @@ export function measure(el) {
   return { w, h: ht };
 }
 
-/**
- * Bind a key handler the only two ways that work inside the modal.
- * NEVER addEventListener("keydown", …) — see the block comment above.
+/** Bind through the key bus or mirror because capture blocks native subtree events.
+ *
  * @returns {() => void} unbind
  */
 export function bindKeys(ctx, el, handler) {
@@ -96,8 +70,6 @@ export function bindKeys(ctx, el, handler) {
     const orig = (ev && ev.detail && ev.detail.event) || ev;
     handler(orig);
   };
-  // "pl:keydown", NOT "keydown": modal/keys.js dispatches this bubbling mirror
-  // after the capture guard has already eaten the real event.
   el.addEventListener("pl:keydown", onMirror);
   return () => el.removeEventListener("pl:keydown", onMirror);
 }

@@ -24,7 +24,6 @@ def _passes_filters(  # noqa: C901 - a flat chain of independent filters
     dupe_ids: set[str] | None,
 ) -> bool:
     if tag_norms:
-        # AND semantics: set(tags) <= set(rec.tags)
         dtags = set(doc.tags_toks)
         for t in tag_norms:
             parts = t.split()
@@ -48,20 +47,9 @@ def _passes_filters(  # noqa: C901 - a flat chain of independent filters
     return not (dupes_only and dupe_ids is not None and doc.pid not in dupe_ids)
 
 
-# --------------------------------------------------------------------------
-# Sorting
-# --------------------------------------------------------------------------
-
-
 def _sort_scored(scored: list[tuple[Doc, float]], sort: str) -> list[tuple[Doc, float]]:
-    """Stable multi-pass sort -- the last pass is the primary key.
-
-    Multi-pass keeps descending-string keys (ISO timestamps) and ascending
-    string keys (the body) in one comparator-free scheme.
-
-    ``az`` and every tie-break sort on the body's opening words. They used to
-    sort on the name; the body is what the name was a copy of, and unlike the
-    derived label it does not move when an unrelated record is saved.
+    """The last stable sort is primary. Use body text for tie-breaks because
+    corpus-derived labels can change when unrelated records are saved.
     """
     if sort == "az":
         scored.sort(key=lambda p: p[0].used, reverse=True)
@@ -73,7 +61,7 @@ def _sort_scored(scored: list[tuple[Doc, float]], sort: str) -> list[tuple[Doc, 
         scored.sort(key=lambda p: p[0].body_disp_lower)
         scored.sort(key=lambda p: p[0].last_run, reverse=True)
         scored.sort(key=lambda p: p[0].used, reverse=True)
-    else:  # relevance
+    else:
         scored.sort(key=lambda p: p[0].body_disp_lower)
         scored.sort(key=lambda p: (-p[1], -p[0].used))
     return scored
@@ -82,16 +70,8 @@ def _sort_scored(scored: list[tuple[Doc, float]], sort: str) -> list[tuple[Doc, 
 def _fold_groups(
     scored: list[tuple[Doc, float]], groups: Iterable[Iterable[str]]
 ) -> tuple[list[tuple[Doc, float]], dict[str, list[tuple[Doc, float]]]]:
-    """Collapse each near-duplicate cluster down to one representative row.
-
-    The representative is whichever member comes FIRST in the already-sorted
-    list, which is the only choice that needs no sort rules of its own: the
-    cluster lands exactly where its best member would have, under relevance,
-    recency, usage or A-Z alike.
-
-    Members of a cluster that the query filtered out are simply not here, so a
-    cluster with one surviving member folds to a plain row (``members == []``)
-    rather than a one-item accordion.
+    """Use the first already-sorted member as the cluster representative.
+    A cluster with one surviving query match remains a plain row.
     """
     gid: dict[str, int] = {}
     for i, members in enumerate(groups or ()):

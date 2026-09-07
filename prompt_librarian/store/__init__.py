@@ -1,8 +1,4 @@
-"""SQLite persistence for Prompt Librarian.
-
-``library.sqlite3`` is the only live store. Historical ``library.json`` and
-``library.jsonl`` files are read only by the explicit migration path.
-"""
+"""SQLite is the live store; legacy JSON/JSONL are read only during migration."""
 
 from .sqlite_store import LibrarianStore
 from .types import (

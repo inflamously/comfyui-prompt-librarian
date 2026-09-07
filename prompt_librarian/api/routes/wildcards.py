@@ -1,9 +1,5 @@
-"""The ``__wildcard__`` files, and the resolver preview built on them.
-
-``from ... import wildcards`` deliberately binds the *domain* module over this
-one's own name: the handlers read ``wildcards.FILES`` through the module rather
-than importing the names, so a test (or a user changing the wildcard directory)
-can swap the file index and have both endpoints see it.
+"""Bind the domain wildcards module, not individual exports, so both endpoints
+see a replaced FILES index.
 """
 
 from ... import wildcards

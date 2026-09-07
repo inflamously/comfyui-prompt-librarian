@@ -1,11 +1,5 @@
-/* ==========================================================================
-   Prompt Librarian — the footer / bulk bar
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   Shares the rail's fifth grid row with the idle footer line, so `.pl-rail`
-   keeps exactly five children — see the note in browse/index.js.
-   ========================================================================== */
+/* Share the footer grid row so .pl-rail keeps its five-child CSS layout.
+ */
 
 import { clear, h } from "../shared/dom.js";
 import { fmtInt } from "../shared/format.js";
@@ -24,8 +18,6 @@ export function createBulkBar({ ctx, el, source, selection }) {
     clear(el);
     const n = selection.count();
     if (!n) {
-      // The spec's footer line. Same row as the bulk bar so `.pl-rail` keeps
-      // exactly five children.
       el.appendChild(h("span", null, `scroll ${MIDDOT} virtualised list`));
       return;
     }
@@ -33,9 +25,7 @@ export function createBulkBar({ ctx, el, source, selection }) {
     el.appendChild(
       h("span", null, `${fmtInt(n)} selected${mode === "filter" ? " (all filtered)" : ""}`)
     );
-    // Against RECORDS, not rows: with duplicate clusters folded a selection of
-    // four can outnumber the rows on screen, and "select all filtered" would
-    // vanish exactly when the library has the most to select.
+    // Compare selected records with recordTotal, not the number of folded rows.
     const reachable = source.recordTotal == null ? source.total : source.recordTotal;
     if (mode !== "filter" && reachable > n) {
       el.appendChild(

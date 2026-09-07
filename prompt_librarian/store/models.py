@@ -1,27 +1,6 @@
-"""Record/envelope shapes and SQLite projection helpers.
-
-The data model lives here, deliberately apart from any storage. A *record* is a
-plain dict::
-
-    {"id": "9f2c...", "body": "...", "tags": [...], "rating": 0, "used": 0,
-     "last_run": "", "created": "...", "updated": "...", "notes": "",
-     "pinned": False, "versions": [{"body": "...", "ts": "...", "src": None}]}
-
-and an *envelope* is the whole library around them (schema, settings, snippets,
-ignored pairs, prompts). JSON and JSONL imports are coerced into these shapes
-before they enter SQLite.
-
-Two coercion levels, and the difference matters:
-
-* :func:`_clean_record` **validates** — it raises
-  :class:`~.types.BodyTooLargeError`. Use it on the way *in*, before a mutation
-  touches the live library, so a rejected edit cannot half-apply.
-* :func:`_coerce_record` **tolerates** — it never raises. Use it on the way
-  *out* of storage: a hand-edited file must load, and refusing to show the user
-  their own data would be worse than holding an oversized body in memory. The
-  next *edit* still has to pass the limit.
-
-The projection helper keeps browse/search metadata separate from full records.
+"""Validate incoming edits with _clean_record before mutation. Load stored data
+with tolerant _coerce_record, which permits oversized bodies so existing
+records remain readable; subsequent edits must pass validation.
 """
 
 from .types import (
@@ -50,19 +29,10 @@ OP_DEL = "del"
 _LEGACY_LINE_KEYS = ("_seq", "_op", "_ts")
 
 
-# --------------------------------------------------------------------------- #
-# Records
-# --------------------------------------------------------------------------- #
-
 def _clean_record(rec):
-    """Return a normalized copy of a record dict, preserving unknown keys.
-
-    Raises :class:`~.types.BodyTooLargeError` for an oversized body. Called
-    *before* any mutation of the live library so a rejected edit cannot
-    half-apply.
-    """
+    """Validate before mutation; raise BodyTooLargeError and preserve unknown keys."""
     out = dict(rec)
-    for gone in REMOVED_FIELDS:        # removed fields: scrubbed, never rewritten
+    for gone in REMOVED_FIELDS:
         out.pop(gone, None)
     out["id"] = _as_str(rec.get("id")) or new_id()
     out["body"] = clean_body(rec.get("body", ""))
@@ -87,7 +57,7 @@ def _coerce_versions(raw):
         if not isinstance(entry, dict):
             continue
         item = dict(entry)
-        item.pop("name", None)         # removed field: scrubbed, never rewritten
+        item.pop("name", None)
         item["body"] = _as_str(entry.get("body", ""))
         item["ts"] = _as_str(entry.get("ts", ""))
         src = entry.get("src")
@@ -97,15 +67,11 @@ def _coerce_versions(raw):
 
 
 def _coerce_record(raw):
-    """Tolerant coercion of one stored record. Never raises.
-
-    Unlike :func:`_clean_record` this accepts an oversized body — see the module
-    docstring for why.
-    """
+    """Allow oversized stored bodies to remain readable; validate them on the next edit."""
     if not isinstance(raw, dict):
         return None
     out = dict(raw)
-    for gone in REMOVED_FIELDS:        # removed fields: scrubbed, never rewritten
+    for gone in REMOVED_FIELDS:
         out.pop(gone, None)
     for gone in _LEGACY_LINE_KEYS:     # legacy JSONL bookkeeping is not record data
         out.pop(gone, None)
@@ -122,10 +88,6 @@ def _coerce_record(raw):
     out["versions"] = _coerce_versions(raw.get("versions", []))
     return out
 
-
-# --------------------------------------------------------------------------- #
-# Envelope
-# --------------------------------------------------------------------------- #
 
 def empty_envelope():
     """A fresh, valid, empty library envelope."""
@@ -197,19 +159,13 @@ def clean_pairs(raw):
 
 
 def _coerce(raw):
-    """Coerce anything at all into a valid envelope. **Never raises.**
-
-    Total tolerance is the point: this runs on whatever json happened to be on
-    disk, including a file a human edited by hand. Unknown top-level and
-    per-record keys are preserved verbatim so a newer build's extra fields
-    survive a round-trip through an older one.
-    """
+    """Tolerate malformed envelopes and preserve unknown keys for forward compatibility."""
     env = empty_envelope()
     if not isinstance(raw, dict):
         return env
 
     out = dict(raw)  # keep unknown keys
-    out.pop("categories", None)        # removed field: scrubbed, never rewritten
+    out.pop("categories", None)
 
     out["schema"] = _as_int(raw.get("schema", SCHEMA_VERSION), SCHEMA_VERSION)
     out["updated"] = _as_str(raw.get("updated", "")) or now_iso()
@@ -246,9 +202,6 @@ def envelope_from_parts(settings, snippets, ignored, prompts, updated="", schema
     }
 
 
-# --------------------------------------------------------------------------- #
-# SQLite browse/search projection
-# --------------------------------------------------------------------------- #
 def index_entry(rec):
     """The lightweight metadata SQLite exposes for listing and sorting.
     """
@@ -266,18 +219,8 @@ def index_entry(rec):
     }
 
 
-# --------------------------------------------------------------------------- #
-# Mutation arithmetic
-# --------------------------------------------------------------------------- #
-
 def _trim_versions(rec, cap=VERSION_CAP, bytes_cap=VERSION_BYTES_CAP):
-    """Drop the oldest versions until both the count and the byte caps hold.
-
-    Both caps are needed: 50 versions of a 100 KB body would be a 5 MB record,
-    and a byte cap alone would let thousands of one-line versions accumulate.
-    At least one version is always kept, so a snapshot that is on its own bigger
-    than the byte cap still leaves history behind rather than erasing it.
-    """
+    """Enforce count and byte caps, but retain at least one snapshot even if oversized."""
     versions = rec.get("versions")
     if not isinstance(versions, list):
         rec["versions"] = []

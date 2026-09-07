@@ -1,19 +1,5 @@
-"""Turning a params mapping into a search, and a selection into ids.
-
-Read-path plumbing with more than one caller, which is the only reason it is
-not inside a route module: ``/search`` runs the query the panel just typed,
-and every ``/bulk/*`` write re-runs a query the panel *stored*. Both go
-through :func:`_run_search`, so the two can never drift into disagreeing about
-what "everything currently filtered" means.
-
-:func:`_all_pairs` lives here for the same reason and no other: ``/dupes/all``
-serves it directly and ``/search`` needs it to fold clusters, and two route
-modules are not allowed to import each other.
-
-Nothing here touches aiohttp or a request — the callers hand over a plain
-mapping, whether it came from a query string or a JSON body. :func:`_all_pairs`
-is async only because it coalesces concurrent callers; it still knows nothing
-about HTTP.
+"""Share query evaluation between search and bulk selection so they target
+the same records. Coalesce concurrent all-pairs scans before offloading.
 """
 
 import asyncio
@@ -23,14 +9,7 @@ from ..store import STORE
 from .config import BULK_QUERY_LIMIT
 from .utils import _bool, _int, _list, _offload, _rev, _str, _threshold
 
-# -- /dupes/all coalescing --------------------------------------------------- #
-# Concurrent callers on the same (rev, threshold, exhaustive) await one
-# computation instead of stampeding the executor with n identical 0.5-2 s
-# scans. The dict is only ever touched from the event loop, so it needs no lock.
-#
-# `group=true` searches made this load-bearing rather than merely polite: the
-# panel fires a search per keystroke and every one of them wants the same
-# clusters, so without coalescing a cold cache turns one scan into a dozen.
+# Coalesce by (rev, threshold, exhaustive). Only the event loop touches this map.
 
 _all_inflight = {}
 
@@ -41,10 +20,8 @@ async def _all_pairs(threshold, exhaustive=False):
     Returns ``dedupe.dupe_counts()``'s full result: ``counts``, ``groups`` and
     ``pairs``.
     """
-    # `ignored_pairs()` calls `ensure_loaded()`, which bumps `rev` when the file
-    # changed underneath us. Do it *before* computing the key, or the leader can
-    # register under a rev that later callers no longer compute — which silently
-    # un-coalesces the stampede this function exists to prevent.
+    # Refresh before keying: external changes may bump rev and split concurrent
+    # callers across different keys.
     STORE.ensure_loaded()
     key = (_rev(), float(threshold), bool(exhaustive))
     entry = _all_inflight.get(key)
@@ -59,11 +36,8 @@ async def _all_pairs(threshold, exhaustive=False):
     event = asyncio.Event()
     box = {}
     _all_inflight[key] = (event, box)
-    # Publish the marker, then yield once before starting the work. Under
-    # eagerly-started tasks (3.12+ eager factories, 3.14's gather) a leader
-    # whose executor future resolves without suspending would otherwise run to
-    # completion — marker set *and* torn down — before a single peer got to
-    # look, and the stampede this function prevents would happen anyway.
+    # Yield after publishing the marker so eagerly started tasks can join before
+    # a fast executor result removes it.
     await asyncio.sleep(0)
     try:
         box["result"] = await _offload(
@@ -80,21 +54,11 @@ async def _all_pairs(threshold, exhaustive=False):
 
 
 def _run_search(params, limit=None, all_pairs=None):
-    """Run one search from a params mapping (query string or JSON body).
+    """Share query semantics between search and bulk selection.
 
-    ``match_id`` turns on the ``match_pct`` badge: similarity of every hit on
-    the page to that record. It is derived from ``find_similar`` (one cached
-    one-vs-N pass), so rows below the threshold simply carry no badge —
-    which is what the panel wants, since a sub-threshold percentage is noise.
-
-    ``group`` folds near-duplicate clusters into one row each. Both it and
-    ``dupes_only`` need the all-pairs scan, so the handler is expected to have
-    awaited :func:`_all_pairs` and to pass the result in as ``all_pairs``;
-    computing it here would mean doing it once per concurrent search.
-
-    Neither the badge nor the clusters consult the store's "keep both" set. A
-    mute silences the save dialog, it does not make a duplicate stop existing
-    — see the ``dedupe`` module docstring.
+    match_id annotates above-threshold matches. Grouping and dupes_only need
+    all_pairs; async callers should await the coalesced scan before calling.
+    Keep-both decisions do not remove matches or clusters.
     """
     rev = _rev()
     threshold = _threshold(params.get("threshold"))
@@ -155,11 +119,8 @@ def _resolve_ids(data):
         return [_str(pid) for pid in ids if _str(pid)]
     query = data.get("query")
     if isinstance(query, dict):
-        # Ungrouped, always: "everything currently filtered" is a set of
-        # RECORDS. A stored selector that folded clusters would hand the bulk
-        # op one representative per cluster and silently spare its duplicates,
-        # which is the exact opposite of what someone deleting duplicates in
-        # bulk is asking for.
+        # Bulk selection must stay ungrouped so every matching record is affected,
+        # not just each cluster representative.
         query = dict(query, group=False)
         result = _run_search(query, limit=BULK_QUERY_LIMIT)
         return [hit["id"] for hit in result.get("hits", [])]

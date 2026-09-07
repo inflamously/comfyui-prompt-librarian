@@ -1,12 +1,5 @@
-/* ==========================================================================
-   Prompt Librarian — mounting the two panes
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   The modal does NOT own the rail (browse/) or the inspector (inspector/).
-   Both are imported lazily, inside try/catch, so a missing or broken module
-   degrades to a placeholder instead of an empty modal.
-   ========================================================================== */
+/* Load each pane independently so one failed import leaves the other usable.
+ */
 
 import { clear, h } from "../shared/dom.js";
 import { warnOnce } from "../shared/singleton.js";

@@ -13,19 +13,8 @@ _NEWLINE_RE = re.compile(r"[\r\n]+")
 _WS_RE = re.compile(r"\s+", re.UNICODE)
 
 
-# --------------------------------------------------------------------------
-# Normalisation
-# --------------------------------------------------------------------------
-
-
 def normalize(text: Any) -> str:
-    """NFKC -> casefold -> strip non-word chars -> collapse whitespace.
-
-    ``casefold()`` rather than ``lower()``: it is the only correct fold for
-    German ``ß`` (-> ``ss``) and Turkish dotted capital ``İ``.  ``\\w`` under
-    ``re.UNICODE`` keeps CJK and accented letters, so non-Latin prompts
-    tokenize instead of vanishing.
-    """
+    """Use Unicode casefolding (including ß → ss) and preserve non-Latin word characters."""
     if text is None:
         return ""
     if not isinstance(text, str):
@@ -62,7 +51,7 @@ def _within_edit_1(a: str, b: str) -> bool:
     if la > lb:
         a, b = b, a
         la, lb = lb, la
-    if lb - la > 1:  # early exit -- the whole point of doing this by hand
+    if lb - la > 1:
         return False
     if a == b:
         return True

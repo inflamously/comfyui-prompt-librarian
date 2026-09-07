@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-# The name field used to carry a weight of its own (3.0, plus an exact-match
-# bonus), and it was the field a user searched when they knew what they were
-# looking for.  With it gone, the *head* of the body inherits that role: a
-# prompt says what it is about in its first line and qualifies it afterwards,
-# so an early match is a stronger signal than a late one.  It is a bonus on
-# top of W_BODY, not a replacement for it -- a head token scores both.
+# Head matches receive an additional bonus on top of W_BODY.
 W_HEAD = 1.5
 W_TAG = 2.0
 W_BODY = 1.0

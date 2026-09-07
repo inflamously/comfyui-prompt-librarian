@@ -1,19 +1,6 @@
-/* ==========================================================================
-   Prompt Library (the OLD node) — extension entry
-   --------------------------------------------------------------------------
-   THE ONLY FILE IN THIS DOMAIN ALLOWED IMPORT-TIME SIDE EFFECTS.
-
-   Frontend for the PromptLibrary node.
-   category combo auto-loads prompt list on change.
-   Load button is the reliable fallback for filling the text box.
-   The `text` widget is the real payload sent to Python.
-
-   Extension name is `prompt-library.ui`. The Librarian registers
-   `prompt-librarian.ui` from web/prompt_librarian/ — different node class,
-   different routes, different store, zero overlap. Deleting either domain
-   directory must leave the other working, which is why nothing here imports
-   anything from web/prompt_librarian/.
-   ========================================================================== */
+/* ComfyUI loads every web module; only extension entries may register hooks.
+ * This node stays independent of prompt_librarian/.
+ */
 
 import { app } from "../../../scripts/app.js";
 import { deletePrompt, fetchPrompts, savePrompt } from "./api.js";
@@ -54,7 +41,6 @@ app.registerExtension({
             applyPrompts(texts, selectText);
         }
 
-        // Auto-load prompt list when category changes.
         // Do NOT call origCatCb — ComfyUI's internal combo callback
         // resets widget state and fights our async update.
         categoryW.callback = function(value) {
@@ -62,12 +48,10 @@ app.registerExtension({
             loadAndApply(value);
         };
 
-        // Load: reliable fallback — re-fetches and fills text box from selection.
         node.addWidget("button", "Load", null, async () => {
             const cat = (categoryW.value || "").trim();
             const wantedLabel = promptW.value;
             await loadAndApply(cat);
-            // Restore prior label if it survived the refresh
             if (promptMap.has(wantedLabel)) promptW.value = wantedLabel;
             const full = promptMap.get(promptW.value);
             if (full != null) textW.value = full;

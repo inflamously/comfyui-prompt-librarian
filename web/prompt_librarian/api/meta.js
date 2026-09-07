@@ -1,9 +1,3 @@
-/* ==========================================================================
-   Prompt Librarian — batched record metadata (node faces)
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-   ========================================================================== */
-
 import { NS } from "../shared/ns.js";
 import { singleton } from "../shared/singleton.js";
 import { API } from "./routes.js";
@@ -17,11 +11,7 @@ function metaState() {
   }));
 }
 
-/**
- * Normalise whatever shape `POST /meta` answers with into `{id: meta}`.
- * Written defensively on purpose: this is the one response shape the frontend
- * consumes before the backend agent's file exists, and a mismatch here would
- * silently blank every node face rather than throw.
+/** Accept supported /meta envelope shapes and return {id: meta}.
  */
 function indexMetas(payload) {
   const out = new Map();
@@ -72,13 +62,8 @@ async function flushMeta() {
   }
 }
 
-/**
- * Metadata for one record, batched and cached.
- *
- * Every call made in the same microtask joins ONE `POST /meta {ids:[…]}`, so
- * ten Librarian nodes on a canvas produce one request rather than ten. The
- * result is cached until `invalidateMeta` clears it; a lookup that fails
- * resolves `null` and is not cached.
+/** Coalesce same-microtask lookups into one request. Cache missing records,
+ * but do not cache failures; those must remain retryable.
  *
  * @param {string} id
  * @returns {Promise<object|null>}
@@ -100,18 +85,12 @@ export function getPromptMeta(id) {
   }
   if (!st.scheduled) {
     st.scheduled = true;
-    // Microtask, not setTimeout: the batch closes at the end of the current
-    // job, so a burst of nodeCreated callbacks in one tick shares a request
-    // without adding a frame of latency.
+    // A microtask batches nodeCreated callbacks without adding frame latency.
     Promise.resolve().then(flushMeta);
   }
   return entry.promise;
 }
 
-/**
- * Alias kept for the node face, which calls `api.fetchMeta(id)`. Same
- * batching, same cache.
- */
 export const fetchMeta = getPromptMeta;
 
 /**

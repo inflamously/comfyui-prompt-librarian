@@ -70,7 +70,6 @@ def search(  # noqa: C901 - the query pipeline reads better as one function
 
     docs = index.docs
 
-    # -- candidate generation --------------------------------------------
     fallback_used = False
     if empty_query:
         candidates: Iterable[str] = docs.keys()
@@ -109,16 +108,14 @@ def search(  # noqa: C901 - the query pipeline reads better as one function
             continue
         sc, mask = score_fn(doc, pq, index)
         if mode == "all" and mask != full_mask:
-            continue  # AND gate: every query token must have matched
+            continue
         if sc <= 0.0:
             continue
         scored.append((doc, sc))
 
     _sort_scored(scored, sort)
 
-    # Folding happens on the FULL sorted list, before the page slice: a
-    # cluster's members are scattered all over it, and collapsing after
-    # slicing would leave a page whose length nobody can predict.
+    # Fold the full sorted list before paging, since cluster members can be scattered.
     record_total = len(scored)
     members_of: dict[str, list[tuple[Doc, float]]] = {}
     if groups:
@@ -129,9 +126,7 @@ def search(  # noqa: C901 - the query pipeline reads better as one function
     limit = max(0, int(limit if limit is not None else 50))
     page = scored[offset : offset + limit] if limit else []
 
-    # Members ride along with the page they belong to, capped: one pathological
-    # cluster must not be able to turn a 200-row page into a 20 000-row one.
-    # `group_size` still reports the truth, so the UI can say "+N more".
+    # Cap members per cluster to bound response size; group_size reports the full count.
     shown_members = {
         doc.pid: (members_of.get(doc.pid) or ())[:group_member_cap]
         for doc, _ in page

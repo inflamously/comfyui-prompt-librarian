@@ -1,11 +1,4 @@
-"""Store vocabulary: SQLite limits, events, and deliberate errors.
-
-This module is the bottom of the store slice. It imports nothing from the rest
-of the package (and nothing from ComfyUI).
-
-The error classes in particular are **contract**: ``prompt_librarian.api`` maps
-them onto HTTP status codes by name, so renaming one silently changes the API.
-"""
+"""Store error names are part of the API's HTTP status mapping."""
 
 SCHEMA_VERSION = 1
 
@@ -27,10 +20,6 @@ EVENT_USED = "prompt_librarian.used"
 # records without a schema bump because they were never required for identity.
 REMOVED_FIELDS = ("category", "name")
 
-
-# --------------------------------------------------------------------------- #
-# Errors — the api layer maps these onto HTTP codes, so the names are contract.
-# --------------------------------------------------------------------------- #
 
 class StoreError(Exception):
     """Base class for every error the store raises deliberately."""

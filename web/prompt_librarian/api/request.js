@@ -1,49 +1,19 @@
-/* ==========================================================================
-   Prompt Librarian — the request primitive
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. ComfyUI imports every .js under WEB_DIRECTORY as an
-   extension, so this file is evaluated whether or not anything imports it.
-   Nothing at module scope may do work: exports and `const` data only.
-
-   This is the ONLY file under web/prompt_librarian/ besides the entry that
-   imports from ComfyUI. The fragile relative path to the core tree exists
-   here and in web/prompt_librarian/index.js, and nowhere else — every other
-   module talks to the backend through `API`.
-
-   `api.fetchApi` is used rather than bare `fetch` because it prefixes
-   ComfyUI's base URL (`/api`, plus any reverse-proxy prefix). A bare
-   `fetch("/prompt_librarian/search")` works on a default install and 404s
-   behind a proxy, which is exactly the kind of bug that only shows up on
-   somebody else's machine.
-   ========================================================================== */
+/* Keep the ComfyUI transport import here. api.fetchApi preserves the host
+ * and reverse-proxy URL prefixes; direct requests would bypass them.
+ */
 
 import { api } from "../../../../scripts/api.js";
 import { escapeQuery } from "../shared/format.js";
 
-/** Route prefix. Every route is `/prompt_librarian/<name>`. */
 export const BASE = "/prompt_librarian/";
 
-/**
- * Returned by a lane's `run()` when the call was superseded or cancelled.
- * A cancellation is NOT an error: every call site would otherwise need a
- * try/catch whose only job is to swallow an AbortError, and the one that
- * forgets turns a keystroke into a red console trace.
- *
- *   const res = await lanes.search((signal) => API.search(params, signal));
- *   if (res === ABORTED) return;      // a newer search is already running
+/** Lanes return ABORTED for superseded/cancelled work; callers should ignore it
+ * rather than treat cancellation as an error.
  */
 export const ABORTED = Symbol("aborted");
 
-/* --------------------------------------------------------------------------
-   Errors
-   -------------------------------------------------------------------------- */
 
-/**
- * A backend (or transport) failure with the pieces the UI needs to explain
- * itself: the HTTP status, the parsed body when there was one, and the
- * backend's machine-readable `code` (`bad_request`, `not_found`, `too_large`,
- * `conflict`, `readonly`, `same_record`, `write_failed`, `internal`, plus the
- * transport-side `network`, `not_json` and `bad_json`).
+/** Carry HTTP status, response body, and machine-readable backend/transport code.
  */
 export class ApiError extends Error {
   constructor(status, body, code) {
@@ -82,23 +52,8 @@ export function isAbort(err) {
   return err.code === 20 && typeof err.name === "string";
 }
 
-/**
- * Perform one request against the librarian routes.
- *
- * Two things here are load-bearing:
- *
- * 1. `Content-Type: application/json` is set ONLY when there is a body. Some
- *    aiohttp/proxy stacks treat a content-type on an empty GET as a malformed
- *    request, and it is meaningless anyway.
- * 2. The response's content-type is CHECKED before parsing. If the backend
- *    routes were never registered (an import error in
- *    `prompt_librarian/api/`, a ComfyUI version whose route table differs)
- *    the server answers with an HTML 404 page. `res.json()` on that throws a
- *    SyntaxError with a message about "<" — an unreadable error for the most
- *    likely real-world failure.
- *    A non-JSON response therefore becomes a clean ApiError with code
- *    `not_json`, which the modal renders as "the librarian backend is not
- *    responding".
+/** Set JSON Content-Type only when sending a body. Check response Content-Type
+ * before parsing so an HTML error page becomes a useful not_json error.
  *
  * @param {string} path route name, appended to BASE
  * @param {{method?: string, body?: any, signal?: AbortSignal, query?: object}} [opts]
@@ -153,9 +108,7 @@ export async function req(path, opts = {}) {
   if (!res.ok) {
     throw new ApiError(res.status, payload, (payload && payload.code) || codeForStatus(res.status));
   }
-  // The guard in prompt_librarian/api/ answers errors with a non-2xx status,
-  // but a handler that returns 200 with {error, code} must not be mistaken for
-  // data.
+  // Treat an error envelope as failure even when the HTTP status is 200.
   if (payload && typeof payload === "object" && payload.code && payload.error) {
     throw new ApiError(res.status, payload, payload.code);
   }

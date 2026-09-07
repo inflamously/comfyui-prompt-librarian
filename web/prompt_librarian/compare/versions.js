@@ -1,9 +1,3 @@
-/* ==========================================================================
-   Prompt Librarian — openVersions(): the two-pane version history
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-   ========================================================================== */
-
 import { NS } from "../shared/ns.js";
 import { clear, cls, h } from "../shared/dom.js";
 import { labelOf, truncate } from "../shared/text.js";
@@ -28,22 +22,11 @@ import {
 } from "./common.js";
 import { renderDiff } from "./diff.js";
 
-/** Beyond this many snapshots the version list is virtualised (browse/). */
 const VIRTUALISE_AT = 60;
 
-/** The confirm wording for Restore is specified verbatim. Do not reword. */
 export const RESTORE_CONFIRM = "Restores this version as a new version. History is not erased.";
 
-/**
- * Two-pane version history.
- *
- *   left  — the snapshots, newest first, with the live body as the head entry
- *   right — the selected snapshot diffed against the live body
- *
- * `GET /versions` answers previews only (a record at the 50-version cap would
- * otherwise be a multi-megabyte response), so the body is fetched on demand —
- * and the fetch plus its compare go through ONE `ctx.lanes.versions` run, so
- * holding the down-arrow can never interleave two responses.
+/** List previews first; fetch full bodies only on selection to bound responses.
  *
  * @param {object} ctx
  * @param {{id: string, record?: object, onRestored?: Function}} opts
@@ -69,7 +52,6 @@ export function openVersions(ctx, opts = {}) {
   let seq = 0; // belt-and-braces over the lane's own sequence guard
   let vlist = null;
 
-  /* ---- chrome ---------------------------------------------------------- */
 
   const listBox = h("div", {
     className: "pl-list",
@@ -127,7 +109,6 @@ export function openVersions(ctx, opts = {}) {
     acts
   );
 
-  /* ---- list ------------------------------------------------------------ */
 
   function rowEl() {
     const label = h("span", { className: "pl-row-name" });
@@ -193,9 +174,7 @@ export function openVersions(ctx, opts = {}) {
       list.push({
         index: Number(v.index),
         isCurrent: false,
-        // The backend labels a snapshotted body against the CURRENT library,
-        // which is what makes an old entry legible: it says what that version
-        // was about relative to what the user has now.
+        // Historical labels use the current corpus.
         label: str(v.label) || `version ${Number(v.index) + 1}`,
         preview: str(v.preview),
         chars: Number(v.chars) || 0,
@@ -213,7 +192,6 @@ export function openVersions(ctx, opts = {}) {
       try {
         vlist.destroy();
       } catch (_) {
-        /* ignore */
       }
       vlist = null;
     }
@@ -231,8 +209,7 @@ export function openVersions(ctx, opts = {}) {
     }
 
     if (rows.length > VIRTUALISE_AT) {
-      // Lazy import: a broken or missing browse/ must degrade to plain rows,
-      // not to an empty pane.
+      // Fall back to plain rows if the optional virtual list cannot load.
       try {
         const mod = await import("../browse/virtual-list.js");
         if (mod && typeof mod.VirtualList === "function") {
@@ -291,7 +268,6 @@ export function openVersions(ctx, opts = {}) {
     }
   }
 
-  /* ---- right pane ------------------------------------------------------ */
 
   let diffHandle = null;
 
@@ -365,9 +341,7 @@ export function openVersions(ctx, opts = {}) {
     paneBody.appendChild(labels);
     paneBody.appendChild(box);
     const mode = narrow() ? "unified" : "split";
-    // NOT `labels.hidden`: .pl-diff sets `display: grid`, which beats the UA
-    // `[hidden] { display: none }` rule, and librarian.css has no
-    // `.pl-diff[hidden]` override. An inline display wins outright.
+    // Use inline display: .pl-diff grid styles override the browser's hidden rule.
     labels.style.display = mode === "unified" ? "none" : "";
     diffHandle = renderDiff(box, {
       opcodes: paneOpcodes,
@@ -386,7 +360,6 @@ export function openVersions(ctx, opts = {}) {
     }
   }
 
-  /* ---- selection ------------------------------------------------------- */
 
   async function select(index, opts2 = {}) {
     if (disposed) return;
@@ -416,8 +389,7 @@ export function openVersions(ctx, opts = {}) {
     paneOpcodes = null;
     paintPane();
 
-    // ONE lane run for both calls: the version body and its compare travel
-    // together, so a superseded selection cannot half-land.
+    // Fetch body and diff in one lane run so superseded selections cannot half-land.
     const work = async (signal) => {
       const vres = await ctx.API.version(id, item.index, signal);
       const version = (vres && (vres.version || vres.prompt)) || null;
@@ -448,7 +420,6 @@ export function openVersions(ctx, opts = {}) {
     paintPane();
   }
 
-  /* ---- per-snapshot actions -------------------------------------------- */
 
   async function doRestore(item) {
     if (!item || item.isCurrent) return;
@@ -504,7 +475,6 @@ export function openVersions(ctx, opts = {}) {
     toast(ctx, ok ? "copied" : "could not copy — select the text and copy manually", ok ? "success" : "error");
   }
 
-  /* ---- data ------------------------------------------------------------ */
 
   async function reload() {
     if (disposed) return;
@@ -549,19 +519,14 @@ export function openVersions(ctx, opts = {}) {
     await select(selected, { force: true });
   }
 
-  /* ---- keys ------------------------------------------------------------ */
 
-  /**
-   * Arrow-key browsing is debounced so holding ↓ moves the highlight at once
-   * but fetches only the version the user stops on. The lane would serialise
-   * the requests anyway; this stops them being made at all. Cancelled on close.
+  /** Move the highlight immediately; debounce body/diff requests until navigation pauses.
    */
   const scheduleSelect = debounce((i) => select(i), 110);
   const debounces = [scheduleSelect];
   try {
     if (ctx && Array.isArray(ctx.debounces)) ctx.debounces.push(scheduleSelect);
   } catch (_) {
-    /* ignore */
   }
 
   function moveSelection(next) {
@@ -572,8 +537,6 @@ export function openVersions(ctx, opts = {}) {
     scheduleSelect(selected);
   }
 
-  // THE KEY BUS, not addEventListener: the modal's window-capture guard stops
-  // key events before they reach this subtree. See bindKey().
   const unbind = [];
   unbind.push(
     bindKey(ctx, el, "keydown", (e) => {
@@ -585,14 +548,11 @@ export function openVersions(ctx, opts = {}) {
       else if (k === "Home") next = 0;
       else if (k === "End") next = rows.length - 1;
       else return;
-      // Safe to preventDefault: the event is already isolated from ComfyUI,
-      // and this stops the dialog scrolling under the selection.
       if (typeof e.preventDefault === "function") e.preventDefault();
       moveSelection(next);
     })
   );
 
-  /* ---- layer ----------------------------------------------------------- */
 
   const layer = openLayer(ctx, el, {
     closeOnOutside: false,
@@ -603,14 +563,12 @@ export function openVersions(ctx, opts = {}) {
         try {
           if (d && typeof d.cancel === "function") d.cancel();
         } catch (_) {
-          /* ignore */
         }
       }
       for (const fn of unbind.splice(0)) {
         try {
           fn();
         } catch (_) {
-          /* ignore */
         }
       }
       if (diffHandle && typeof diffHandle.dispose === "function") diffHandle.dispose();
@@ -619,28 +577,24 @@ export function openVersions(ctx, opts = {}) {
         try {
           vlist.destroy();
         } catch (_) {
-          /* ignore */
         }
       }
       vlist = null;
       try {
         listBox.removeEventListener("click", onListClick);
       } catch (_) {
-        /* ignore */
       }
       if (ctx.lanes && ctx.lanes.versions && typeof ctx.lanes.versions.cancel === "function") {
         try {
           ctx.lanes.versions.cancel();
         } catch (_) {
-          /* ignore */
         }
       }
       if (typeof o.onClose === "function") o.onClose();
     },
   });
 
-  // One delegated click listener for both the plain and the virtualised list
-  // (recycled rows would otherwise need re-binding on every render).
+  // Delegate clicks so recycled rows do not need listener rebinding.
   listBox.addEventListener("click", onListClick);
 
   paintPane();

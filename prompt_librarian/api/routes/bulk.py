@@ -1,13 +1,5 @@
-"""One mutation over a whole selection.
-
-Every one of these takes the same target — explicit ``ids``, or a stored
-``query`` the server re-runs — so every one starts by calling
-:func:`..queries._resolve_ids` *inside* the executor hop, alongside the
-mutation it feeds. Resolving on the event loop would put a full search in front
-of every bulk write.
-
-The resolved ids come back in the response: the panel asked to change "the
-current filter" and has to be told what that turned out to mean.
+"""Resolve query selections inside the mutation's executor hop; resolution may
+scan the library. Return resolved IDs so the client knows what changed.
 """
 
 from ...store import STORE

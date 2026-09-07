@@ -1,58 +1,8 @@
-"""Wildcard / snippet resolution for the Prompt Librarian.
-
-Pure stdlib, no third-party imports, no filesystem access at import time.
-
-Syntax
-------
-
-===========================  ==================================================
-``{a|b|c}``                  pick one at random
-``{3::a|b}``                 weighted -- ``a`` is three times as likely as ``b``
-``{2$$a|b|c}``               pick 2 *distinct* options, joined with ``", "``
-``{1-3$$a|b|c}``             pick between 1 and 3 distinct options
-``__name__``                 a random line from ``<wildcards>/name.txt``
-``__sub/dir/name__``         subdirectories are allowed
-``[[snippet]]``              inline a stored snippet body
-``\\{ \\| \\} \\_ \\[ \\]``  escapes -- the character survives verbatim
-===========================  ==================================================
-
-Algorithm
----------
-
-1. **Escape pass.** ``\\{`` and friends become private-use sentinels
-   (``U+E000``..``U+E005``). This is the only way ``\\|`` *inside* a choice can
-   work without hand-writing a parser: after this pass every remaining ``|``,
-   ``{``, ``}``, ``_``, ``[``, ``]`` is unambiguously syntax.
-2. Repeat, up to ``MAX_PASSES`` times, until a full pass substitutes nothing:
-
-   a. snippets (``[[name]]``)
-   b. wildcard files (``__name__``)
-   c. innermost braces -- ``re.sub`` with ``\\{([^{}]*)\\}`` applied repeatedly.
-      Because the pattern cannot match a brace containing braces, each round
-      peels exactly one level and nesting comes out correct with no parser.
-
-3. **Unescape pass.** Sentinels become their literal characters again.
-
-Because expansions feed the next pass, ``__a__`` can contain ``{x|y}`` and a
-snippet can contain ``__b__``. Because they are *bounded* passes with per-name
-expansion counters, a self-referencing wildcard file degrades to literal text
-instead of hanging the prompt worker.
-
-Guards: ``MAX_DEPTH`` (nesting depth per pass and expansions per name),
-``MAX_PASSES`` (whole-text rounds), ``MAX_OUTPUT`` (characters). An expansion
-bomb stops at the last good text and is reported in ``warnings``.
-
-Determinism
------------
-
-One ``random.Random(seed)`` per :func:`resolve` call, and a fully determined
-substitution order (left-to-right within a pass, innermost-first across
-passes), so the same ``(text, seed)`` always yields the same output.
-
-The documented caveat: *editing a wildcard file changes the output for a fixed
-seed.* That is why :func:`signature` exists -- the node folds a digest of the
-wildcards-directory listing into ``IS_CHANGED`` so ComfyUI reruns when a
-wildcard file is edited, and only when the text actually uses wildcards.
+"""Resolve seeded choices, wildcard files, and snippets without import-time I/O.
+Escape syntax before expanding snippets, files, then innermost braces.
+Bound passes, per-name recursion, and output size; unresolved forms stay literal.
+Substitution order is deterministic, but edited wildcard files can change
+output for the same seed; the node includes their signature in IS_CHANGED.
 """
 
 from . import resolver as _resolver

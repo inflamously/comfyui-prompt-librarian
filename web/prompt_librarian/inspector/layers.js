@@ -1,13 +1,6 @@
-/* ==========================================================================
-   Prompt Librarian — the inspector's own layers
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   Popovers and the two inline dialogs this pane owns (conflict + resolve).
-   They go through `ctx.pushLayer` when the modal shell is there and fall back
-   to appending into the document, so the SAVE GATE still works on an install
-   where the shell or pickers/ failed to load.
-   ========================================================================== */
+/* Conflict and save dialogs must still work when the modal or pickers fail
+ * to load; fall back to document-mounted layers.
+ */
 
 /**
  * @param {object} pane the shared inspector state (see inspector/index.js)
@@ -65,7 +58,6 @@ export function createLayerHost(pane) {
     openLayers.clear();
   }
 
-  /** Position a `.pl-popover` against an anchor, flipping when it overflows. */
   function placePopover(pop, anchor, placement) {
     try {
       if (!anchor || typeof anchor.getBoundingClientRect !== "function") return;
@@ -90,11 +82,7 @@ export function createLayerHost(pane) {
     } catch (_) { /* positioning is cosmetic */ }
   }
 
-  /**
-   * Minimal local popover — the fallback for every picker while pickers/ is
-   * unavailable (and the permanent implementation for the threshold control,
-   * which is ours). Options are plain values; `withInput` adds a free-text row
-   * so a new tag can still be created.
+  /** Keep local options and free-text tags usable when optional pickers fail to load.
    */
   function openLocalPopover(anchor, options, onPick, opts = {}) {
     const pop = h("div", { className: "pl-popover", role: "listbox" });

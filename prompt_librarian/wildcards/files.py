@@ -10,13 +10,8 @@ WILDCARD_EXT = ".txt"
 
 
 def _safe_name(name):
-    """Reject a wildcard name that could escape the wildcards directory.
-
-    Checked *before* any filesystem call: ``..`` anywhere, an absolute or
-    root-relative path, a Windows drive letter or a UNC prefix. The
-    ``realpath`` + ``commonpath`` containment check in
-    :meth:`WildcardFiles.path_for` is the second half of the guard, catching
-    symlinks that point outside.
+    """Reject traversal syntax before filesystem access. path_for separately
+    checks resolved containment to catch symlinks escaping the root.
     """
     if not name or "\x00" in name:
         return None
@@ -49,18 +44,12 @@ def _parse_options(raw_text):
 
 
 class WildcardFiles:
-    """Mtime-keyed cache over the wildcards directory.
-
-    ``root`` may be a path, a zero-argument callable, or ``None`` (resolve the
-    store's wildcards directory lazily at first use). Nothing here touches the
-    filesystem until a lookup actually happens.
-    """
+    """Resolve root (path, callable, or store default) lazily on first lookup."""
 
     def __init__(self, root=None):
         self._root = root
         self._cache = {}  # name -> (mtime_ns, size, [options])
 
-    # -- paths ------------------------------------------------------------- #
 
     def root(self):
         """The wildcards directory this instance reads from."""
@@ -71,13 +60,7 @@ class WildcardFiles:
         return _default_wildcards_dir()
 
     def path_for(self, name):
-        """Absolute path of ``name``'s ``.txt`` file, or ``None`` when unsafe.
-
-        Two-stage guard: :func:`_safe_name` rejects the obvious traversals up
-        front, then ``realpath`` + ``commonpath`` proves the resolved file
-        really sits inside the wildcards directory (which is what catches a
-        symlink pointing out of it).
-        """
+        """Reject unsafe names, then check realpath containment to prevent symlink escapes."""
         safe = _safe_name(name)
         if safe is None:
             return None
@@ -95,14 +78,9 @@ class WildcardFiles:
             return None
         return real_path
 
-    # -- lookups ----------------------------------------------------------- #
 
     def options(self, name):
-        """Options for ``name``, or ``None`` when the file is missing/unsafe.
-
-        Cached on ``(st_mtime_ns, st_size)``, so an unchanged file is one
-        ``os.stat`` per lookup and an edited one is picked up immediately.
-        """
+        """Return options or None when missing/unsafe; cache by (mtime_ns, size)."""
         path = self.path_for(name)
         if path is None:
             return None
@@ -144,12 +122,7 @@ class WildcardFiles:
         return sorted(out)
 
     def dir_signature(self):
-        """sha1 over ``(name, mtime_ns, size)`` for every wildcard file.
-
-        Folded into the node's ``IS_CHANGED`` so editing a wildcard file
-        reruns the graph. Content is deliberately *not* hashed: stat is O(1)
-        per file and a content change always moves mtime or size.
-        """
+        """Hash names, mtimes, and sizes for IS_CHANGED; file contents are not hashed."""
         root = self.root()
         digest = hashlib.sha1()
         digest.update(b"pl-wildcards-v1")

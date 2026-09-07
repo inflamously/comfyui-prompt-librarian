@@ -1,14 +1,5 @@
-"""Prompt Library node — store and load CLIP Text Encode prompts.
-
-Prompts are grouped by category in a single json file under ComfyUI's user
-directory so they no longer have to be scattered across workflow presets.
-Within a category prompts are nameless: they are picked from a dropdown whose
-labels are the first chars of each prompt. The node outputs a STRING that wires
-into any CLIP Text Encode `text` input.
-
-On-disk format::
-
-    { "<category>": ["<prompt text>", "<prompt text>", ...], ... }
+"""Persist prompts as {category: [body, ...]}; the serialized text widget,
+not the truncated dropdown label, is the node output.
 """
 
 import json
@@ -86,15 +77,8 @@ def _add_prompt(category, text):
 
 
 class PromptLibrary:
-    """Store and load CLIP Text Encode prompts grouped by category.
-
-    The `text` widget is both the editable prompt body and the node output;
-    because it is a normal serialized widget it always carries the real prompt,
-    so the truncated `prompt` picker can never lose data. Picking a category /
-    prompt, saving and deleting are driven by the companion JS extension via the
-    `/prompt_library/*` API routes. On graph execution the node ALSO stores the
-    current `text` in its category, so a prompt is saved whether you click Save
-    or just run the graph.
+    """Executing the graph also saves text to the selected category.
+    The serialized text widget preserves the full body independently of dropdown labels.
     """
 
     @classmethod
@@ -127,7 +111,6 @@ class PromptLibrary:
     CATEGORY = "prompt_library"
 
     def run(self, category, category_name, prompt, text):
-        # Save-on-run: store the prompt in its category when the graph runs.
         target = _save_target(category, category_name)
         if target:
             _add_prompt(target, text)
@@ -142,5 +125,4 @@ class PromptLibrary:
 
     @classmethod
     def IS_CHANGED(cls, category, category_name, prompt, text):
-        # Re-run (and re-save) whenever the prompt or its target changes.
         return f"{category_name}\x00{text}"

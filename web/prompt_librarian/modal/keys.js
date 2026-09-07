@@ -1,58 +1,14 @@
-/* ==========================================================================
-   KEY ISOLATION — THE TOP HAZARD IN THIS PACK. READ BEFORE EDITING.
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only; the guards are installed by
-   `installKeyGuards()`, which openModal() calls, and removed on close.
-
-   While the user types in our textarea, ComfyUI is still listening: Delete
-   removes the selected node, Ctrl+Z undoes the graph, Space pans the canvas,
-   Ctrl+A selects every node. Any of those firing mid-sentence silently
-   corrupts the user's workflow.
-
-   TWO LAYERS, because a `document`-capture listener registered by ComfyUI at
-   boot runs before anything we could bind on our own root:
-
-   Layer A — window CAPTURE. The capture phase runs window -> document -> ...
-     -> our root -> target, so a listener on `window` in the capture phase is
-     the FIRST thing to see the event, ahead of any document/body/canvas
-     listener regardless of registration order. When the event originates
-     inside our root we call stopImmediatePropagation() and the outside world
-     never learns a key was pressed. Ctrl/Cmd+S follows the same ownership
-     boundary: inside the Librarian it saves the prompt; outside the root the
-     event is untouched. Once the modal closes, ComfyUI keeps its workflow-save
-     shortcut (close.js also clears ComfyUI's DOM-based modal gate).
-
-   Layer B — root-level BUBBLE stops, for the (many) handlers bound on body or
-     the canvas in the bubble phase. Defence in depth: if Layer A ever fails to
-     install, this still catches everything that bubbles.
-
-   `stopPropagation` ONLY for ordinary keys — NEVER `preventDefault` on them.
-   Text entry, IME composition and clipboard actions are DEFAULT ACTIONS, not
-   listeners; preventing them breaks typing outright. Ctrl/Cmd+S is narrowly
-   prevented to suppress the browser's Save Page dialog. Escape is prevented
-   by its handler in modal/shell.js.
-
-   CONSEQUENCE YOU MUST KNOW ABOUT: Layer A stops the event before it ever
-   reaches our own subtree, so `el.addEventListener("keydown", …)` INSIDE the
-   modal never fires. That is inherent — you cannot both beat a document
-   capture listener and let the event continue. Two supported ways to receive
-   keys inside the modal:
-
-     1. `ctx.onKey(el, "keydown", fn)` — the internal bus below re-delivers the
-        real event along the path from `e.target` up to `.pl-root`, honouring
-        capture/bubble order, `stopPropagation()` and `preventDefault()` (which
-        works because we deliver the ORIGINAL event object, not a copy).
-     2. Listen for the namespaced mirror `"pl:keydown"` / `"pl:keyup"` /
-        `"pl:keypress"`, a bubbling CustomEvent dispatched on the same target
-        with `detail.event` pointing at the original. Nothing outside this pack
-        listens for those types, so they are harmless if they escape; calling
-        `preventDefault()` on the mirror forwards to the original.
-
-   Both layers are torn down on close WITH THE IDENTICAL CAPTURE FLAG —
-   removeEventListener only matches a listener whose capture flag is the same,
-   and a leaked window-capture guard would swallow every keystroke on the page
-   for the rest of the session.
-   ========================================================================== */
+/* Window capture blocks ComfyUI shortcuts before document/canvas listeners.
+ * A root bubble guard provides a fallback. Preserve native text entry, IME,
+ * and clipboard defaults; preventDefault only for owned shortcuts.
+ *
+ * Native key listeners inside the modal cannot receive captured events. Use
+ * ctx.onKey for ordered delivery of the original event, or pl:keydown/keyup/
+ * keypress mirrors with detail.event. Mirror cancellation forwards to the original.
+ *
+ * Remove guards on close using the same capture flags, or page shortcuts
+ * remain blocked. Ctrl/Cmd+S is owned only while focus is inside the modal.
+ */
 
 import { NS } from "../shared/ns.js";
 import { inst } from "./state.js";
@@ -102,14 +58,11 @@ export function onKey(el, type, fn, opts = {}) {
   };
 }
 
-/** Re-deliver `e` to bus handlers between `.pl-root` and `e.target`. */
 function deliverKey(e) {
   const it = inst();
   const root = it.root;
   if (!root) return;
 
-  // Path from target up to root (inclusive). If the target is not under root
-  // the caller should not have called us.
   const path = [];
   for (let n = e.target; n; n = n.parentNode) {
     path.push(n);
@@ -120,10 +73,8 @@ function deliverKey(e) {
   let stopped = false;
   let immediate = false;
 
-  // Shadow the propagation methods with own properties so a handler written
-  // against the normal DOM contract keeps working. `preventDefault` is NOT
-  // shadowed — it must reach the real event, which is the whole reason we
-  // deliver the original object rather than a clone.
+  // Shadow propagation methods for bus delivery; keep preventDefault on the
+  // original event so native defaults can still be cancelled by handlers.
   const hadStop = Object.prototype.hasOwnProperty.call(e, "stopPropagation");
   const hadStopAll = Object.prototype.hasOwnProperty.call(e, "stopImmediatePropagation");
   try {
@@ -184,12 +135,8 @@ export function installKeyGuards() {
   // ---- Layer A: window CAPTURE ------------------------------------------
   const guard = (e) => {
     const t = e.target;
-    // `contains` covers text nodes and the root itself; a target of `window`
-    // or `document` (some synthetic events) is correctly excluded.
     if (!t || typeof root.contains !== "function" || !root.contains(t)) return;
-    // Event targets track keyboard focus. A chord from inside the root belongs
-    // solely to the Librarian; a chord outside never enters this branch and is
-    // left untouched. Suppress Save Page only for the chord we own.
+    // Only suppress Save Page for chords focused inside the Librarian.
     if (isSaveChord(e)) e.preventDefault();
     e.stopImmediatePropagation(); // never preventDefault for ordinary keys
     deliverKey(e);
@@ -213,9 +160,6 @@ export function installKeyGuards() {
   });
 }
 
-/* --------------------------------------------------------------------------
-   Focus trap
-   -------------------------------------------------------------------------- */
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), ' +
@@ -232,7 +176,6 @@ export function focusables(scope) {
   return out;
 }
 
-/** The element the trap applies to: the top layer, else the card. */
 function trapScope() {
   const it = inst();
   const top = it.layers[it.layers.length - 1];

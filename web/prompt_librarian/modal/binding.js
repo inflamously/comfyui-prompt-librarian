@@ -1,27 +1,7 @@
-/* ==========================================================================
-   NODE BINDING — the textarea and the node's `text` widget as one model
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   Direction              Trigger                        Path
-   ---------------------  -----------------------------  ---------------------
-   node  -> textarea      node/bind.js layers A/B/C      onNodeText() below
-   textarea -> node       inspector afterEdit()          ctx.pushToNode()
-   record   -> node       inspector adoptRecord({push})  ctx.pushToNode()
-
-   Two rules keep this from becoming a mess:
-
-   1. ONE echo guard, and it lives in node/bind.js (`lastSeen`). Nothing here
-      tracks "did I just write that" — every layer already agrees on one
-      answer.
-
-   2. The binding is attached to a NODE OBJECT but keyed by ID.
-      `resolveTarget` re-resolves by id on every call precisely because holding
-      a reference survives the node being deleted; the binding must not
-      reintroduce the bug that guards against. Hence `syncBinding()` runs on
-      the heartbeat and re-attaches whenever the resolved node is no longer the
-      bound one.
-   ========================================================================== */
+/* node/bind.js owns the shared lastSeen echo guard.
+ * Re-resolve the target by ID and rebind on heartbeat: a retained node object
+ * can outlive its deletion from the graph.
+ */
 
 import { cls } from "../shared/dom.js";
 import { warnOnce } from "../shared/singleton.js";
@@ -35,10 +15,8 @@ export function isLinked() {
   return inst().state.link !== false;
 }
 
-/**
- * Toggle the binding. Turning it ON immediately pulls the node's text into the
- * panel (the node is the thing that will actually render, so it wins on
- * connect); turning it OFF leaves both sides exactly as they are.
+/** On connect, pull from the node: its text is what the workflow renders.
+ * Disconnecting leaves both values intact.
  */
 export function setLinked(on) {
   const next = !!on;
@@ -50,7 +28,6 @@ export function setLinked(on) {
   return next;
 }
 
-/** Inbound: the node's text changed under us. */
 function onNodeText(body) {
   const insp = inst().ctx && inst().ctx.inspector;
   if (!insp || typeof insp.setBody !== "function") return;
@@ -61,13 +38,7 @@ function onNodeText(body) {
   }
 }
 
-/**
- * Outbound: push the panel's text (and optionally a record link) to the node.
- * A no-op when unlinked — every caller may call it unconditionally.
- *
- * Reports `unchanged` when the node already holds exactly this — the same
- * equality check `loadIntoNode` uses, so a caller can tell a real load from a
- * re-selection of what is already in the node and toast accordingly.
+/** No-op when unlinked; report unchanged so re-selection does not count a load.
  *
  * @param {string} body
  * @param {string} [id] only written when passed; omitting it leaves the link
@@ -114,14 +85,8 @@ export function detachBinding() {
   it.binding = null;
 }
 
-/**
- * Attach to the current target and seed the panel FROM THE NODE.
- *
- * The seeding direction is deliberate and is the specific fix for "the panel
- * shows something else than the node". On connect the node wins: it holds what
- * will actually render, and it is what the user was just looking at. With no
- * record selected this leaves the node's prompt in the textarea as an unsaved
- * buffer, which is the right affordance — `Save as new` is right there.
+/** Seed from the node on connect. With no selected record, this becomes an
+ * unsaved edit buffer rather than an implicit save.
  */
 function attachBinding() {
   const it = inst();
@@ -142,7 +107,6 @@ function attachBinding() {
   }
   it.binding = { nodeId: node.id, node, unbind };
 
-  // Seed: node -> panel, but only when they actually disagree.
   try {
     const cur = readNodeText(node);
     const buf = it.state.buffer || {};
@@ -152,10 +116,7 @@ function attachBinding() {
   }
 }
 
-/**
- * Reconcile the binding with the current link setting and target. Cheap and
- * idempotent — safe to call from the heartbeat, which is exactly what makes
- * a re-targeted or re-created node get picked up without its own hook.
+/** Reconcile target identity on heartbeat to handle deletion and replacement.
  */
 export function syncBinding() {
   const it = inst();
@@ -175,7 +136,6 @@ export function syncBinding() {
   }
 }
 
-/** Repaint the link chip from state. */
 export function paintLink() {
   const it = inst();
   const chip = it.els && it.els.link;

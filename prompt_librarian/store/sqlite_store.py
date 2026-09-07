@@ -1,10 +1,5 @@
-"""Authoritative SQLite store for Prompt Librarian.
-
-``library.sqlite3`` is the library.  Complete normalized records and envelope
-metadata live in the database; tags, token postings and FTS5 rows are maintained
-in the same transaction as each record change. JSON and JSONL are import or
-portability formats only. Record-level behavior lives in :mod:`.operations`;
-no retired file-backed store is part of runtime.
+"""SQLite is authoritative. Commit records, metadata, tags, postings, and FTS5
+projections in the same transaction; JSON/JSONL serve migration and export.
 """
 
 from __future__ import annotations
@@ -62,7 +57,6 @@ class LibrarianStore(LibraryOperations):
         self._corpus_cache = None
         self._df_cache = {}
 
-    # -- paths --------------------------------------------------------- #
 
     def store_path(self):
         return self._path if self._path else database_path()
@@ -91,7 +85,6 @@ class LibrarianStore(LibraryOperations):
             f"{os.path.abspath(source)}:{stat.st_size}:{stat.st_mtime_ns}".encode()
         ).hexdigest()
 
-    # -- load / health ------------------------------------------------- #
 
     @staticmethod
     def _default_meta():
@@ -170,7 +163,6 @@ class LibrarianStore(LibraryOperations):
                 f"this build understands {SCHEMA_VERSION}"
             )
 
-    # -- authoritative write/read primitives -------------------------- #
 
     @staticmethod
     def _validate_items(items):
@@ -227,10 +219,8 @@ class LibrarianStore(LibraryOperations):
         self._meta_dirty = False
 
         if previous_revision != self._db_revision:
-            # Another connection committed after our write preamble. SQLite
-            # preserved both transactions; refresh the lightweight rows so
-            # this instance does not mistake its new revision for a complete
-            # view that omits the other writer's records.
+            # Another writer committed after our preamble. Refresh rows so the new revision
+            # does not hide records committed by that connection.
             self._db_revision = revision
             self.ensure_loaded(force=True)
             return []
@@ -307,7 +297,6 @@ class LibrarianStore(LibraryOperations):
 
     close = flush
 
-    # -- storage status / maintenance --------------------------------- #
 
     def storage_status(self):
         self.ensure_loaded()
@@ -362,7 +351,6 @@ class LibrarianStore(LibraryOperations):
             self.ensure_loaded(force=True)
             return {"before": before, "after": after, "records": len(self._entries)}
 
-    # -- JSON / JSONL migration --------------------------------------- #
 
     def migrate_legacy(self, path=None):  # noqa: C901
         """Merge one legacy JSON/JSONL library; leave the source unchanged."""

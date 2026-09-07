@@ -1,35 +1,10 @@
-/* ==========================================================================
-   Prompt Librarian — node hydration
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   Everything that has to happen to a node ONCE its widgets actually exist:
-   hide `prompt_id`, subscribe the card to the binder, paint, and pull the
-   record's metadata.
-   ========================================================================== */
-
 import { warnOnce } from "../shared/singleton.js";
 import { paintFace } from "./face.js";
 import { findWidget, hidePromptIdWidget } from "./widgets.js";
 
-/**
- * Idempotent, retry-tolerant node hydration.
- *
- * THE QUIRK: `nodeCreated` fires during graph construction, BEFORE ComfyUI has
- * finished wiring widget option references and (on workflow load) before the
- * serialized widget VALUES have been applied. The old node documents this and
- * works around it with a single `setTimeout(…, 500)` — see the comment above
- * the last line of web/prompt_store/index.js ("Defer initial load: nodeCreated
- * fires during graph init before ComfyUI finishes wiring widget option
- * references"). 500 ms is the value that installation has actually proven, so
- * it is kept verbatim in the entry.
- *
- * A single timeout is a guess, though, so this is driven by three independent
- * triggers — rAF (fast path, usually enough), the proven 500 ms timeout, and
- * the first modal open (the guaranteed backstop, since by then the user has
- * definitely interacted with a fully-built graph). Each call bails harmlessly
- * if the widgets still are not there, leaving `__plHydrated` unset so a later
- * trigger retries. Strictly safer than one timeout, and free.
+/** nodeCreated can precede widget wiring and workflow value restoration.
+ * Retry from rAF, the delayed entry hook, and first modal open; set the
+ * hydrated flag only after widgets exist.
  *
  * @returns {boolean} true once hydration has actually happened
  */
@@ -47,28 +22,9 @@ export function ensureHydrated(node) {
   return true;
 }
 
-/**
- * Repaint the node's face whenever its `text` widget changes.
- *
- * Without this the preview line is written once at hydration and then lies:
- * `paintFace` reads `textW.value`, but nothing was ever watching it, so typing
- * into the node's own widget left the card showing the previous prompt.
- *
- * Deliberately independent of the panel. This is about the NODE being honest
- * about itself; the panel's two-way binding is modal/binding.js's business and
- * both can be installed at once — bind.js is idempotent per node and reference
- * counts its subscribers.
- *
- * KNOWN LIMIT, accepted on purpose: no timer is started here, so bind.js's
- * polling backstop does not run for the card on its own. On a frontend where
- * neither the element listener nor the value interception can be installed the
- * preview goes stale again until the panel is opened on this node —
- * modal/index.js's heartbeat drives the poll then, and the resulting event
- * reaches every subscriber including this one. A per-node interval running for
- * the lifetime of every graph is not worth a preview line.
- *
- * The import is lazy and guarded like every other cross-module reach in this
- * feature: a missing bind.js costs a stale preview line, nothing more.
+/** Subscribe independently of the panel. No per-node timer is started: if
+ * element/value hooks are unavailable, the preview waits for the modal
+ * heartbeat to poll. A failed lazy import only costs live preview updates.
  */
 function bindFace(node) {
   if (node.__plFaceBound) return;
@@ -84,7 +40,6 @@ function bindFace(node) {
         try {
           off();
         } catch (_) {
-          /* best effort */
         }
         node.__plFaceBound = false;
         if (typeof prev === "function") return prev.apply(this, args);
@@ -101,12 +56,7 @@ function bindFace(node) {
     });
 }
 
-/**
- * Pull the record's label/rating/used from the backend for the node face.
- *
- * Lazily imported and guarded: with no backend the face simply shows what the
- * local widgets already know — a complete, usable node, just without stars and
- * a usage count.
+/** Without backend metadata, keep the face usable from local widget values.
  */
 async function refreshMeta(node) {
   const idW = findWidget(node, "prompt_id");

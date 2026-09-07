@@ -1,9 +1,3 @@
-/* ==========================================================================
-   Prompt Librarian — wildcard preview / resolve
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-   ========================================================================== */
-
 import { NS } from "../shared/ns.js";
 import { clear, cls, h } from "../shared/dom.js";
 import { truncate } from "../shared/text.js";

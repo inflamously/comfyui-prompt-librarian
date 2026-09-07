@@ -67,12 +67,8 @@ class _Context:
             self.missing.append(token)
 
     def afford(self, matched, replacement):
-        """Book ``replacement`` against the output budget.
-
-        ``re.sub`` gives no running length, so the context tracks it: each
-        substitution books its own delta. Returning False means the expansion
-        would blow ``MAX_OUTPUT``, so the caller leaves the token literal —
-        the text stays *valid* and truncation never lands mid-expansion.
+        """Track substitution length deltas because re.sub has no running size.
+        Reject expansions over MAX_OUTPUT, leaving the original token intact.
         """
         delta = len(replacement) - len(matched)
         if self.size + delta > self.max_output:

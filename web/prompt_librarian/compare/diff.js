@@ -1,43 +1,15 @@
-/* ==========================================================================
-   Prompt Librarian — renderDiff(), the split/unified diff primitive
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-   ========================================================================== */
-
 import { NS } from "../shared/ns.js";
 import { clear, h } from "../shared/dom.js";
 import { fmtInt } from "../shared/format.js";
 import { raf, str, tokensOf } from "./common.js";
 
-/**
- * Long-body mitigation: a pair of 100 000-char bodies is ~15 000 word tokens
- * per side, and rendering every one of them as its own aligned chunk pair is
- * tens of thousands of layout boxes for a diff nobody can read anyway. The cap
- * is visible (see the `showing first N of M tokens` notice), never silent.
+/** Cap rendered tokens for long bodies and show the truncation notice.
  */
 export const MAX_TOKENS_PER_SIDE = 5000;
 
-/**
- * Render backend opcodes into `container`.
- *
- * `opcodes` is `POST /compare`'s `diff`: a list of
- * `{op, a_start, a_end, b_start, b_end, a_tokens, b_tokens}` over WORD tokens,
- * `equal` runs included.
- *
- * Split mode emits ONE chunk element into EACH column for every opcode, even
- * when that side is empty (an empty placeholder), each tagged `data-op="<i>"`:
- *
- *   op        left            right
- *   equal     plain           plain
- *   delete    .pl-del         empty placeholder
- *   insert    empty           .pl-ins
- *   replace   .pl-del         .pl-ins
- *
- * The placeholders are what make alignment possible at all: chunk `i` is the
- * i-th child of both columns, so equalising their heights lines the two sides
- * up without a single measurement of the other column's layout.
- *
- * Unified mode renders one column with inline ins/del spans (narrow screens).
+/** Render word-level /compare opcodes, including equal runs. Split mode must
+ * emit a chunk on each side of every opcode, using empty placeholders, so
+ * paired indices can share heights. Unified mode uses inline insert/delete spans.
  *
  * @param {HTMLElement} container
  * @param {{opcodes?: Array, a?: string, b?: string, mode?: "split"|"unified"}} opts
@@ -55,7 +27,6 @@ export function renderDiff(container, opts = {}) {
   }
   clear(container);
 
-  /* ---- totals, for the cap notice ------------------------------------- */
   let totalA = 0;
   let totalB = 0;
   for (const op of opcodes) {
@@ -65,7 +36,6 @@ export function renderDiff(container, opts = {}) {
   totalA = Math.max(totalA, tokensOf(aText).length);
   totalB = Math.max(totalB, tokensOf(bText).length);
 
-  /* ---- nothing to render ---------------------------------------------- */
   if (!opcodes.length) {
     const wrap = h("div", { className: "pl-diff" });
     if (mode === "unified") {
@@ -86,12 +56,10 @@ export function renderDiff(container, opts = {}) {
     };
   }
 
-  /* ---- token budget ---------------------------------------------------- */
   let usedA = 0;
   let usedB = 0;
   let capped = false;
 
-  /** Slice a token run to what is left of its side's budget. */
   function take(tokens, side) {
     const list = Array.isArray(tokens) ? tokens : [];
     const used = side === "a" ? usedA : usedB;
@@ -180,10 +148,8 @@ export function renderDiff(container, opts = {}) {
   }
   container.appendChild(wrap);
 
-  /* ---- alignment: ONE rAF pass, ALL READS THEN ALL WRITES --------------
-     Interleaving a read with a write forces a synchronous layout per chunk
-     ("layout thrashing") — with a few hundred opcodes that is seconds. The
-     two loops below must stay two loops. -------------------------------- */
+  /* Batch all layout reads before writes; interleaving forces layout per chunk.
+   */
   if (mode === "split" && chunks.length) {
     raf(() => {
       try {
@@ -203,7 +169,6 @@ export function renderDiff(container, opts = {}) {
     });
   }
 
-  /* ---- scroll sync, with a re-entrancy flag ---------------------------- */
   if (mode === "split" && left && right && typeof left.addEventListener === "function") {
     let syncing = false;
     const mkSync = (from, to) => () => {
@@ -238,16 +203,13 @@ export function renderDiff(container, opts = {}) {
         try {
           fn();
         } catch (_) {
-          /* ignore */
         }
       }
     },
   };
 }
 
-/**
- * One chunk element. `empty` marks the placeholder that keeps the two columns
- * index-aligned; it carries no text but still occupies its slot.
+/** Empty chunks keep both columns index-aligned even without text.
  */
 function chunkEl(index, text, extraClass, empty) {
   const el = h("div", {

@@ -1,9 +1,4 @@
-"""``[[snippet]]`` bodies — read the whole map, or write one entry.
-
-Both endpoints hand back the entire map. It is small, and the panel keeps it
-resident so that every editor can expand a snippet without a round trip; a
-partial response would only give it something to reconcile.
-"""
+"""Return the complete snippet map so editors can expand snippets locally."""
 
 from ...store import STORE
 from .. import schemas

@@ -1,32 +1,11 @@
-/* ==========================================================================
-   Prompt Librarian — tag picker (multi-select + free text)
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-   ========================================================================== */
-
 import { CHECK, PLUS, bindKeys, isFn, toast } from "./common.js";
 import { buildMenu, matches, taxonomyRows } from "./menu.js";
 import { openPopover } from "./popover.js";
 
 const MAX_TAG_CHARS = 40; // prompt_librarian/store/types.py MAX_TAG_CHARS
 
-/**
- * Mirror of `prompt_librarian/store/utils.py clean_tag`:
- *
- *     text = _WS_RE.sub("-", _as_str(tag).strip()).casefold()
- *     return text[:MAX_TAG_CHARS]
- *
- * i.e. strip → every internal whitespace RUN becomes a single "-" → casefold →
- * cap at 40 chars, in that order. The order matters: casefolding after the
- * whitespace substitution is what makes "Camera  Move" and "camera move" land
- * on the same "camera-move".
- *
- * JS has no `casefold()`; `toLowerCase()` is the closest equivalent and agrees
- * with it on everything except a handful of full-case-folding pairs (German ß
- * folds to "ss", Cherokee, ﬁ ligatures). Those degrade to "the server stores a
- * slightly different string than the picker predicted" — the backend
- * re-normalizes every tag it receives, so a stored tag is never malformed;
- * at worst a ß-tag shows as unchecked until the record reloads.
+/** Mirror backend whitespace and length rules. JavaScript lowercasing only
+ * approximates Python casefold; it does not cover every Unicode expansion.
  *
  * @param {string} tag
  * @returns {string}
@@ -72,15 +51,12 @@ export function openTagPicker(
         },
       });
 
-      // Multi-select: the popover STAYS OPEN so several tags can be toggled in
-      // one visit. Escape / outside click is the way out.
+      // Keep multi-select open until Escape or an outside click.
       function toggle(tag) {
         const t = normalizeTag(tag);
         if (!t) return;
         if (chosen.has(t)) {
-          // Without an onRemove the caller has no way to drop the tag, so
-          // un-checking it here would show a state the record does not have.
-          // inspector/ removes tags from its own chips instead.
+          // Without onRemove, unchecking cannot update the record; keep it selected.
           if (!isFn(onRemove)) return;
           chosen.delete(t);
           onRemove(t);
@@ -97,14 +73,10 @@ export function openTagPicker(
       }
 
       function rebuild({ preserveScroll = false } = {}) {
-        // Replacing every option briefly collapses the list. Browsers clamp
-        // the popover's scrollTop during that collapse, so a multi-selection
-        // used to jump back to the first tag after every click.
+        // Preserve scrollTop across option replacement, which temporarily collapses the list.
         const scrollTop = preserveScroll ? el.scrollTop : 0;
         const q = menu.query();
-        // Filter on the raw text OR its normalized form, so typing
-        // "Camera Move" finds the stored "camera-move" instead of offering to
-        // create a tag that already exists.
+        // Filter raw and normalized text so Camera Move finds camera-move.
         const qn = normalizeTag(q);
         const items = all
           .filter((t) => matches(t.name, q) || (qn && matches(t.name, qn)))

@@ -26,10 +26,6 @@ def unescape(text):
     return _UNESCAPE_RE.sub(lambda m: _LITERAL_OF[m.group(0)], text)
 
 
-# --------------------------------------------------------------------------- #
-# Patterns
-# --------------------------------------------------------------------------- #
-
 # Innermost braces only: the body cannot itself contain a brace, so repeated
 # application peels one nesting level at a time.
 _BRACE_RE = re.compile(r"\{([^{}]*)\}")
@@ -50,12 +46,7 @@ _ANY_WILDCARD_RE = (_BRACE_RE, _FILE_RE, _SNIPPET_RE)
 
 
 def has_wildcards(text):
-    """True when ``text`` contains any *unescaped* wildcard form.
-
-    The node uses this to decide whether :func:`signature` belongs in
-    ``IS_CHANGED``: folding a directory digest into every hash would rerun
-    graphs that contain no wildcards at all.
-    """
+    """Detect unescaped forms so plain text avoids filesystem-based cache invalidation."""
     if not text:
         return False
     working = escape(str(text))
@@ -63,11 +54,7 @@ def has_wildcards(text):
 
 
 def referenced_names(text):
-    """The set of ``__name__`` wildcard files ``text`` refers to (unescaped only).
-
-    Snippets are not included -- they are stored in the library, not on disk,
-    and so do not participate in :func:`signature`.
-    """
+    """Return unescaped file references; library snippets are not file dependencies."""
     if not text:
         return set()
     working = escape(str(text))

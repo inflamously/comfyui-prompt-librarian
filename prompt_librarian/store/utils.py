@@ -1,12 +1,4 @@
-"""Paths, scalars and field normalization — the helpers with no state at all.
-
-Everything here is a pure function of its arguments (or, for the path helpers,
-of ComfyUI's user directory). Nothing in this module holds a library or opens a
-file.
-
-Paths are resolved lazily, *inside* the functions, never at import time:
-ComfyUI sets its user directory up after our modules are imported.
-"""
+"""Resolve paths lazily: ComfyUI configures its user directory after import."""
 
 import logging
 import os
@@ -24,18 +16,12 @@ except ImportError:  # pragma: no cover - exercised by the test stub instead
 log = logging.getLogger("prompt-librarian")
 
 _WS_RE = re.compile(r"\s+", re.UNICODE)
-# Used only when ComfyUI's `folder_paths` is unavailable (headless tools, tests).
-# Tests override this, or hand a store an explicit `path=`. It deliberately
-# resolves to `prompt_librarian/_user`, not `prompt_librarian/store/_user`: the
-# directory predates this package split and existing scratch dirs point at it.
+# Headless fallback; tests override this or pass an explicit store path.
+# Keep the pre-package location so existing scratch directories still resolve.
 _FALLBACK_USER_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_user"
 )
 
-
-# --------------------------------------------------------------------------- #
-# Paths
-# --------------------------------------------------------------------------- #
 
 def user_dir():
     """ComfyUI's user directory, or ``_FALLBACK_USER_DIR`` when running headless."""
@@ -62,17 +48,8 @@ def wildcards_dir():
     return os.path.join(store_dir(), "wildcards")
 
 
-# --------------------------------------------------------------------------- #
-# Small helpers
-# --------------------------------------------------------------------------- #
-
 def now_iso():
-    """Current UTC time as ``2026-08-13T18:20:00Z``.
-
-    Second precision with a literal ``Z``: these strings are compared and sorted
-    lexicographically all over the search/merge code, which only works if every
-    timestamp in the library has exactly the same shape.
-    """
+    """Use second-precision UTC with a literal Z so timestamps sort lexicographically."""
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
@@ -111,12 +88,7 @@ def _clamp(value, low, high):
 
 
 def clean_tag(tag):
-    """Normalize one tag: casefolded, whitespace collapsed to ``-``, length capped.
-
-    ``casefold()`` rather than ``lower()`` so ``ß``/``SS`` and Turkish dotted I
-    behave; the same normalization is applied to every tag query, so filters and
-    stored tags can never disagree.
-    """
+    """Casefold tags consistently with queries, including Unicode expansions such as ß."""
     text = _WS_RE.sub("-", _as_str(tag).strip()).casefold()
     return text[:MAX_TAG_CHARS]
 

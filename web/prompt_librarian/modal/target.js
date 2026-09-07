@@ -1,9 +1,3 @@
-/* ==========================================================================
-   Prompt Librarian — target node resolution and `Load into node`
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-   ========================================================================== */
-
 import { cls } from "../shared/dom.js";
 import { API } from "../api/routes.js";
 import { invalidateMeta } from "../api/meta.js";
@@ -14,7 +8,6 @@ import { inst, setState } from "./state.js";
 
 export const NODE_CLASS = "PromptLibrarian";
 
-/** Every PromptLibrarian node currently in the graph. Never cached. */
 export function librarianNodes() {
   const app = hostApp();
   const graph = app && app.graph;
@@ -33,13 +26,8 @@ export function librarianNodes() {
   return nodes.filter((n) => n && (n.comfyClass === NODE_CLASS || n.type === NODE_CLASS));
 }
 
-/**
- * Resolve the target node BY ID, every single time.
- *
- * Holding a node reference is the bug this avoids: the user deletes the node,
- * or loads another workflow, and we keep a detached object that still answers
- * `.widgets` — so `Load into node` silently writes into a node that is not on
- * the canvas any more.
+/** Resolve by ID on every call; retained node objects can outlive deletion
+ * or workflow replacement.
  */
 export function resolveTarget() {
   const it = inst();
@@ -72,7 +60,6 @@ export function nodeLabel(node) {
   return `#${node.id} ${title}`;
 }
 
-/** Repaint the header chip and the `targetOk` flag. */
 export function refreshTarget() {
   const it = inst();
   if (!it.built) return;
@@ -100,24 +87,7 @@ export function refreshTarget() {
   chip.disabled = false;
 }
 
-/**
- * Push a record into the target node's widgets.
- *
- * The widget poking itself lives in node/bind.js `writeNodeText` — the live
- * binding and this explicit button must take the same path, because two code
- * paths writing the same widget is exactly how they drift apart. The ordering
- * rule (value first, then callback) and its rationale live there with it.
- *
- * What stays here is everything that is specific to *loading a record*: target
- * resolution, selecting the node on the canvas, and the usage ping.
- *
- * IDEMPOTENT. If the node already holds exactly this body under exactly this
- * id, nothing is written and — crucially — no usage ping is sent. Re-activating
- * the row that is already loaded is a no-op the user cannot tell apart from a
- * load, so counting it would inflate the usage stats with clicks that changed
- * nothing. The comparison reads the node itself rather than a remembered
- * "last loaded" value, because the user can edit the textarea on the canvas
- * afterwards — and then re-loading the record IS a real load.
+/** Share writeNodeText with live binding so value/callback ordering agrees.
  *
  * @param {object} record needs at least {body}; {id} enables usage tracking
  * @returns {{ok: boolean, reason?: string, unchanged?: boolean}}
@@ -152,16 +122,7 @@ export function loadIntoNode(record) {
   return { ok: true };
 }
 
-/**
- * Count one use of a record.
- *
- * Shared with modal/binding.js so that BOTH ways a record reaches the node —
- * `Load into node` and picking a row in the sidebar — count once and only
- * once. They used to disagree: selection wrote the record silently while only
- * the button counted, so pressing Enter on the row you had just clicked was
- * the only thing that registered.
- *
- * No-op without an id: an unsaved buffer has nothing to count against.
+/** Count real record loads from either selection or explicit load, once per change.
  */
 export function noteUsage(id, body) {
   const rid = id == null ? "" : String(id);

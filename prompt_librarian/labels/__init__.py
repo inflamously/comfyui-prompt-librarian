@@ -1,12 +1,5 @@
-"""Derived display labels for prompt records.
-
-A record has no stored name: its label is a short handle derived from its body
-and the surrounding corpus.  The package facade keeps that small public API in
-one place while the implementation is split into configuration, corpus
-statistics, text handling, and label generation.
-
-Labels are display strings only.  Identity continues to use record ids and
-record discovery continues to use :mod:`prompt_librarian.search`.
+"""Labels depend on the surrounding corpus and are display-only.
+Use record IDs for identity and search for discovery.
 """
 
 from __future__ import annotations

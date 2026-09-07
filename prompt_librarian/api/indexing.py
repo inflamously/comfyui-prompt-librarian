@@ -1,15 +1,5 @@
-"""Keeping the search and dedupe caches honest across a write.
-
-Two functions, neither of them a route and both called from outside this
-module: :func:`_on_change` is the store listener :mod:`.registration` wires
-once at startup, and :func:`_patch_dupes` is what the single-record write
-handlers in :mod:`.routes.prompts` call once a mutation has landed.
-
-Both caches are rev-keyed (search on ``rev``, dedupe on
-``(rev, threshold, ...)``) so a bumped rev is already a guaranteed miss and
-*stale data is structurally impossible*. What is here is memory hygiene plus
-the incremental fast path: ``dedupe.patch()`` re-keys an all-pairs result onto
-the new rev for ~20 ms instead of the 0.5-2 s a cold rebuild costs.
+"""Revision keys prevent stale cache hits. Invalidate obsolete entries and
+patch single-record changes to avoid rebuilding all-pairs results.
 """
 
 import logging
@@ -35,12 +25,8 @@ def _on_change(op):
 
 
 def _patch_dupes(old_rec, new_rec, old_rev):
-    """Incrementally re-key the all-pairs cache after a single-record write.
-
-    EVERY cached threshold, not just the persisted one. A grouped search cannot
-    start until it has an all-pairs result, so a threshold left stranded at the
-    old rev is not a lost optimisation — it is a 0.5-2 s rescan on the next
-    keystroke, for as long as the user keeps that threshold selected.
+    """Patch every cached threshold onto the new revision, not just the persisted
+    setting, to avoid cold scans during grouped searches.
     """
     new_rev = _rev()
     settings = dedupe.cached_all_settings(old_rev)

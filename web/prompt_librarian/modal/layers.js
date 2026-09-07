@@ -1,30 +1,14 @@
-/* ==========================================================================
-   Prompt Librarian — the layer stack, toasts and the basic confirm
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   `.pl-layers` and `.pl-toasts` are children of `.pl-root` and SIBLINGS of
-   `.pl-card` — see the note in modal/shell.js. That is what lets a popover be
-   positioned from viewport coordinates.
-   ========================================================================== */
+/* Layers and toasts are siblings of .pl-card, outside its layout/paint containment,
+ * so fixed-position popovers use viewport coordinates.
+ */
 
 import { NS } from "../shared/ns.js";
 import { h } from "../shared/dom.js";
 import { focusables } from "./keys.js";
 import { inst } from "./state.js";
 
-/**
- * Push a layer (popover, sub-dialog) onto `.pl-layers`.
- *
- * Every layer gets its own scrim appended just before it, so whatever is
- * underneath — the card, and any layer already on the stack — cannot register
- * clicks while this one is up. A closeOnOutside layer is still dismissed by a
- * click on its scrim (the pointerdown handler in modal/shell.js), but the
- * click stops there instead of also pressing a button on the card behind it.
- * Pass `scrim: false` for a layer that must let the page beneath it stay live.
- *
- * The scrim of a dialog (closeOnOutside:false) is tinted, so the layer beneath
- * visibly recedes; a popover's is clear. `dim` forces either way.
+/** Give every layer its own preceding scrim so clicks cannot reach layers
+ * underneath. Popover scrims block clicks without dimming.
  *
  * @param {{el: HTMLElement, onClose?: () => void, closeOnOutside?: boolean, scrim?: boolean, dim?: boolean}} opts
  * @returns {object} handle for popLayer()
@@ -53,13 +37,11 @@ export function pushLayer(opts) {
     try {
       first.focus();
     } catch (_) {
-      /* ignore */
     }
   }
   return handle;
 }
 
-/** Remove a layer (default: the top one) and run its onClose. */
 export function popLayer(handle) {
   const it = inst();
   const target = handle || it.layers[it.layers.length - 1];
@@ -71,7 +53,6 @@ export function popLayer(handle) {
     if (target.el && target.el.parentNode) target.el.parentNode.removeChild(target.el);
     if (target.scrim && target.scrim.parentNode) target.scrim.parentNode.removeChild(target.scrim);
   } catch (_) {
-    /* ignore */
   }
   if (target.onClose) {
     try {
@@ -85,7 +66,6 @@ export function popLayer(handle) {
     try {
       back.focus();
     } catch (_) {
-      /* ignore */
     }
   }
 }
@@ -95,13 +75,9 @@ export function topLayer() {
   return it.layers[it.layers.length - 1] || null;
 }
 
-/* --------------------------------------------------------------------------
-   Toasts + confirm
-   -------------------------------------------------------------------------- */
 
-/**
- * Transient message. NEVER alert() — a modal browser dialog blocks ComfyUI's
- * canvas and its render loop.
+/** Use a toast instead of a blocking browser dialog.
+ *
  * @param {string} message
  * @param {{kind?: "info"|"success"|"error"|"warn", ms?: number}} [opts]
  */
@@ -135,20 +111,7 @@ export function toast(message, opts = {}) {
   return el;
 }
 
-/**
- * Dialog with an arbitrary set of answers, rendered into the layer stack.
- *
- * `confirmDialog` is the two-answer special case and is written in terms of
- * this one, so both look and behave identically — a three-way question ("save,
- * discard, or stay?") must not read like a different piece of software.
- *
- * Deliberately self-contained: `compare/` offers richer flows, but the modal
- * must never depend on a module that may not be there.
- *
- * The buttons are laid out cancel-first, matching the two-button dialog. The
- * dismissal answer (Escape, onClose, an unbuilt modal) is ALWAYS `cancelValue`
- * — never the first choice — because every caller treats "the dialog went away
- * without an answer" as "change nothing".
+/** Build locally so choices remain available when optional picker/dialog modules fail.
  *
  * @param {{
  *   title?: string, message?: string, cancelLabel?: string, cancelValue?: any,

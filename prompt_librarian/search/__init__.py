@@ -1,29 +1,6 @@
-"""Search for the Prompt Librarian.
-
-Pure, stdlib-only. Knows nothing about aiohttp, ComfyUI or the store's file
-format: everything is driven either by a plain iterable of record dicts or by
-any object exposing the two store methods this module uses (``list_all()`` and
-``rev()``).
-
-Record schema consumed here::
-
-    {id, body, tags[], rating, used, last_run,
-     created, updated, notes, pinned, versions[]}
-
-There is no ``name``: a record is its body, the handle a row prints is derived
-by :mod:`prompt_librarian.labels`, and this feature finds a prompt again.
-The scoring weights shape how the library is navigated and remain adjustable
-through this public facade.
-
-Timestamps are ISO-8601 with a ``Z`` suffix and therefore sort correctly as
-plain strings -- nothing in this module parses a date.
-
-Public API
-----------
-``normalize(text)``, ``tokenize(text)``, ``preview(body, limit=160)``
-``Doc``, ``SearchIndex``, ``ParsedQuery``, ``parse_query(q)``
-``build_index(records, rev=0)``, ``get_index(store)``, ``invalidate_index()``
-``search(source, query="", **kw) -> dict``
+"""Accept record iterables or a store exposing list_all() and rev().
+ISO-8601 timestamps with a Z suffix sort lexicographically. Scoring weights
+remain configurable through this public facade.
 """
 
 from __future__ import annotations

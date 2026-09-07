@@ -1,33 +1,9 @@
-/* ==========================================================================
-   Prompt Librarian — scoped dark theme
-   --------------------------------------------------------------------------
-   Hard rules this file obeys (they are audited by tests, do not relax them):
+/* Scope selectors/tokens to .pl-root or .pl-node-card and prefix keyframes
+   with pl- to avoid leaking into ComfyUI. Reserve !important for reduced motion.
+   Restate inherited typography and box sizing to resist host stylesheet rules. */
 
-   1. NO `:root`. Every custom property is declared on `.pl-root, .pl-node-card`.
-      Declaring on `:root` would leak our palette into ComfyUI and into every
-      other extension on the page.
-   2. Every selector is rooted at `.pl-root` or `.pl-node-card`. No bare element
-      selectors, no top-level `*`, no `body {}`.
-   3. Every `@keyframes` name is `pl-*`. Keyframe names live in a single GLOBAL
-      namespace even when the rules that use them are scoped — an unprefixed
-      `@keyframes fade` here would silently redefine somebody else's `fade`.
-      This is a real leak vector, not a style preference.
-   4. No `!important` anywhere except the `prefers-reduced-motion` reset at the
-      bottom, which must beat every animation/transition we declare.
-
-   Inbound defence: ComfyUI's own stylesheet (and every other extension's) is
-   in the cascade with us. `.pl-root`/`.pl-node-card` therefore restate `font`,
-   `color`, `line-height` and a `box-sizing` reset for themselves and all
-   descendants, so nothing bleeds in.
-   ========================================================================== */
-
-/* --------------------------------------------------------------------------
-   Scope roots + design tokens
-   Palette sampled from prompt-librarian-spec.png.
-   -------------------------------------------------------------------------- */
 .pl-root,
 .pl-node-card {
-  /* surfaces */
   --pl-bg-page: #0a0d1c;
   --pl-bg-chrome: #141a33;
   --pl-bg-pane: #0f1428;
@@ -36,58 +12,46 @@
   --pl-bg-sel: #202325;
   --pl-skel: #161c37;
 
-  /* lines */
   --pl-border: #2d396d;
   --pl-border-soft: #222c58;
   --pl-border-mute: rgba(123, 127, 143, 0.45);
 
-  /* ink */
   --pl-text: #e7eaf6;
   --pl-text-dim: #84868d;
   --pl-text-mute: #66696e;
 
-  /* accent */
   --pl-accent: #ffe000;
   --pl-accent-ink: #0a0d1c;
   --pl-accent-soft: #313122;
   --pl-star: #ffdc11;
 
-  /* buttons — the blue surfaces nudged a few percent toward the yellow accent,
-     so a button reads as a button before you hover it. Deliberately tiny: at
-     this weight it is a warmth, not a colour. `-soft` is the same nudge as a
-     translucent overlay, for the variants that must stay see-through. */
   --pl-btn-tint: #1c202e;
   --pl-btn-tint-hover: #262b3d;
   --pl-btn-tint-soft: rgba(206, 200, 128, 0.05);
 
-  /* warn */
   --pl-warn: #e8a33d;
   --pl-warn-bg: #1e1f29;
   --pl-warn-border: #7a5b32;
   --pl-warn-chip: #443a29;
 
-  /* danger */
   --pl-danger: #e25a5a;
   --pl-danger-border: #6e343f;
 
-  /* diff (not in the spec image; chosen from the same family) */
   --pl-ins-c: #7ce8ac;
   --pl-del-c: #e88a8a;
 
-  /* metrics — --pl-row-h is read back by list.js so CSS and JS cannot drift */
+  /* --pl-row-h must match browse/virtual-list.js row calculations. */
   --pl-row-h: 96px;
-  /* Row-name type metrics, hoisted because .pl-row-check centres itself on the
-     name's line box. Keep these two in step with .pl-row-name. */
+  /* Keep these metrics aligned with .pl-row-name; checkbox centering uses them. */
   --pl-row-name-fs: 13.5px;
   --pl-row-name-lh: calc(var(--pl-row-name-fs) * 1.45);
   --pl-check-size: 20px;
-  --pl-twisty-size: calc(15px * 1.5); /* accordion arrow matches the check */
+  --pl-twisty-size: calc(15px * 1.5);
   --pl-radius: 8px;
   --pl-radius-sm: 6px;
   --pl-gap: 12px;
   --pl-z: 2000000;
 
-  /* type */
   --pl-font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
     Arial, sans-serif;
   --pl-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
@@ -95,15 +59,13 @@
   --pl-fs: 13px;
   --pl-lh: 1.45;
 
-  /* motion */
   --pl-fast: 120ms;
   --pl-slow: 200ms;
 
   color-scheme: dark;
 }
 
-/* Inbound defence. Restated on the roots AND inherited down, so a ComfyUI rule
-   like `div { line-height: 2 }` cannot reach into us. */
+/* Restate inherited properties on descendants to resist host element selectors. */
 .pl-root,
 .pl-node-card {
   box-sizing: border-box;
@@ -129,7 +91,7 @@
   box-sizing: border-box;
 }
 
-/* Form controls do not inherit type by default in any engine. */
+/* Form controls do not inherit typography by default. */
 .pl-root input,
 .pl-root textarea,
 .pl-root select,
@@ -141,23 +103,13 @@
   margin: 0;
 }
 
-/* The chrome (labels, nav, buttons) is select:none above; editable/readable
-   text content needs it back so prompts and typed text stay selectable. */
+/* Restore selection for readable/editable content after disabling it on chrome. */
 .pl-root input,
 .pl-root textarea {
   user-select: text;
 }
 
-/* Button base.
-   --------------------------------------------------------------------------
-   Wrapped in :where() so the whole rule has ZERO specificity. That matters: as
-   a plain `.pl-root button` (0,1,1) this reset outranked every class rule
-   below it — `.pl-btn`'s own `padding: 10px 18px` is only (0,1,0) — so every
-   button in the panel rendered with `padding: 0`. With :where() the base is a
-   floor that any class can lift, which is what it was always meant to be.
-
-   The floor itself: a real 2px of padding, so no button is a bare glyph with
-   nothing around it to hit, and the faint tint below. */
+/* :where() keeps reset specificity at zero so component classes can override it. */
 :where(.pl-root, .pl-node-card) :where(button) {
   padding: 2px 6px;
   border: 1px solid transparent;
@@ -167,7 +119,6 @@
   cursor: pointer;
 }
 
-/* Visually-hidden helper for a11y labels. */
 .pl-root .pl-sr {
   position: absolute;
   width: 1px;
@@ -183,12 +134,9 @@
 
 .pl-root .pl-spacer {
   flex: 1 1 auto;
-  min-width: 0; /* see the min-size note below */
+  min-width: 0;
 }
 
-/* --------------------------------------------------------------------------
-   Scrollbars — descendant-scoped so we never restyle ComfyUI's own scrollers.
-   -------------------------------------------------------------------------- */
 .pl-root ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -221,9 +169,6 @@
   scrollbar-color: var(--pl-border-soft) transparent;
 }
 
-/* --------------------------------------------------------------------------
-   Overlay shell
-   -------------------------------------------------------------------------- */
 .pl-root {
   position: fixed;
   inset: 0;
@@ -232,7 +177,7 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  /* `hidden` must win over `display:flex` — attribute selector, not !important */
+  /* hidden must override the explicit flex display. */
 }
 
 .pl-root[hidden] {
@@ -259,18 +204,11 @@
   border-radius: 14px;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
   overflow: hidden;
-  /* Cheap isolation for the biggest subtree on the page.
-     NOTE: `contain: paint` makes .pl-card a containing block for `position:
-     fixed` descendants. That is exactly why `.pl-layers` is a child of
-     .pl-root and a SIBLING of .pl-card — popovers position themselves from
-     viewport coordinates via getBoundingClientRect and would be offset if they
-     lived inside a contained ancestor. */
+  /* Layout/paint containment anchors fixed descendants. Keep viewport-positioned
+   .pl-layers and .pl-toasts outside this card. */
   contain: layout paint;
 }
 
-/* --------------------------------------------------------------------------
-   Header
-   -------------------------------------------------------------------------- */
 .pl-head {
   display: flex;
   align-items: center;
@@ -309,14 +247,6 @@
   color: var(--pl-text-dim);
 }
 
-/* --------------------------------------------------------------------------
-   Link toggle — sits immediately left of the target chip so the two read as
-   one statement: "⇅ linked  →  #12 Prompt Librarian".
-
-   Same pill geometry as .pl-target rather than .pl-chip: these two belong to
-   the header, and matching the neighbour matters more than matching the
-   filter chips down in the rail.
-   -------------------------------------------------------------------------- */
 .pl-link {
   flex: 0 0 auto;
   display: inline-flex;
@@ -341,7 +271,6 @@
   color: var(--pl-text);
 }
 
-/* Linked is the default and the safe state, so it is the one that lights up. */
 .pl-link.is-on {
   background: var(--pl-accent-soft);
   border-color: var(--pl-accent);
@@ -378,7 +307,6 @@
   min-width: 0;
 }
 
-/* Stale target node — amber, still clickable so the user can re-pick. */
 .pl-target.is-stale {
   border-color: var(--pl-warn-border);
   background: var(--pl-warn-bg);
@@ -406,8 +334,6 @@
   color: var(--pl-text);
 }
 
-/* close.js disables this for the length of a save-on-close round trip. Same
-   0.45 as .pl-btn[disabled], so "working, wait" reads the same everywhere. */
 .pl-close[disabled] {
   opacity: 0.45;
   cursor: default;
@@ -418,19 +344,11 @@
   color: var(--pl-text-dim);
 }
 
-/* --------------------------------------------------------------------------
-   Body grid — rail | inspector
-   -------------------------------------------------------------------------- */
 .pl-body {
   display: grid;
   grid-template-columns: minmax(320px, 34%) minmax(0, 1fr);
-  /* MIN-SIZE NOTE (load-bearing, read before "cleaning up"):
-     grid and flex items default to min-height/min-width `auto`, which means
-     "at least as tall as my content". Any such item anywhere in the ancestry
-     of `.pl-list` makes the list push the card taller instead of scrolling —
-     the virtual list then renders every row and the whole design collapses.
-     Every grid/flex child in the scroll ancestry below therefore carries an
-     explicit `min-height: 0` / `min-width: 0`. Do not remove them. */
+  /* Keep min-height/min-width: 0 on scroll ancestors. The auto minimum can
+   expand the card to fit all content and disable virtualized scrolling. */
   min-height: 0;
   min-width: 0;
   background: var(--pl-bg-page);
@@ -439,7 +357,7 @@
 .pl-rail {
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr) auto;
-  min-height: 0; /* see MIN-SIZE NOTE */
+  min-height: 0;
   min-width: 0;
   border-right: 1px solid var(--pl-border-soft);
   background: var(--pl-bg-page);
@@ -449,16 +367,13 @@
   display: flex;
   flex-direction: column;
   gap: var(--pl-gap);
-  min-height: 0; /* see MIN-SIZE NOTE */
+  min-height: 0;
   min-width: 0;
   padding: 14px 16px 16px;
   overflow-y: auto;
   background: var(--pl-bg-page);
 }
 
-/* --------------------------------------------------------------------------
-   Search
-   -------------------------------------------------------------------------- */
 .pl-search {
   display: flex;
   align-items: center;
@@ -478,7 +393,7 @@
 
 .pl-search-in {
   flex: 1 1 auto;
-  min-width: 0; /* see MIN-SIZE NOTE */
+  min-width: 0;
   background: transparent;
   border: 0;
   outline: none;
@@ -502,9 +417,6 @@
   white-space: nowrap;
 }
 
-/* --------------------------------------------------------------------------
-   Filter chips
-   -------------------------------------------------------------------------- */
 .pl-chips {
   display: flex;
   flex-wrap: wrap;
@@ -570,8 +482,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* Opts out of the 2px base floor: this is a 14px glyph box inside a chip
-     that already carries the padding around it. */
+  /* The surrounding chip supplies padding; this glyph keeps its 14px hit box. */
   width: 14px;
   height: 14px;
   padding: 0;
@@ -587,9 +498,6 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* --------------------------------------------------------------------------
-   Sort tabs
-   -------------------------------------------------------------------------- */
 .pl-tabs {
   display: flex;
   align-items: center;
@@ -621,17 +529,14 @@
   border-bottom-color: var(--pl-accent);
 }
 
-/* --------------------------------------------------------------------------
-   Virtualised list
-   Row geometry MUST match --pl-row-h; list.js reads that variable.
-   -------------------------------------------------------------------------- */
+/* All rows, including expanded group members, must stay --pl-row-h tall. */
 .pl-list {
   position: relative;
-  min-height: 0; /* see MIN-SIZE NOTE — without this the list never scrolls */
+  min-height: 0;
   min-width: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  overscroll-behavior: contain; /* don't chain scroll into the canvas */
+  overscroll-behavior: contain; /* Do not chain scrolling into the ComfyUI canvas. */
   border-top: 1px solid var(--pl-border-soft);
   contain: layout paint;
 }
@@ -640,13 +545,11 @@
   outline-offset: -2px;
 }
 
-/* Total scroll height = rows * --pl-row-h. Nothing renders inside it. */
 .pl-list-spacer {
   width: 100%;
   pointer-events: none;
 }
 
-/* The recycled window, translateY'd into place on scroll. */
 .pl-list-win {
   position: absolute;
   top: 0;
@@ -668,9 +571,7 @@
   gap: 3px 9px;
   height: var(--pl-row-h);
   min-width: 0;
-  /* Leave enough vertical content space for the body's advertised two-line
-     clamp. At the old 12px/10px inset the fixed 96px row gave the body only
-     ~31.5px, so its 35.5px of line boxes clipped the second line. */
+  /* Reserve enough height for both clamped preview lines within the fixed row. */
   padding: 10px 14px 7px;
   border-bottom: 1px solid var(--pl-border-soft);
   background: transparent;
@@ -688,7 +589,6 @@
   background: var(--pl-bg-sel);
 }
 
-/* 2px accent left bar on the selected row (spec). */
 .pl-row-bar {
   position: absolute;
   left: 0;
@@ -704,18 +604,13 @@
   background: var(--pl-accent);
 }
 
-/* Typed selector on purpose: the `.pl-root input { margin: 0 }` form reset
-   above is more specific than a bare `.pl-row-check`, and would otherwise eat
-   the centring margin below. */
+/* Include input in the selector to beat the form reset's margin specificity. */
 .pl-row input.pl-row-check {
   grid-area: check;
   align-self: start;
   width: var(--pl-check-size);
   height: var(--pl-check-size);
-  /* The check spans all three grid rows, so `start` pins it to the top of the
-     name row — which is taller than the name itself whenever a dupe badge sits
-     beside it. Centre it on the NAME's line box instead, so the alignment is
-     the same with and without the badge. */
+  /* Center on the name line box, whose grid row can be taller when badges appear. */
   margin: calc((var(--pl-row-name-lh) - var(--pl-check-size)) / 2) 0 0;
   accent-color: var(--pl-accent);
   cursor: pointer;
@@ -730,9 +625,7 @@
   gap: 7px;
   min-width: 0;
   font-family: var(--pl-mono);
-  /* No explicit line-height: the inherited --pl-lh ratio already produces
-     --pl-row-name-lh here, and pinning a length would inflate the half-leading
-     of the smaller baseline-aligned spans (match count, twisty). */
+  /* Inherit the line-height ratio; a fixed length inflates smaller baseline-aligned spans. */
   font-size: var(--pl-row-name-fs);
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -751,19 +644,8 @@
   color: var(--pl-warn);
 }
 
-/* --------------------------------------------------------------------------
-   Duplicate-cluster accordion
-   --------------------------------------------------------------------------
-   A cluster is ONE row until it is opened; opening it inserts its members as
-   ordinary rows below. Every row here is still exactly --pl-row-h tall — the
-   virtual list places rows arithmetically, so a taller "group row" would put
-   the whole list out of register. Nesting is shown with indent and a rule,
-   never with height.
-   -------------------------------------------------------------------------- */
-/* Same box as the row's checkbox, so the two controls in the row's left gutter
-   read as one column. `align-self: center` opts out of the name flex's baseline
-   alignment: the glyph wants centring on the name's line box (like the check),
-   and a baseline-aligned inline-flex box would drag the line box taller. */
+/* Expand clusters into ordinary fixed-height rows; indent them without changing height. */
+/* Center the twisty on the name line; baseline alignment would enlarge the line box. */
 .pl-row-twisty {
   flex: 0 0 auto;
   display: inline-flex;
@@ -777,9 +659,7 @@
   user-select: none;
 }
 
-/* `hidden` must win over `display:inline-flex` — attribute selector, not
-   !important. Without this, a row with no dupes still shows an empty,
-   hoverable twisty box. */
+/* hidden must override inline-flex so empty twisty hit boxes disappear. */
 .pl-row-twisty[hidden] {
   display: none;
 }
@@ -788,14 +668,11 @@
   border: 1px solid var(--pl-star);
 }
 
-/* Indented by exactly one twisty column, so a member's label sits under its
-   header's label rather than under the header's arrow. */
 .pl-row.is-member {
   padding-left: calc(14px + var(--pl-twisty-size) + 7px);
 }
 
-/* The rule the members hang off. Inside the row's padding, so it cannot shift
-   the grid or disagree with --pl-row-h. */
+/* Keep the member rule inside padding so it cannot alter grid or row height. */
 .pl-row.is-member::before {
   content: "";
   position: absolute;
@@ -828,7 +705,6 @@
   font-size: 12.5px;
   line-height: 1.42;
   color: var(--pl-text-dim);
-  /* 2-line clamp — the spec's preview block */
   display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;
@@ -854,8 +730,6 @@
   white-space: nowrap;
 }
 
-/* Skeleton rows — the grey placeholder bars in the spec. A missing page IS
-   this state, so the loading design and the shipped design are the same thing. */
 .pl-row-skel {
   cursor: default;
   pointer-events: none;
@@ -911,9 +785,6 @@
   text-align: center;
 }
 
-/* --------------------------------------------------------------------------
-   Bulk bar
-   -------------------------------------------------------------------------- */
 .pl-bulkbar {
   display: flex;
   align-items: center;
@@ -937,10 +808,6 @@
   font-size: 11.5px;
 }
 
-/* --------------------------------------------------------------------------
-   Inspector
-   -------------------------------------------------------------------------- */
-/* `// SELECTED`, `// PROMPT TEXT` — mono, uppercase, muted (spec). */
 .pl-lbl {
   font-family: var(--pl-mono);
   font-size: 10.5px;
@@ -957,17 +824,12 @@
   min-width: 0;
 }
 
-/* `New prompt` never wraps: the readout beside it is the elastic half. */
 .pl-new {
   white-space: nowrap;
 }
 
-/* The selected record's derived handle. A READOUT, not a field: it is
-   computed from the prompt text against the rest of the library, so it has no
-   focus ring, no caret and nothing to type into. Sized like the input it
-   replaced so the pane's rhythm is unchanged. */
 .pl-label {
-  min-width: 0; /* see MIN-SIZE NOTE */
+  min-width: 0;
   width: 100%;
   padding: 10px 12px;
   background: var(--pl-bg-input);
@@ -987,10 +849,8 @@
   font-style: italic;
 }
 
-/* The panel's one plain text input. It was `.pl-name` back when the inspector
-   had a name field; the picker's "new tag" box is what still needs it. */
 .pl-input {
-  min-width: 0; /* see MIN-SIZE NOTE */
+  min-width: 0;
   width: 100%;
   padding: 10px 12px;
   background: var(--pl-bg-input);
@@ -1026,8 +886,6 @@
   color: var(--pl-text-dim);
 }
 
-/* "edited" marker next to the char count — this is the affordance that
-   explains why a queued run did not bump `used`. */
 .pl-edited {
   color: var(--pl-warn);
 }
@@ -1048,8 +906,7 @@
   overflow: hidden;
 }
 
-/* Shared typography: the mirror only lines up with the textarea if EVERY
-   metric below is identical. Change one, change both. */
+/* Textarea and mirror must share every wrapping metric; change them together. */
 .pl-ta,
 .pl-ta-mirror {
   margin: 0;
@@ -1090,10 +947,8 @@
   user-select: none;
 }
 
-/* Highlighting is a nicety; textarea legibility is not negotiable. The
-   textarea only goes transparent once the mirror has PASSED its self-check
-   and JS adds `is-mirrored`. If the mirror is torn down, the class goes with
-   it and the text is visible again. */
+/* Only make text transparent after JS validates mirror layout. Removing
+   is-mirrored restores native text before the mirror is discarded. */
 .pl-ta-wrap.is-mirrored .pl-ta {
   color: transparent;
   caret-color: var(--pl-accent);
@@ -1111,7 +966,6 @@
   color: var(--pl-warn);
 }
 
-/* Inline highlight of a matched fragment inside the body (spec: "dusk light"). */
 .pl-root .pl-mark {
   background: var(--pl-accent-soft);
   border-bottom: 1px solid var(--pl-accent);
@@ -1152,9 +1006,7 @@
   border-bottom-color: transparent;
 }
 
-/* `display: flex` above outranks the UA `[hidden]` rule, so the draft bar
-   would never hide — restore/discard looked dead and a stale bar rode along
-   from record to record. Same override as .pl-edited / .pl-dupes. */
+/* Explicit flex display overrides the browser hidden rule; restore hidden here. */
 .pl-ta-foot[hidden] {
   display: none;
 }
@@ -1163,9 +1015,6 @@
   color: var(--pl-text-mute);
 }
 
-/* --------------------------------------------------------------------------
-   Duplicate-check panel
-   -------------------------------------------------------------------------- */
 .pl-dupes {
   min-width: 0;
   padding: 12px 14px 14px;
@@ -1243,9 +1092,7 @@
   border-color: var(--pl-warn-border);
 }
 
-/* A pair the user answered "keep both" about. Still listed — the duplicate is
-   still there — but visibly settled, and never the row that gets the
-   attention-grabbing `is-top` treatment. */
+/* Keep-both remains visible but must not receive the top-match warning treatment. */
 .pl-dupe.is-muted {
   opacity: 0.62;
 }
@@ -1307,9 +1154,6 @@
   flex: 0 0 auto;
 }
 
-/* --------------------------------------------------------------------------
-   Stat tiles
-   -------------------------------------------------------------------------- */
 .pl-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1366,9 +1210,6 @@
   cursor: default;
 }
 
-/* --------------------------------------------------------------------------
-   Buttons
-   -------------------------------------------------------------------------- */
 .pl-actions {
   display: flex;
   align-items: center;
@@ -1419,8 +1260,6 @@
   background: var(--pl-btn-tint);
 }
 
-/* The pane's committing action (`Save`, versions' `Restore`) — solid accent
-   fill, dark ink, weight 600 (spec). */
 .pl-btn-primary {
   background: var(--pl-accent-soft);
   border-color: var(--pl-accent);
@@ -1439,7 +1278,6 @@
   background: var(--pl-accent);
 }
 
-/* Accent outline — the dupe panel's `merge`. */
 .pl-btn-accent {
   background: var(--pl-btn-tint-soft);
   border-color: var(--pl-accent);
@@ -1452,7 +1290,6 @@
   color: var(--pl-accent);
 }
 
-/* `Delete` — transparent with a danger outline (spec). */
 .pl-btn-danger {
   background: var(--pl-btn-tint-soft);
   border-color: var(--pl-danger-border);
@@ -1485,9 +1322,6 @@
   color: var(--pl-text);
 }
 
-/* --------------------------------------------------------------------------
-   Footer
-   -------------------------------------------------------------------------- */
 .pl-foot {
   display: flex;
   align-items: center;
@@ -1534,10 +1368,6 @@
   white-space: nowrap;
 }
 
-/* --------------------------------------------------------------------------
-   Layer stack: popovers, sub-dialogs, toasts.
-   Sibling of .pl-card (see the `contain` note on .pl-card).
-   -------------------------------------------------------------------------- */
 .pl-layers {
   position: absolute;
   inset: 0;
@@ -1553,16 +1383,12 @@
   display: none;
 }
 
-/* One per layer, sitting immediately under it: while a layer is up, nothing
-   beneath it — the card, or a layer pushed earlier — can be clicked. */
+/* Each layer's scrim blocks clicks to all layers underneath it. */
 .pl-layer-scrim {
   position: absolute;
   inset: 0;
 }
 
-/* A dialog dims what it sits on top of — lighter than .pl-backdrop, which is
-   already behind it, so the two stack without going black. A popover's scrim
-   stays clear: it blocks clicks, it does not announce itself. */
 .pl-layer-scrim.is-dim {
   background: rgba(4, 6, 14, 0.42);
   animation: pl-fade-in var(--pl-slow) ease-out;
@@ -1627,9 +1453,7 @@
   border-radius: 12px;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
   overflow: hidden;
-  /* Opacity-only: the dialog is centred with its own
-     `transform: translate(-50%,-50%)`, so a transform-based entrance would
-     fight the centring. */
+  /* Animate opacity only; a transform animation would override dialog centering. */
   animation: pl-fade-in var(--pl-slow) ease-out;
 }
 
@@ -1641,7 +1465,7 @@
 
 .pl-dialog .pl-dialog-body {
   flex: 1 1 auto;
-  min-height: 0; /* see MIN-SIZE NOTE */
+  min-height: 0;
   min-width: 0;
   overflow: auto;
   font-size: 13px;
@@ -1676,9 +1500,6 @@
   }
 }
 
-/* Toasts — role="status", never alert(). Mount as a direct child of .pl-root
-   (a sibling of .pl-card), same reason as .pl-layers: .pl-card is a
-   containment context and would clip/anchor them. */
 .pl-toasts {
   position: absolute;
   right: 18px;
@@ -1741,9 +1562,6 @@
   }
 }
 
-/* --------------------------------------------------------------------------
-   Diff rendering (compare / merge, diff vs saved, versions)
-   -------------------------------------------------------------------------- */
 .pl-root .pl-diff {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -1781,10 +1599,6 @@
   text-decoration-color: rgba(232, 138, 138, 0.6);
 }
 
-/* --------------------------------------------------------------------------
-   Narrow layout — a ResizeObserver sets data-w="narrow" below 900px.
-   Single column + a `Browse | Edit` segmented control.
-   -------------------------------------------------------------------------- */
 .pl-root .pl-seg {
   display: none;
   align-items: center;
@@ -1837,7 +1651,6 @@
   border-right: 0;
 }
 
-/* One pane at a time; JS flips data-pane on .pl-body. */
 .pl-root[data-w="narrow"] .pl-body[data-pane="browse"] .pl-inspect,
 .pl-root[data-w="narrow"] .pl-body[data-pane="edit"] .pl-rail {
   display: none;
@@ -1878,10 +1691,6 @@
   max-height: calc(100% - 16px);
 }
 
-/* --------------------------------------------------------------------------
-   On-canvas node face (Tier 2 — addDOMWidget). Same tokens, own scope root,
-   so it themes identically without depending on .pl-root being in the DOM.
-   -------------------------------------------------------------------------- */
 .pl-node-card {
   display: flex;
   flex-direction: column;
@@ -1962,11 +1771,7 @@
   font-size: 12px;
 }
 
-/* --------------------------------------------------------------------------
-   Reduced motion — the ONLY place `!important` is allowed in this file.
-   It must beat every animation/transition declared above, including the ones
-   set on state classes.
-   -------------------------------------------------------------------------- */
+/* Reduced-motion overrides must beat every state-specific animation and transition. */
 @media (prefers-reduced-motion: reduce) {
   .pl-root,
   .pl-root *,
@@ -1985,20 +1790,8 @@
   }
 }
 
-/* ------------------------------------------------------------------ *
- * Wave-4 additions
- *
- * Three classes were emitted by modal.js, dialogs.js and pickers.js but
- * had no rule here, because those agents were not permitted to edit this
- * file. Each shipped an inline-style fallback, so these rules add the
- * visual treatment only -- inline styles still win for the properties
- * they set, which keeps the fallbacks working if a rule is ever removed.
- * ------------------------------------------------------------------ */
-
-/* dialogs.js -- one chunk per diff opcode, emitted into BOTH columns so
-   the two sides stay row-aligned. The rAF pass writes min-height inline;
-   `.is-empty` needs a floor so a placeholder is visible before that lands
-   and never collapses to zero afterwards. */
+/* Diff columns need an empty chunk for each opcode to preserve alignment.
+   Keep placeholders visible before the rAF height measurement arrives. */
 .pl-root .pl-diff-chunk {
   display: block;
   white-space: pre-wrap;
@@ -2016,10 +1809,7 @@
   opacity: 0.5;
 }
 
-/* pickers.js -- a `__wildcard__` in the highlight mirror whose .txt file
-   is not present in the wildcards directory. Wavy-underlined rather than
-   hidden: the token still resolves to literal text at run time, so this
-   is a warning, not an error. */
+/* Missing wildcard references remain literal at runtime; mark them without hiding text. */
 .pl-ta-mirror .pl-tok-wild.is-missing,
 .pl-ta-mirror .pl-tok-snip.is-missing {
   color: var(--pl-warn);

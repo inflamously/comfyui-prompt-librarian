@@ -1,12 +1,4 @@
-"""Near-duplicate detection in all three shapes, plus "keep both".
-
-* ``/dupes/all`` — the library-wide all-pairs scan. Expensive (0.5-2 s cold),
-  offloaded, and coalesced (see :func:`_dupes_all`).
-* ``/dupes`` — one body against the library. The hot path, fired on every
-  edit, and cheap enough to run inline.
-* ``/compare`` — two bodies, word-level diff.
-* ``/dupes/ignore`` — the decision that stops the other three from nagging.
-"""
+"""Offload/coalesce library-wide scans; cached one-body checks run inline."""
 
 from ... import dedupe
 from ...store import STORE, NotFoundError
@@ -71,9 +63,7 @@ async def dupes(request):
         ignored=_ignored(),
         rev=_rev(),
     )
-    # `find_similar` returns its *cached* list, so the label goes onto a copy:
-    # mutating a match here would poison every later cache hit with a label
-    # computed against an older corpus.
+    # Label a copy: mutating cached matches would retain labels from an old corpus.
     records = STORE.get_many([m["id"] for m in matches])
     index = _labeller(records.values())
     return _json({

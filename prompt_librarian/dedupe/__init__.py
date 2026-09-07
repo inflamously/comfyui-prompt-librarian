@@ -1,12 +1,6 @@
-"""Near-duplicate detection and word-level diffing for Prompt Librarian.
-
-This package is stdlib-only and accepts plain record iterables, a ``DupeIndex``,
-or a store implementing the small list/revision and optional SQLite candidate
-protocols. The imports below form the stable public facade used by routes,
-scripts, and tests.
-
-Only ``find_similar`` accepts ignored keep-both pairs, and it annotates rather
-than removes them. Counting always describes the actual library contents.
+"""Accept record iterables, DupeIndex, or store candidate protocols.
+Keep-both pairs annotate find_similar results; counts still reflect all
+duplicates in the library.
 """
 
 # Exposed for compatibility with callers that instrument SequenceMatcher.

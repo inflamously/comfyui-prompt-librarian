@@ -1,23 +1,7 @@
-/* ==========================================================================
-   Prompt Librarian — ctx(), the object handed to every pane
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   Always the SAME object, so a pane can attach hooks to it:
-
-     ctx.isDirty       = () => boolean        (inspector — drives save-on-close)
-     ctx.requestSave   = (asNew?) => Promise  (inspector — Ctrl+S and close)
-     ctx.list          = {refresh, ...}       (browse/ registers itself)
-     ctx.inspector     = {select, ...}        (inspector registers itself)
-     ctx.onSelectPrompt= (id) => void         (alternative to ctx.inspector)
-
-   `requestSave` resolves to one of "saved" | "clean" | "blocked" | "failed" |
-   "busy" — the vocabulary is defined in inspector/save.js. modal/ compares it
-   as a PLAIN STRING and never imports the constant: inspector/ is lazily
-   loaded by panes.js and may legitimately be absent, which is also why both
-   hooks are duck-typed rather than assumed. Only "saved" and "clean" mean the
-   modal is safe to close; see modal/close.js.
-   ========================================================================== */
+/* Keep ctx identity stable: panes attach isDirty/requestSave/list/inspector hooks.
+ * The optional inspector returns save.js status strings; only "saved" and
+ * "clean" permit closing. Do not import it just to compare those statuses.
+ */
 
 import * as dom from "../shared/index.js";
 import { NS } from "../shared/ns.js";
@@ -46,11 +30,8 @@ export function ctx() {
   const it = inst();
   if (it.ctx) return it.ctx;
   it.ctx = {
-    // shared/ helpers, handed over so a pane never has to guess the path back
-    // to them (inspector/ reads ctx.dom).
     dom,
 
-    // transport
     API,
     lanes,
     ABORTED,
@@ -58,7 +39,6 @@ export function ctx() {
     caps,
     invalidateMeta,
 
-    // state
     getState,
     setState,
     subscribe,
@@ -66,7 +46,6 @@ export function ctx() {
       return inst().state;
     },
 
-    // chrome
     toast,
     confirmDialog,
     choiceDialog,
@@ -79,33 +58,25 @@ export function ctx() {
     refreshAll,
     reportError,
 
-    // node
     loadIntoNode,
     getTargetNodeId,
     targetNode: resolveTarget,
     librarianNodes,
     refreshTarget,
 
-    // node binding — see modal/binding.js
     pushToNode,
     isLinked,
     setLinked,
 
-    // drafts
     saveDraft,
     loadDraft,
     clearDraft,
 
-    // panes register themselves here
     list: null,
     inspector: null,
     /** Push any debounce() from shared/timing.js here; closeModal() cancels them all. */
     debounces: [],
 
-    /**
-     * Focus a record. Called by browse/ on row activation; delegates to the
-     * inspector, and is a safe no-op when the inspector is not mounted.
-     */
     selectPrompt(id, opts) {
       setState({ currentId: id == null ? null : String(id) });
       const c = inst().ctx;
@@ -122,7 +93,6 @@ export function ctx() {
       return true;
     },
 
-    /** Elements the panes may need (the rail/inspect roots are handed in). */
     els: it.els,
     get root() {
       return inst().root;

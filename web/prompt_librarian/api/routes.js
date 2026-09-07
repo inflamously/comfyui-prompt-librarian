@@ -1,24 +1,13 @@
-/* ==========================================================================
-   Prompt Librarian — the API surface, one method per route
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-
-   Every read is GET, every write is POST — no PATCH/DELETE verbs and no path
-   parameters, matching prompt_librarian/api/routes/ and staying compatible
-   with ComfyUI's /api prefix rewriting.
-
-   `sel` for the bulk operations is `{ids: [...]}` OR `{query: {...}}` and is
-   spread through VERBATIM. The backend accepts both, and `{query}` is the only
-   shape that scales to "select all 1 284 filtered".
-   ========================================================================== */
+/* Keep routes compatible with ComfyUI URL-prefix rewriting.
+ * Bulk selection is {ids: [...]} or {query: {...}}; forward the query intact
+ * so the backend can select records beyond the loaded pages.
+ */
 
 import { applyCaps } from "./caps.js";
 import { download, req, upload } from "./request.js";
 
 export const API = {
-  /* -- reads -------------------------------------------------------------- */
 
-  /** Liveness + capability probe. Also the cheapest "is the backend there?". */
   async ping(signal) {
     const data = await req("ping", { signal });
     applyCaps(data);
@@ -82,7 +71,6 @@ export const API = {
     return req("storage");
   },
 
-  /* -- writes ------------------------------------------------------------- */
 
   create(rec) {
     return req("create", { method: "POST", body: rec });
@@ -130,19 +118,14 @@ export const API = {
     const probe = text !== undefined ? text : body;
     return req("dupes", {
       method: "POST",
-      // `text` is what prompt_librarian/api/routes/dupes.py reads; `body` is
-      // the name in the frozen frontend contract. Both are sent — an unknown
-      // key is ignored by the handler, and a rename on either side cannot
-      // break the hot path.
+      // Send both backend text and contract body keys for compatibility.
       body: { text: probe, body: probe, id, exclude_id, threshold, limit, summaries },
       signal,
     });
   },
 
-  /**
-   * "Keep both" — mute this pair in the SAVE GATE. It does not change any
-   * count: the pair still shows up in the list, the badge and the duplicate
-   * panel, marked as muted. Pass `unignore` to take the decision back.
+  /** Keep-both annotates this pair as muted without changing duplicate counts.
+   * Pass unignore to reverse the decision.
    */
   ignorePair(a, b, unignore) {
     return req("dupes/ignore", {
@@ -185,7 +168,6 @@ export const API = {
     return req("snippet", { method: "POST", body: { op: "delete", name } });
   },
 
-  /** Panel-level settings (dupe threshold, version cap). */
   settings(patch) {
     return req("settings", { method: "POST", body: { ...(patch || {}) } });
   },

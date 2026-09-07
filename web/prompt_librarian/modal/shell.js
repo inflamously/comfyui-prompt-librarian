@@ -1,14 +1,3 @@
-/* ==========================================================================
-   Prompt Librarian — the overlay DOM and its one-time wiring
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only. The shell is built on the first
-   `openModal()` and never before.
-
-   Owns the header / rail / inspector / footer / layers / toasts skeleton, the
-   header's target picker, the click-outside and Escape wiring, and the
-   responsive wide/narrow switch.
-   ========================================================================== */
-
 import { h } from "../shared/dom.js";
 import { NS } from "../shared/ns.js";
 import { warnOnce } from "../shared/singleton.js";
@@ -22,9 +11,6 @@ import { librarianNodes, nodeLabel, refreshTarget } from "./target.js";
 
 const NARROW_AT = 900;
 
-/* --------------------------------------------------------------------------
-   Construction
-   -------------------------------------------------------------------------- */
 
 export function buildShell() {
   const it = inst();
@@ -45,8 +31,6 @@ export function buildShell() {
     h("span", null, `${ARROW} ${CARET}`)
   );
 
-  // The link toggle sits immediately left of the target chip: the two read as
-  // one statement — "mirroring ⇅ node #12".
   const link = h(
     "button",
     {
@@ -88,8 +72,7 @@ export function buildShell() {
 
   const sub = h("div", { className: "pl-sub" }, "");
 
-  // Held in `els` so close.js can disable it for the length of a
-  // save-on-close round trip.
+  // Retain the close button so save-on-close can disable it during the request.
   const closeBtn = h(
     "button",
     {
@@ -153,17 +136,12 @@ export function buildShell() {
     storageBtn
   );
 
-  // `aria-modal` is deliberately absent while this retained shell is hidden.
-  // ComfyUI's keybinding service treats ANY matching
-  // [role="dialog"][aria-modal="true"] element as open without checking its
-  // visibility. openModal() adds the attribute and closeModal() removes it.
+  // Remove aria-modal while hidden: ComfyUI treats any matching dialog as open
+  // without checking visibility, which would block workflow shortcuts.
   const card = h("div", { className: "pl-card", role: "dialog", "aria-label": "Prompt Library" }, head, body, foot);
 
-  // .pl-layers and .pl-toasts are children of .pl-root and SIBLINGS of
-  // .pl-card. That is not cosmetic: .pl-card sets `contain: layout paint`,
-  // which makes it a containing block for `position: fixed` descendants — a
-  // popover positioned from getBoundingClientRect would be offset by the
-  // card's origin. See the note on .pl-card in librarian.css.
+  // Keep layers outside .pl-card: contain: layout paint changes the containing
+  // block for fixed descendants and would offset viewport-based popovers.
   const layers = h("div", { className: "pl-layers" });
   const toasts = h("div", { className: "pl-toasts" });
 
@@ -193,9 +171,6 @@ export function setPane(which) {
   if (tabs[1]) tabs[1].setAttribute("aria-selected", which === "edit" ? "true" : "false");
 }
 
-/* --------------------------------------------------------------------------
-   The header's target picker
-   -------------------------------------------------------------------------- */
 
 function openTargetPicker() {
   const it = inst();
@@ -217,9 +192,7 @@ function openTargetPicker() {
           onclick: () => {
             setState({ targetNodeId: node.id });
             refreshTarget();
-            // Re-point the binding at the node the user just chose, and seed
-            // the panel from it — same rule as on open: the node wins on
-            // connect, because it is what will actually render.
+            // Seed the new binding from the node, which owns the rendered text.
             syncBinding();
             popLayer(handle);
           },
@@ -228,18 +201,12 @@ function openTargetPicker() {
       )
     );
   }
-  // Positioned from viewport coordinates. This works only because .pl-layers
-  // is a sibling of .pl-card — .pl-card has `contain: layout paint`, which
-  // makes it a containing block for position:fixed and would offset us.
   const rect = it.els.target.getBoundingClientRect();
   list.style.top = `${Math.round(rect.bottom + 6)}px`;
   list.style.left = `${Math.round(rect.left)}px`;
   const handle = pushLayer({ el: list, closeOnOutside: true });
 }
 
-/* --------------------------------------------------------------------------
-   Shell wiring — one-time listeners
-   -------------------------------------------------------------------------- */
 
 export function wireShell() {
   const it = inst();
@@ -268,31 +235,22 @@ export function wireShell() {
   // ---- Escape + Ctrl/Cmd+S + Tab, through the key bus (see modal/keys.js) --
   onKey(root, "keydown", (e) => {
     if (e.key === "Escape" || e.key === "Esc") {
-      // Escape is one of only two keys we are allowed to preventDefault.
       e.preventDefault();
       if (it.layers.length) popLayer();
       else attemptClose();
       return;
     }
 
-    // Ctrl/Cmd+S — the other one. modal/keys.js delivers chords focused inside
-    // the Librarian here and consumes their browser Save Page default. Chords
-    // focused in ComfyUI never enter the modal key bus.
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && String(e.key).toLowerCase() === "s") {
       if (e.repeat) return; // a held chord must not queue saves
-      // A layer owns whatever decision is on screen: the merge editor binds
-      // its own Ctrl+S (compare/merge-editor.js), and the conflict / duplicate
-      // dialogs must not be saved out from under the user.
+      // Let the top layer own save; do not save beneath an unresolved dialog.
       if (it.layers.length) return;
       const save = it.ctx && it.ctx.requestSave;
       if (typeof save !== "function") return; // inspector not mounted
-      // Narrow mode hides the inspector behind the Edit tab. Bring it forward
-      // so the toast — and focusBody() on an empty prompt — land where they
-      // can be seen.
+      // Show the narrow-mode editor so save feedback and empty-body focus are visible.
       if (root.dataset.w === "narrow") setPane("edit");
       Promise.resolve()
-        // `true` = save as new. Ctrl+S never overwrites the record in the
-        // editor; that is the inspector's `Update` button.
+        // true creates a new record; explicit Update owns overwrites.
         .then(() => save(true))
         .catch((err) => console.error(`${NS} Ctrl+S save failed`, err));
       return;
@@ -301,10 +259,7 @@ export function wireShell() {
     if (e.key === "Tab") handleTab(e);
   });
 
-  // ---- Click-outside ------------------------------------------------------
-  // Both pointerdown AND pointerup must land on the backdrop. Without that a
-  // drag-select started inside the list and released over the backdrop closes
-  // the modal and throws away the edit.
+  // Require both press and release on the backdrop; drag-selection must not close.
   root.addEventListener("pointerdown", (e) => {
     const top = topLayer();
     if (top && top.closeOnOutside && top.el && !top.el.contains(e.target)) {
@@ -322,13 +277,9 @@ export function wireShell() {
   });
 }
 
-/* --------------------------------------------------------------------------
-   Responsive — installed per open, torn down on close
-   --------------------------------------------------------------------------
-   NOT part of wireShell(): closeModal() disconnects the observer and drains
-   the teardown list, so anything installed once at build time would be dead
-   after the first close.
-   -------------------------------------------------------------------------- */
+/* Install per open: close disconnects the observer, so one-time wiring would
+ * stop responding after the first close.
+ */
 
 export function installResponsive() {
   const it = inst();
@@ -338,14 +289,11 @@ export function installResponsive() {
     const mode = w < NARROW_AT ? "narrow" : "wide";
     if (root.dataset.w === mode) return;
     root.dataset.w = mode;
-    // The contract asks for it on the card; the stylesheet keys off the root.
     if (it.els.card) it.els.card.dataset.w = mode;
     if (mode === "wide") it.els.body.dataset.pane = "browse";
   };
-  // The ROOT is measured, not the card: narrow mode removes the root's 24px
-  // padding, which widens the card — measuring the card would oscillate
-  // across the threshold. The root is `position: fixed; inset: 0`, so its
-  // width is the viewport's and is unaffected by the mode we set.
+  // Measure the root: narrow mode changes card padding/width and would otherwise
+  // cause oscillation around the responsive threshold.
   if (typeof ResizeObserver === "function") {
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {

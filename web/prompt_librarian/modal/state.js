@@ -1,12 +1,3 @@
-/* ==========================================================================
-   Prompt Librarian — the modal instance and its state store
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. ComfyUI imports every .js under WEB_DIRECTORY as an
-   extension, so this file is evaluated whether or not anything imports it.
-   Nothing at module scope may do work: exports and `const` data only. The
-   modal is built on the first `openModal()` and never before.
-   ========================================================================== */
-
 import { NS } from "../shared/ns.js";
 import { singleton } from "../shared/singleton.js";
 
@@ -39,10 +30,7 @@ export function freshState() {
   };
 }
 
-/**
- * The link toggle, persisted. Defaults to ON: a panel that silently disagrees
- * with the node it is pointing at is the bug this whole binding exists to fix,
- * so the safe state is "mirrored" and unlinking is the deliberate act.
+/** Default to linked so the panel starts from the text the workflow will render.
  */
 export function readLinkPref() {
   try {
@@ -63,15 +51,8 @@ export function writeLinkPref(on) {
   }
 }
 
-/* --------------------------------------------------------------------------
-   The instance
-   --------------------------------------------------------------------------
-   Held on the shared singleton bag, NOT in a module-level `let`: ComfyUI
-   cache-busts extension module URLs and the module registry is keyed on the
-   full URL, so `state.js?v=1` and `state.js?v=2` are two module instances with
-   two sets of module-level bindings — and would build two modals, install two
-   key guards and stack two toast containers.
-   -------------------------------------------------------------------------- */
+/* Keep state on the shared bag across cache-busted module instances.
+ */
 
 export function inst() {
   return singleton("modal", () => ({
@@ -96,16 +77,8 @@ export function inst() {
   }));
 }
 
-/**
- * Show or hide the retained shell together with its modal semantics.
- *
- * These two states must change as one operation. ComfyUI deliberately blocks
- * global commands while this selector matches:
- *
- *   [role="dialog"][aria-modal="true"]
- *
- * Its check does not consider `hidden`, so hiding the root without removing
- * `aria-modal` would leave workflow save disabled after the first close.
+/** Set visibility and aria-modal together. ComfyUI blocks shortcuts for any
+ * [role="dialog"][aria-modal="true"], even when hidden.
  */
 export function setModalVisible(visible) {
   const it = inst();
@@ -117,21 +90,13 @@ export function setModalVisible(visible) {
   if (it.root) it.root.hidden = !visible;
 }
 
-/* --------------------------------------------------------------------------
-   Store: getState / setState / subscribe
-   -------------------------------------------------------------------------- */
 
 export function getState() {
   return inst().state;
 }
 
-/**
- * Merge a patch into the state and notify subscribers.
- *
- * Every key present in the patch counts as changed, even if the value is
- * identical by reference — callers routinely mutate a `Set` in place and then
- * `setState({selection})` to announce it, and an equality check would swallow
- * exactly those updates.
+/** Notify for every patched key, even equal references: callers mutate Sets
+ * in place and use setState to announce those changes.
  *
  * @param {object} patch
  * @param {{silent?: boolean}} [opts]

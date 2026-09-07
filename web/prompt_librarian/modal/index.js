@@ -1,24 +1,3 @@
-/* ==========================================================================
-   Prompt Librarian — openModal(), and the modal's public surface
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only: the modal is built on the first
-   `openModal()` and never before.
-
-   Feature files under this directory:
-
-     state.js    the singleton instance, the store, the link preference
-     keys.js     KEY ISOLATION — read it before touching anything key-related
-     layers.js   the layer stack, toasts, the basic confirm
-     shell.js    the overlay DOM, its wiring, the responsive switch
-     host.js     ComfyUI's `app`, injected by the extension entry
-     target.js   target-node resolution and `Load into node`
-     binding.js  the node ⇄ panel two-way binding and the link toggle
-     drafts.js   sessionStorage drafts
-     data.js     taxonomy, header, error reporting
-     panes.js    lazy-mounts browse/ and inspector/
-     ctx.js      the object every pane is handed
-   ========================================================================== */
-
 import { warnOnce } from "../shared/singleton.js";
 import { ensureStyles } from "../shared/styles.js";
 import { caps } from "../api/caps.js";
@@ -48,7 +27,6 @@ export async function openModal(opts = {}) {
     it.wired = true;
   }
 
-  // Target: the node that asked, else whatever we had, else the first one.
   let targetId = opts.targetNodeId != null ? opts.targetNodeId : it.state.targetNodeId;
   if (targetId == null) {
     const first = librarianNodes()[0];
@@ -62,10 +40,7 @@ export async function openModal(opts = {}) {
     it.open = true;
     installKeyGuards();
     installResponsive();
-    // One timer, two jobs: re-resolve the target node and reconcile the
-    // binding with it. syncBinding() also carries node/bind.js's polling
-    // backstop, so this is the only thing standing between a frontend we
-    // cannot hook and a panel that never updates.
+    // The heartbeat also polls widget changes when frontend hooks are unavailable.
     it.heartbeat = setInterval(() => {
       refreshTarget();
       syncBinding();
@@ -84,8 +59,7 @@ export async function openModal(opts = {}) {
   // Capabilities first — panes read ctx.caps while mounting.
   try {
     const ping = await API.ping();
-    // `/ping` carries the persisted dupe threshold. Ignoring it is why the
-    // picker looked inert: the panel booted at 90 % however the store was set.
+    // Use the persisted threshold from ping so list and editor checks agree.
     const patch = {
       caps: { ...caps },
       rev: (ping && Number(ping.rev)) || it.state.rev,
@@ -104,11 +78,9 @@ export async function openModal(opts = {}) {
   await loadTaxonomy().catch((err) => reportError(err, "taxonomy"));
   await mountPanes();
 
-  // After mountPanes, never before: the seed direction is node -> panel, and
-  // there is no panel to seed until the inspector has registered on ctx.
+  // Seed after mounting: the inspector must register its context hooks first.
   syncBinding();
 
-  // First paint of the list happens after mount so the source exists.
   try {
     if (it.ctx && it.ctx.list && typeof it.ctx.list.refresh === "function") {
       await it.ctx.list.refresh({ reset: true });
@@ -121,14 +93,10 @@ export async function openModal(opts = {}) {
   try {
     focusTarget.focus();
   } catch (_) {
-    /* ignore */
   }
   return it.root;
 }
 
-/* --------------------------------------------------------------------------
-   Re-exports — the modal's public surface, so a caller needs one import
-   -------------------------------------------------------------------------- */
 
 export { setHost } from "./host.js";
 export { attemptClose, closeModal, isDirty } from "./close.js";

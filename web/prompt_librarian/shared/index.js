@@ -1,14 +1,6 @@
-/* ==========================================================================
-   Prompt Librarian — the shared helper barrel
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Re-exports only.
-
-   `modal/ctx.js` hands this whole namespace to the panes as `ctx.dom`, so the
-   inspector can reach every helper without knowing the path back to this
-   directory. Consumers that only want one group (`shared/text.js`,
-   `shared/timing.js`, …) should import that file directly — the barrel exists
-   for the namespace import, not as the preferred door.
-   ========================================================================== */
+/* modal/ctx.js exposes this namespace as ctx.dom. Import leaf modules when
+ * only individual helpers are needed.
+ */
 
 export { NS } from "./ns.js";
 export { singleton, singletonBag, warnOnce } from "./singleton.js";

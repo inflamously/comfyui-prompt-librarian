@@ -1,14 +1,5 @@
-/* ==========================================================================
-   Prompt Librarian — the pickers barrel
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Re-exports only.
-
-   One primitive — openPopover() — serves four consumers: tags,
-   threshold, snippets and wildcards. Plus insertAtCaret(), the wildcard
-   tokenizer, and attachMirror() (syntax highlighting behind the textarea).
-
-   Read pickers/common.js before touching anything key-related in here.
-   ========================================================================== */
+/* Picker key handlers must use the bus in common.js; see modal/keys.js.
+ */
 
 export { openPopover } from "./popover.js";
 export { buildMenu, matches, taxonomyRows } from "./menu.js";

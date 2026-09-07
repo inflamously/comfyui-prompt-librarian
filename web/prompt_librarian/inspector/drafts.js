@@ -1,12 +1,6 @@
-/* ==========================================================================
-   Prompt Librarian — per-record drafts (sessionStorage)
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-
-   modal/drafts.js owns the same `pl:draft:<id>` keyspace and stores the WHOLE
-   buffer as JSON. Delegate to its helpers when they exist so the two never
-   disagree about the format, and read tolerantly either way.
-   ========================================================================== */
+/* Share the modal draft helpers when available: both use pl:draft:<id>
+ * for the whole edit buffer, so their JSON formats must agree.
+ */
 
 import { DRAFT_PREFIX, draftBody } from "./records.js";
 

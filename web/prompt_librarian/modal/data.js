@@ -1,9 +1,3 @@
-/* ==========================================================================
-   Prompt Librarian — taxonomy load, header paint, error reporting
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-   ========================================================================== */
-
 import { NS } from "../shared/ns.js";
 import { fmtInt } from "../shared/format.js";
 import { ABORTED, ApiError } from "../api/request.js";
@@ -47,7 +41,6 @@ export async function loadTaxonomy() {
   paintHeader();
 }
 
-/** Re-run the search and reload the taxonomy. */
 export async function refreshAll() {
   const it = inst();
   await Promise.all([

@@ -1,19 +1,10 @@
-/* ==========================================================================
-   Prompt Librarian — the rail's one-of picker
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   Anchored to the button that opened it. pickers/openPopover does that placement
-   (below the anchor, flipped above on bottom overflow, clamped to the viewport)
-   and owns the layer stack, Escape and scroll-dismiss, so it is the preferred
-   path. When pickers/ failed to load the popover is built here instead, still
-   anchored, so the rail stays usable.
-   ========================================================================== */
+/* Keep an anchored local fallback so the rail works if pickers/ fails to load.
+ */
 
 import { NO_AUTOFILL, h } from "../shared/dom.js";
 
-const GAP = 6; // px between the anchor and the popover
-const EDGE = 8; // px minimum distance to any viewport edge
+const GAP = 6;
+const EDGE = 8;
 
 /** Sentinel: openPopover could not mount, so we must fall back. */
 const NO_POPOVER = Symbol("no-popover");
@@ -43,7 +34,6 @@ export async function pickOne(ctx, title, options, opts = {}) {
   return builtIn(ctx, title, options, opts, anchor);
 }
 
-/** Fill a `.pl-popover` with the optional "new value" field and the options. */
 function fill(pop, ctx, title, options, opts, finish) {
   if (opts.allowNew) {
     const field = h("input", {
@@ -71,7 +61,6 @@ function fill(pop, ctx, title, options, opts, finish) {
   }
 }
 
-/** The good path: pickers/popover.js places and owns the popover. */
 function viaPopover(openPopover, ctx, title, options, opts, anchor) {
   return new Promise((resolve) => {
     let handle = null;
@@ -106,7 +95,6 @@ function viaPopover(openPopover, ctx, title, options, opts, anchor) {
   });
 }
 
-/** pickers/ is unavailable: the same popover, placed by hand. */
 function builtIn(ctx, title, options, opts, anchor) {
   return new Promise((resolve) => {
     let done = false;
@@ -129,10 +117,7 @@ function builtIn(ctx, title, options, opts, anchor) {
   });
 }
 
-/**
- * Below the anchor, flipped above when it would overflow the bottom, clamped
- * into the viewport on both axes. A cut-down twin of pickers/popover.js's
- * `place()`, reached only when that module could not be imported.
+/** Local fallback when pickers/ is unavailable; preserve viewport placement rules.
  */
 function place(el, anchor) {
   const rect =

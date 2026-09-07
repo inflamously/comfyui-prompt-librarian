@@ -1,11 +1,5 @@
-/* ==========================================================================
-   Prompt Librarian — the filter chip row
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   One chip per active tag, plus the `dupes only` toggle. Chips
-   are INTENT clicks: they re-run the search immediately, with no debounce.
-   ========================================================================== */
+/* Chip clicks apply immediately; only typed search input is debounced.
+ */
 
 import { clear, h } from "../shared/dom.js";
 import { pickOne } from "./picker.js";

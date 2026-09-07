@@ -1,24 +1,6 @@
-"""The route table, rendered as an OpenAPI 3.1 document.
-
-Nothing at runtime imports this module — ComfyUI never loads it, and
-``api/__init__.py`` deliberately does not pull it in. It is the only place in
-the pack that needs pydantic, which is a ``dev`` extra and never a dependency
-of the node itself.
-
-There is no schema-building code here. Every request and response is a
-dataclass in :mod:`.schemas`, and ``TypeAdapter(T).json_schema()`` turns it
-into JSON Schema — refs, enums, nullables, defaults and field descriptions
-included. What is left is assembly: walking ``utils._ROUTES``, hoisting the
-generated ``$defs`` into ``components/schemas``, and splitting a query
-dataclass into ``parameters[]`` because OpenAPI wants query fields one at a
-time rather than as an object.
-
-The handlers cannot be introspected — they take a bare ``request`` and read
-``data.get("body")`` — so the types in :mod:`.schemas` are a parallel
-declaration, and keeping them true to the handlers is a review question.
-``tests/test_openapi.py`` covers the mechanical half: a route with no types, a
-response that forgets the ``rev`` envelope, a duplicate operation id, a
-capability or error code that drifted from the live table.
+"""Development-only OpenAPI generation; pydantic must remain optional at runtime.
+Schemas describe handler contracts separately from request parsing. Contract
+tests check the route table and envelope, but handler changes still need review.
 """
 
 from pydantic import TypeAdapter
@@ -80,10 +62,6 @@ _TAGS = (
 )
 
 
-# --------------------------------------------------------------------------- #
-# Types -> components
-# --------------------------------------------------------------------------- #
-
 def _register(components, name, generated):
     """Add one generated schema, refusing to overwrite a different one."""
     resident = components.get(name)
@@ -123,10 +101,6 @@ def _parameters(kind):
     return out
 
 
-# --------------------------------------------------------------------------- #
-# Route table -> document
-# --------------------------------------------------------------------------- #
-
 def tag_for(path):
     """The Swagger UI group an operation lands in."""
     rest = path[len(PREFIX):] if path.startswith(PREFIX) else path
@@ -145,7 +119,6 @@ def _operation(route, components):
         out["parameters"] = _parameters(spec.query)
     if spec.body is not None:
         ref = _ref(spec.body, components)
-        # The body is required exactly when some field has no default.
         required = bool(components[spec.body.__name__].get("required"))
         out["requestBody"] = {"required": required,
                               "content": {"application/json": {"schema": ref}}}
@@ -184,8 +157,7 @@ def _responses(route, components):
         }
         return _with_error_responses(out, components)
     if not issubclass(route.spec.returns, schemas.Envelope):
-        # Every payload carries `rev`; a response type that does not inherit
-        # the envelope would document a field the handler always sends.
+        # Response types must inherit the rev envelope that handlers always emit.
         raise ValueError(f"{route.spec.returns.__name__} does not inherit Envelope")
     out = {"200": {"description": "Success.",
                    "content": {"application/json":

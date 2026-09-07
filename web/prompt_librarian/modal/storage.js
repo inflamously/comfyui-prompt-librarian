@@ -1,5 +1,3 @@
-/* Prompt Librarian storage/backup dialog. INERT ON IMPORT. */
-
 import { h } from "../shared/dom.js";
 import { API } from "../api/routes.js";
 import { refreshAll, reportError } from "./data.js";

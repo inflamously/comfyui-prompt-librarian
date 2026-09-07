@@ -460,13 +460,8 @@ class LibraryOperations:
             return self.get(keeper)
 
     def record_usage(self, pid, body=None):
-        """Count one run of a saved prompt. Returns the record, or ``None``.
-
-        Returns ``None`` and writes *nothing at all* when the id is unknown or
-        when ``body`` does not match the stored body (whitespace-insensitively).
-        ``used`` drives the "most used" sort and is summed on merge, so it has to
-        mean "this exact saved body ran"; counting edited-but-unsaved text would
-        permanently skew both with no audit trail.
+        """Count only runs whose supplied body matches the saved body after whitespace
+        normalization, so unsaved edits cannot inflate usage or merge totals.
         """
         with self._lock:
             self._begin_write()
@@ -490,16 +485,8 @@ class LibraryOperations:
         return self._require(pid).get("versions", [])
 
     def version_previews(self, pid, chars=160, label_fn=None):
-        """Version metadata + a short preview, never the full bodies.
-
-        A record sitting at the version cap would otherwise be a multi-megabyte
-        response on every selection change.
-
-        ``label_fn(body) -> str`` is injected the same way ``search`` injects its
-        dupe counters: a label is a function of the whole library, the store is
-        the one layer that must not know that, and the caller already holds the
-        index that does. Without it the entries carry no label and the caller
-        falls back to the version's number.
+        """Return previews without full bodies to bound selection responses.
+        Inject label_fn(body) so storage stays independent of the corpus index.
         """
         out = []
         for index, entry in enumerate(self.versions(pid)):
@@ -528,12 +515,7 @@ class LibraryOperations:
         return entries[index]
 
     def restore_version(self, pid, index):
-        """Restore a version's body onto the record.
-
-        Goes through :meth:`update` with ``snapshot=True``, so the *current* body
-        is snapshotted first and the restore is itself undoable. History is never
-        erased.
-        """
+        """Snapshot the current body before restoring, so restoration is itself undoable."""
         entry = self.version(pid, index)
         return self.update(pid, body=entry.get("body", ""), snapshot=True)
 
@@ -577,11 +559,7 @@ class LibraryOperations:
             return out
 
     def merge_new(self, a_id, b_id, body):
-        """Create a third record absorbing both inputs, then delete both.
-
-        ``body`` is required: a synthesized record has no defensible default
-        body, so there is nothing sane to fall back to.
-        """
+        """Require an explicit synthesized body; neither input is a safe default."""
         if a_id == b_id:
             raise SameRecordError("cannot merge a record with itself")
         if not _as_str(body).strip():
@@ -696,10 +674,7 @@ class LibraryOperations:
             self._save_meta()
 
     def ignore_pair(self, a, b):
-        """Record a "keep both" decision so dedupe stops reporting the pair.
-
-        Pairs are stored sorted, so the call is order-independent.
-        """
+        """Store sorted pairs so keep-both decisions are order-independent."""
         first, second = _as_str(a), _as_str(b)
         if not first or not second or first == second:
             raise ValueError("ignore_pair needs two distinct ids")
@@ -740,11 +715,7 @@ class LibraryOperations:
             return {(p[0], p[1]) for p in self._meta["ignored"] if len(p) == 2}
 
     def export_raw(self):
-        """The whole library as the single-document envelope.
-
-        JSON remains the portable export/import format even though SQLite is
-        the authoritative store.
-        """
+        """Export a portable JSON envelope from the authoritative SQLite store."""
         self.ensure_loaded()
         with self._lock:
             return envelope_from_parts(

@@ -1,13 +1,4 @@
-"""Prompt Library domain — the original ``PromptLibrary`` node and its store.
-
-Everything this node needs lives in :mod:`prompt_store.node`: the
-``prompts.json`` helpers and the node class itself. The package re-exports the
-names the pack root binds its ``/prompt_library/*`` routes to, so callers never
-have to reach past the domain boundary into a submodule.
-
-This domain shares nothing with :mod:`prompt_librarian` — separate store file,
-separate routes, separate web assets.
-"""
+"""Keep this domain independent of prompt_librarian: separate storage and routes."""
 
 from .node import (
     EMPTY_LABEL,

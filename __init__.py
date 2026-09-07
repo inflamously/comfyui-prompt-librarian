@@ -1,16 +1,4 @@
-"""Pack root — registers both nodes, the JS web extension and the API routes.
-
-One package per domain, each self-contained:
-
-``prompt_store``
-    The ``PromptLibrary`` node and its ``prompts.json`` store, plus the
-    ``/prompt_library/*`` routes bound below.
-``prompt_librarian``
-    The ``PromptLibrarian`` node and its ``library.json`` stack; the
-    ``/prompt_librarian/*`` routes live in ``prompt_librarian.api``.
-
-The two domains share nothing but this file.
-"""
+"""Register two independent node domains, their web extensions, and routes."""
 
 from .prompt_store import (
     EMPTY_LABEL,
@@ -36,7 +24,6 @@ WEB_DIRECTORY = "./web"
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
 
 
-# --- API routes -------------------------------------------------------------
 # Guarded so importing the package never crashes a headless / CLI ComfyUI start.
 try:
     from aiohttp import web
@@ -71,8 +58,6 @@ try:
 
         @routes.post("/prompt_library/delete")
         async def prompt_library_delete(request):
-            # Remove a single prompt from a category; drop the category when it
-            # becomes empty.
             data = await request.json()
             category = (data.get("category") or "").strip()
             text = data.get("text", "")
@@ -91,11 +76,8 @@ except Exception as exc:  # pragma: no cover - defensive, mirrors KJNodes patter
     print(f"[comfyui-prompt-library] route registration skipped: {exc}")
 
 
-# --- Prompt Librarian API routes --------------------------------------------
-# A SECOND, INDEPENDENT guard. `prompt_librarian.api` is imported inside it, so
-# a failure anywhere in the new stack (a syntax error, a missing module, a bad
-# route table) leaves the block above — and the old node's routes — completely
-# untouched, and vice versa. The two stacks share nothing but this file.
+# Keep route registration guards independent so either node survives the other
+# stack failing to import.
 try:
     from server import PromptServer as _PromptServer
 

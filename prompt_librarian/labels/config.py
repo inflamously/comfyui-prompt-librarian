@@ -1,7 +1,5 @@
 """Product-level tuning for derived labels."""
 
-# Eight terms gives a scannable five-to-ten-word handle after adjacent picks
-# merge into phrases.  The character cap keeps that handle to one line.
 LABEL_TERMS = 8
 LABEL_CHARS = 96
 LABEL_SEP = " · "
@@ -9,8 +7,7 @@ MIN_TERM_CHARS = 3
 HEAD_CHARS = 96
 ELLIPSIS = "…"
 
-# A search page labels many records, so do not scan an entire maximum-size
-# prompt to find the handful of words used by a label.
+# Bound per-record scanning because search labels many records per keystroke.
 LABEL_SCAN_CHARS = 4000
 
 # Function words only.  Domain-specific words are deliberately left to idf:

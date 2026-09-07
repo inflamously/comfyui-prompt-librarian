@@ -83,25 +83,15 @@ def make_doc(rec: dict[str, Any]) -> Doc:
         updated=str(rec.get("updated") or ""),
         last_run=str(rec.get("last_run") or ""),
         created=str(rec.get("created") or ""),
-        # The "az" sort key. Alphabetical by the prompt's own opening words --
-        # not by its label, which is corpus-derived and would therefore reorder
-        # the list every time an unrelated record was saved.
+        # Sort by body text; corpus-derived labels change on unrelated writes.
         body_disp_lower=_WS_RE.sub(" ", str(body)).strip()[:SORT_KEY_CHARS].casefold(),
         body_len=max(0, body_len),
     )
 
 
 class SearchIndex:
-    """Inverted index over records.
-
-    ``docs`` maps pid -> :class:`Doc`, ``postings`` maps token -> set of pids,
-    ``vocab`` is the sorted token list used for ``bisect`` prefix expansion.
-    Single-record writes patch the index (``add``/``remove``/``replace``)
-    instead of rebuilding it.
-
-    It also answers the corpus half of :mod:`prompt_librarian.labels`: ``postings[token]`` is
-    already the set of records containing a token, so ``len()`` of it is that
-    token's document frequency and nothing extra has to be counted.
+    """Map IDs to docs and tokens to ID postings; sorted vocab supports prefixes.
+    Postings also provide document frequencies for labels.
     """
 
     __slots__ = (
@@ -145,7 +135,6 @@ class SearchIndex:
             self._updated_sorted = list(corpus.get("updated") or ())
             self._stats_dirty = False
 
-    # -- construction ------------------------------------------------------
 
     def build(self, records: Iterable[dict[str, Any]], rev: int | None = None) -> SearchIndex:
         """Full rebuild from ``records``."""
@@ -195,8 +184,7 @@ class SearchIndex:
             else:
                 bucket.add(doc.pid)
         self._stats_dirty = True
-        # Every label is a function of the whole corpus, so one added record
-        # can change any of them. Nothing finer than "drop the lot" is correct.
+        # Any write can change corpus-derived labels, so invalidate them all.
         self._labels = {}
         return doc
 
@@ -226,7 +214,6 @@ class SearchIndex:
         """Re-index one record in place."""
         return self.add(rec)
 
-    # -- labels ------------------------------------------------------------
 
     def df(self, token: str) -> int:
         """How many records contain ``token`` -- the corpus half of a label."""
@@ -243,20 +230,13 @@ class SearchIndex:
         return labels.label_for(body, self.df, self._corpus_count or len(self.docs))
 
     def label_of(self, pid: str) -> str:
-        """Label one indexed record, memoized for the life of the index.
-
-        A search page labels up to 50 records and the panel re-requests the
-        same page on every filter toggle, so the cache is what keeps labelling
-        off the per-keystroke path. It is dropped wholesale on any write --
-        see :meth:`add`.
-        """
+        """Cache labels until an index write invalidates the corpus statistics."""
         hit = self._labels.get(pid)
         if hit is None:
             hit = self.label_for((self.records.get(pid) or {}).get("body") or "")
             self._labels[pid] = hit
         return hit
 
-    # -- stats -------------------------------------------------------------
 
     def _refresh_stats(self) -> None:
         max_used = 0
@@ -277,11 +257,7 @@ class SearchIndex:
         return self._max_used
 
     def recency01(self, updated: str) -> float:
-        """Rank of ``updated`` among all docs, mapped to [0, 1].
-
-        Rank based rather than clock based: no date parsing, no dependence on
-        "now", and stable under test.
-        """
+        """Map updated-time rank to [0, 1], independent of the current clock."""
         if self._stats_dirty:
             self._refresh_stats()
         stamps = self._updated_sorted
@@ -293,7 +269,6 @@ class SearchIndex:
             i = n - 1
         return i / (n - 1)
 
-    # -- candidate generation ---------------------------------------------
 
     def expand_prefix(self, prefix: str, cap: int = PREFIX_EXPAND_CAP) -> list[str]:
         """Vocabulary terms starting with ``prefix`` (``bisect`` walk, capped)."""
@@ -310,12 +285,7 @@ class SearchIndex:
         return out
 
     def fallback_terms(self, token: str, cap: int = FALLBACK_TERM_CAP) -> list[str]:
-        """Zero-result fallback only: linear vocab scan for infix / edit-1.
-
-        Never runs on the happy path -- callers must have produced no hits
-        first.  ~3 ms on a 5k-record vocabulary, which is acceptable exactly
-        because it is the miss path.
-        """
+        """Scan vocabulary for infix/edit-1 matches only after indexed lookup finds no hits."""
         out: list[str] = []
         allow_edit = len(token) >= EDIT1_MIN_LEN
         for term in self.vocab:

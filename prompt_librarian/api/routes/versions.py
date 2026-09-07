@@ -1,9 +1,4 @@
-"""Version history: list the previews, read one entry, restore one entry.
-
-The list never carries bodies. A record sitting at the 50-version cap would
-otherwise be a multi-megabyte response on every selection change, so the panel
-pages through previews and asks for a full entry only when one is opened.
-"""
+"""List previews only; fetch full version bodies on demand to bound responses."""
 
 from ...store import STORE
 from .. import schemas
@@ -17,12 +12,8 @@ async def versions(request):
     params = _query(request)
     pid = _str(params.get("id"))
     chars = _int(params.get("chars"), 160)
-    # A snapshotted body is labelled against the *current* library, not the one
-    # it was taken from: the point of the label is to tell the user what this
-    # entry was about relative to what they have now.
+    # Label history against the current corpus.
     label_fn = _labeller().label_for
-    # Previews only: a record at the 50-version cap would otherwise be a
-    # multi-megabyte response on every selection change.
     return _json({"id": pid, "versions": STORE.version_previews(pid, chars, label_fn)})
 
 

@@ -1,12 +1,6 @@
-/* ==========================================================================
-   Prompt Librarian — draft persistence
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   One `pl:draft:<id>` key per record in sessionStorage, holding the WHOLE edit
-   buffer as JSON. inspector/drafts.js prefers these helpers over its own so
-   the two can never disagree about the format.
-   ========================================================================== */
+/* Store the whole edit buffer as JSON at pl:draft:<id>.
+ * inspector/drafts.js shares this format.
+ */
 
 const DRAFT_PREFIX = "pl:draft:";
 
@@ -37,6 +31,5 @@ export function clearDraft(id) {
   try {
     if (typeof sessionStorage !== "undefined") sessionStorage.removeItem(draftKey(id));
   } catch (_) {
-    /* ignore */
   }
 }

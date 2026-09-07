@@ -1,20 +1,6 @@
-/* ==========================================================================
-   Prompt Librarian — the browser rail
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. ComfyUI imports every .js under WEB_DIRECTORY as an
-   extension, so this file is evaluated whether or not anything imports it.
-   Exports and `const` data only.
-
-   Owns the left rail from the spec image: search + live hit count, filter
-   chips, `dupes only`, sort tabs, the virtualised list, the footer/bulk bar.
-   Each of those is its own file here; this one assembles them.
-
-   ALL SEARCH IS SERVER-AUTHORITATIVE. There is no local filtering anywhere in
-   this feature, and adding some would be a bug rather than an optimisation:
-   the `96% match` and `N near-dupes` badges are computed by the backend for
-   the current page, and a locally-filtered list would show rows whose badges
-   disagree with the list they are in.
-   ========================================================================== */
+/* Filter on the server: local filtering would disagree with backend
+ * match percentages, duplicate counts, and pagination.
+ */
 
 import { NO_AUTOFILL, clear, h } from "../shared/dom.js";
 import { debounce } from "../shared/timing.js";
@@ -39,20 +25,14 @@ const SORTS = [
   { key: "az", label: "a" + NDASH + "z" },
 ];
 
-/**
- * Build the rail into `el` (the `.pl-rail` grid) and wire it to `ctx`.
- *
- * `.pl-rail` is `grid-template-rows: auto auto auto minmax(0,1fr) auto`, so it
- * must have EXACTLY these five children in this order — a sixth would push the
- * list into an `auto` row, and an auto-sized scroll container grows to fit its
- * content instead of scrolling, which silently disables virtualisation.
+/** Keep exactly five children in the CSS grid order. An extra child can move
+ * the list into an auto-sized row and disable scrolling/virtualization.
  *
  * @returns {object} the same handle that is registered as `ctx.list`
  */
 export function mountList(el, ctx) {
   clear(el);
 
-  /* ---- 1. search ------------------------------------------------------- */
   const hits = h("span", { className: "pl-hits" }, "0 hits");
   const input = h("input", {
     className: "pl-search-in",
@@ -64,10 +44,8 @@ export function mountList(el, ctx) {
   });
   const search = h("div", { className: "pl-search" }, input, hits);
 
-  /* ---- 2. filter chips -------------------------------------------------- */
   const chipsEl = h("div", { className: "pl-chips" });
 
-  /* ---- 3. sort tabs ----------------------------------------------------- */
   const tabs = h("div", { className: "pl-tabs", role: "tablist", "aria-label": "Sort" });
   const tabEls = new Map();
   for (const sort of SORTS) {
@@ -87,7 +65,6 @@ export function mountList(el, ctx) {
     tabs.appendChild(tab);
   }
 
-  /* ---- 4. the list ------------------------------------------------------ */
   const spacer = h("div", { className: "pl-list-spacer" });
   const win = h("div", { className: "pl-list-win" });
   const empty = h("div", { className: "pl-list-empty", hidden: true }, "no prompts match");
@@ -104,7 +81,6 @@ export function mountList(el, ctx) {
     empty
   );
 
-  /* ---- 5. footer / bulk bar --------------------------------------------- */
   const bulkbar = h("div", { className: "pl-bulkbar" });
 
   el.appendChild(search);
@@ -113,7 +89,6 @@ export function mountList(el, ctx) {
   el.appendChild(viewport);
   el.appendChild(bulkbar);
 
-  /* ---------------------------------------------------------------------- */
 
   const st = () => ctx.getState();
   let activeIndex = -1;
@@ -135,9 +110,7 @@ export function mountList(el, ctx) {
     },
   });
 
-  // Everything downstream of here — the list, selection, the bulk bar — talks
-  // to the VIEW, not the PagedSource: with duplicate clusters folded, a list
-  // index is a row and a row is not a record.
+  // Use GroupedView downstream: flat row indices are not record indices.
   const view = new GroupedView(source);
 
   const vlist = new VirtualList({
@@ -167,9 +140,6 @@ export function mountList(el, ctx) {
       q: q.q || "",
       tags: q.tags && q.tags.length ? q.tags : null,
       dupes_only: q.dupesOnly ? true : null,
-      // Always grouped. Four copies of one prompt are one thing the user has
-      // four of, and four rows that each claim three near-duplicates is how
-      // the list used to describe that.
       group: true,
       sort: q.sort || "relevance",
       offset,
@@ -195,18 +165,11 @@ export function mountList(el, ctx) {
   }
 
   function paintHits() {
-    // Records, not rows: "37 hits" that folds into 34 rows is still 37 prompts,
-    // and it is the number every other count in the panel agrees with.
     const n = view.known ? view.recordTotal : 0;
     hits.textContent = `${fmtInt(n)} hit${n === 1 ? "" : "s"}`;
   }
 
-  /* ---- row interaction (delegated) --------------------------------------- */
 
-  /**
-   * Open or close the duplicate cluster at `index`, keeping the caret where
-   * the user left it. `force` pins the direction (keyboard Left/Right).
-   */
   function toggleGroup(index, force) {
     const open = view.isOpen((view.peek(index) || {}).id);
     if (force === true && open) return false;
@@ -226,9 +189,7 @@ export function mountList(el, ctx) {
 
     if (ev.target === row.__parts.check) return; // handled by "change"
 
-    // The twisty ONLY folds — it is the way to open or close a cluster without
-    // leaving the record you were looking at. The rest of the header row folds
-    // *and* selects (below).
+    // The twisty only folds; header clicks fold and select.
     if (ev.target === row.__parts.twisty) {
       ev.preventDefault();
       toggleGroup(index);
@@ -247,10 +208,6 @@ export function mountList(el, ctx) {
     activeIndex = index;
     ctx.setState({ anchorIndex: index }, { silent: true });
     ctx.selectPrompt(id);
-    // The whole header row IS the accordion: clicking it opens the cluster —
-    // you asked about a prompt the library has four of, and the other three
-    // are the answer — and clicking it again folds it back up. A no-op on any
-    // row that is not a cluster header (see GroupedView.toggle).
     toggleGroup(index);
     vlist.repaint();
   });
@@ -271,12 +228,8 @@ export function mountList(el, ctx) {
     if (row && row.dataset.id) activate(Number(row.dataset.index));
   });
 
-  /* ---- keyboard ---------------------------------------------------------
-     Registered through ctx.onKey, NOT addEventListener: the modal's
-     window-capture guard stops key events before they reach this subtree (see
-     the KEY ISOLATION block in modal/keys.js). A plain listener here would
-     simply never fire.
-     --------------------------------------------------------------------- */
+  /* Use ctx.onKey; window capture prevents native subtree key handlers.
+   */
   const offKeys = ctx.onKey(viewport, "keydown", (ev) => {
     const total = vlist.total;
     if (!total) return;
@@ -337,7 +290,6 @@ export function mountList(el, ctx) {
     if (row && row.id) viewport.setAttribute("aria-activedescendant", row.id);
   }
 
-  /** Enter / double-click: push the record into the target node. */
   async function activate(index) {
     const rec = view.peek(index);
     if (!rec || !rec.id) return;
@@ -357,16 +309,13 @@ export function mountList(el, ctx) {
     }
   }
 
-  /* ---- query ------------------------------------------------------------- */
 
   function paintTabs() {
     const sort = st().query.sort;
     for (const [key, tab] of tabEls) tab.setAttribute("aria-selected", key === sort ? "true" : "false");
   }
 
-  /**
-   * Apply a query patch and re-run the search. Chips and tabs are intent
-   * clicks and run immediately; only the text input is debounced.
+  /** Apply chip/tab changes immediately; debounce only typed queries.
    */
   function setQuery(patch) {
     const q = { ...st().query, ...patch };
@@ -392,7 +341,6 @@ export function mountList(el, ctx) {
     runSearch();
   });
 
-  /* ---- refresh ----------------------------------------------------------- */
 
   async function refresh(opts = {}) {
     if (opts.reset !== false) {
@@ -412,12 +360,9 @@ export function mountList(el, ctx) {
     }
   }
 
-  /* ---- state subscriptions ------------------------------------------------ */
 
   const offTaxonomy = ctx.subscribe("tags", () => chips.paint());
   const offCurrent = ctx.subscribe("current", () => vlist.repaint());
-  // `currentId` is set the instant a row is clicked (before the record has
-  // loaded), so the accent bar never lags a request behind the click.
   const offCurrentId = ctx.subscribe("currentId", () => vlist.repaint());
   const offSelection = ctx.subscribe("selection", () => bulk.paint());
 

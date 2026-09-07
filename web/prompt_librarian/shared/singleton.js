@@ -1,27 +1,9 @@
-/* ==========================================================================
-   Prompt Librarian — cross-module singleton
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-
-   No build step. Vanilla ES module, served raw.
-   ========================================================================== */
-
 import { NS } from "./ns.js";
 
 const GLOBAL_KEY = "__PROMPT_LIBRARIAN__";
 
-/**
- * Get-or-create a process-wide singleton, stored on `window`.
- *
- * MODULE SCOPE IS NOT A SAFE SINGLETON HERE. ComfyUI cache-busts extension
- * module URLs with a `?v=…` query, and the module registry is keyed on the
- * FULL url — so `modal/index.js?v=1` and `modal/index.js?v=2` (or the
- * extension scanner's copy versus an `import()` of ours) are two separate
- * module instances with two separate sets of module-level `let`s. A
- * `let modalRoot` would then produce two modals, two keydown guards and two
- * toast stacks. Anything that must be unique on the page — the modal root, the
- * meta cache, the request lanes, the host injection — goes through here
- * instead.
+/** ComfyUI cache-busted URLs create separate module instances. Store page-wide
+ * state on the shared window bag to avoid duplicate modals, guards, and caches.
  *
  * @template T
  * @param {string} key
@@ -39,9 +21,8 @@ export function singleton(key, factory) {
   return bag[key];
 }
 
-/**
- * Read the singleton bag without creating an entry. Useful for teardown paths
- * that must not resurrect what they are tearing down.
+/** Read without creating an entry, so teardown cannot resurrect state.
+ *
  * @returns {object}
  */
 export function singletonBag() {
@@ -50,9 +31,8 @@ export function singletonBag() {
   return g[GLOBAL_KEY];
 }
 
-/**
- * Log a message at most once per key, for the "your frontend lacks X" class of
- * warning that would otherwise fire on every node or every keystroke.
+/** Log once per key to avoid repeating compatibility warnings.
+ *
  * @param {string} key
  * @param {...any} args
  */

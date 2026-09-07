@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prompt Library · Structure</title>
+  <style>
+    :root { color-scheme: dark; --bg:#10151d; --panel:#171e29; --line:#303c4e; --text:#e9eef6; --muted:#a2afc1; --blue:#83b6ff; --green:#88d9b0; --gold:#ebc17d; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:15px/1.6 system-ui,sans-serif; }
+    main { max-width:1580px; margin:auto; padding:38px 32px; }
+    .eyebrow { color:var(--green); font-size:11px; letter-spacing:.16em; font-weight:700; text-transform:uppercase; }
+    h1 { font-size:clamp(28px,4vw,42px); line-height:1.2; margin:10px 0; letter-spacing:-.035em; }
+    p { color:var(--muted); margin:8px 0 20px; }
+    nav { display:flex; flex-wrap:wrap; gap:8px; margin:26px 0 18px; }
+    button { font:inherit; color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:8px 16px; cursor:pointer; }
+    button:hover { border-color:var(--blue); }
+    button[aria-pressed="true"] { background:#253953; border-color:var(--blue); }
+    button:focus-visible, a:focus-visible { outline:2px solid var(--green); outline-offset:4px; }
+    .workspace { display:grid; grid-template-columns:minmax(0,1fr) 310px; border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+    .canvas { min-width:0; background:radial-gradient(circle,#293241 1px,transparent 1px) 0 0/22px 22px; }
+    .caption { padding:16px 20px; border-bottom:1px solid var(--line); background:var(--panel); }
+    .caption strong { display:block; font-size:14px; }
+    .caption span { font-size:12px; color:var(--muted); }
+    .scroll { overflow:auto; }
+    svg { display:block; width:100%; min-width:740px; height:auto; }
+    .edge { fill:none; stroke:#617087; stroke-width:1.6; }
+    .edge.lazy { stroke-dasharray:7 5; }
+    .edge.http,.edge.host { stroke:var(--gold); stroke-dasharray:2 5; }
+    .edge.active { stroke:var(--green); stroke-width:2.5; }
+    .edge.dim { opacity:.1; }
+    .module { cursor:pointer; outline:none; }
+    .module .card { fill:#1a2330; stroke:#46546a; stroke-width:1.2; }
+    .module:hover .card,.module:focus .card,.module.selected .card { fill:#22364a; stroke:var(--green); stroke-width:2; }
+    .module.dim { opacity:.27; }
+    .module text { pointer-events:none; }
+    .node-title { fill:var(--text); font-size:16px; font-weight:650; }
+    .node-desc { fill:var(--muted); font-size:12px; }
+    .node-kind { font-size:10px; font-weight:700; letter-spacing:1px; }
+    aside { padding:24px; background:var(--panel); border-left:1px solid var(--line); overflow-wrap:anywhere; }
+    aside h2 { font-size:23px; margin:7px 0; line-height:1.25; }
+    aside h3 { color:var(--muted); text-transform:uppercase; letter-spacing:.1em; font-size:10px; margin:22px 0 8px; }
+    aside p { font-size:13px; }
+    .dep { display:block; padding:5px 0; border:0; background:none; text-align:left; color:var(--green); font-size:13px; }
+    .dep:hover { text-decoration:underline; }
+    .muted { color:var(--muted); font-size:12px; }
+    details { margin-top:20px; font-size:12px; }
+    summary { cursor:pointer; color:var(--text); }
+    .files { padding:10px 0; margin:0; list-style:none; }
+    .files li { padding:4px 0; }
+    a { color:var(--blue); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    .evidence { border-top:1px solid var(--line); padding:9px 0; font:11px/1.6 ui-monospace,monospace; }
+    .legend { display:flex; gap:24px; flex-wrap:wrap; padding:14px 20px; border-top:1px solid var(--line); background:var(--panel); color:var(--muted); font-size:11px; }
+    .legend i { display:inline-block; width:26px; border-top:2px solid #8193ab; vertical-align:middle; margin-right:7px; }
+    .legend .lazy { border-top-style:dashed; }
+    .legend .http { border-top:2px dotted var(--gold); }
+    footer { display:flex; justify-content:space-between; gap:25px; margin-top:18px; color:var(--muted); font-size:12px; }
+    @media(max-width:1000px) { .workspace { grid-template-columns:1fr; } aside { border-left:0; border-top:1px solid var(--line); } main { padding:24px 16px; } footer { flex-direction:column; gap:6px; } }
+    @media print { :root { color-scheme:light; } body { background:white; } main { padding:0; } nav,aside,footer { display:none; } .workspace { display:block; } svg { min-width:0; } .canvas { background:#10151d; print-color-adjust:exact; } }
+  </style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">ComfyUI custom node / architecture map</div>
+  <h1>Prompt Library, at a glance.</h1>
+  <p>What each module does, and what it imports. Related files are folded into feature blocks.</p>
+  <nav aria-label="Diagram view">
+    <button data-view="overview" aria-pressed="true">01 · Overview</button>
+    <button data-view="python" aria-pressed="false">02 · Python backend</button>
+    <button data-view="browser" aria-pressed="false">03 · Browser frontend</button>
+    <button id="reset">Clear selection</button>
+  </nav>
+  <div class="workspace">
+    <section class="canvas" aria-label="Module dependency graph">
+      <div class="caption"><strong id="view-title"></strong><span id="view-description"></span></div>
+      <div class="scroll"><svg id="graph" viewBox="0 0 1000 740" aria-labelledby="graph-title graph-description"></svg></div>
+      <div class="legend"><span><i></i>Imports → dependency</span><span><i class="lazy"></i>Lazy import</span><span><i class="http"></i>HTTP / host connection</span></div>
+    </section>
+    <aside id="detail" aria-live="polite"></aside>
+  </div>
+  <footer><span>Arrows point from the importer to the module it depends on. Select a block to trace its connections.</span><span>Static source snapshot · No external libraries or requests</span></footer>
+  <noscript><p>Enable JavaScript to display the embedded graph. This file runs entirely offline.</p></noscript>
+</main>
+<script id="source-data" type="application/json">{"files":{"root":["__init__.py"],"p_node":["prompt_librarian/node.py","prompt_librarian/__init__.py"],"p_search":["prompt_librarian/search/cache.py","prompt_librarian/search/text.py","prompt_librarian/search/service.py","prompt_librarian/search/config.py","prompt_librarian/search/results.py","prompt_librarian/search/query.py","prompt_librarian/search/scoring.py","prompt_librarian/search/index.py","prompt_librarian/search/__init__.py"],"p_store":["prompt_librarian/store/types.py","prompt_librarian/store/models.py","prompt_librarian/store/sqlite_database.py","prompt_librarian/store/legacy.py","prompt_librarian/store/sqlite_store.py","prompt_librarian/store/__init__.py","prompt_librarian/store/utils.py","prompt_librarian/store/operations.py"],"p_labels":["prompt_librarian/labels/text.py","prompt_librarian/labels/config.py","prompt_librarian/labels/corpus.py","prompt_librarian/labels/generation.py","prompt_librarian/labels/__init__.py"],"p_wildcards":["prompt_librarian/wildcards/choices.py","prompt_librarian/wildcards/sources.py","prompt_librarian/wildcards/resolver.py","prompt_librarian/wildcards/files.py","prompt_librarian/wildcards/__init__.py","prompt_librarian/wildcards/syntax.py"],"p_dedupe":["prompt_librarian/dedupe/cache.py","prompt_librarian/dedupe/core.py","prompt_librarian/dedupe/matching.py","prompt_librarian/dedupe/scanning.py","prompt_librarian/dedupe/index.py","prompt_librarian/dedupe/__init__.py","prompt_librarian/dedupe/diffing.py"],"p_api":["prompt_librarian/api/schemas.py","prompt_librarian/api/indexing.py","prompt_librarian/api/queries.py","prompt_librarian/api/config.py","prompt_librarian/api/__init__.py","prompt_librarian/api/api.py","prompt_librarian/api/utils.py","prompt_librarian/api/registration.py","prompt_librarian/api/openapi.py","prompt_librarian/api/routes/prompts.py","prompt_librarian/api/routes/snippets.py","prompt_librarian/api/routes/bulk.py","prompt_librarian/api/routes/versions.py","prompt_librarian/api/routes/search.py","prompt_librarian/api/routes/taxonomy.py","prompt_librarian/api/routes/library.py","prompt_librarian/api/routes/dupes.py","prompt_librarian/api/routes/__init__.py","prompt_librarian/api/routes/wildcards.py"],"oldpy":["prompt_store/node.py","prompt_store/__init__.py"],"oldweb":["web/prompt_store/labels.js","web/prompt_store/index.js","web/prompt_store/api.js","web/prompt_store/widgets.js"],"entry":["web/prompt_librarian/index.js"],"shared":["web/prompt_librarian/shared/timing.js","web/prompt_librarian/shared/styles.js","web/prompt_librarian/shared/text.js","web/prompt_librarian/shared/ns.js","web/prompt_librarian/shared/dom.js","web/prompt_librarian/shared/index.js","web/prompt_librarian/shared/format.js","web/prompt_librarian/shared/singleton.js","web/prompt_librarian/shared/widgets.js"],"inspector":["web/prompt_librarian/inspector/drafts.js","web/prompt_librarian/inspector/helpers.js","web/prompt_librarian/inspector/layers.js","web/prompt_librarian/inspector/save.js","web/prompt_librarian/inspector/constants.js","web/prompt_librarian/inspector/view.js","web/prompt_librarian/inspector/neighbours.js","web/prompt_librarian/inspector/dupes.js","web/prompt_librarian/inspector/fallbacks.js","web/prompt_librarian/inspector/records.js","web/prompt_librarian/inspector/index.js"],"node":["web/prompt_librarian/node/hydrate.js","web/prompt_librarian/node/bind.js","web/prompt_librarian/node/face.js","web/prompt_librarian/node/widgets.js"],"compare":["web/prompt_librarian/compare/compare.js","web/prompt_librarian/compare/versions.js","web/prompt_librarian/compare/common.js","web/prompt_librarian/compare/diff.js","web/prompt_librarian/compare/merge-editor.js","web/prompt_librarian/compare/index.js"],"browse":["web/prompt_librarian/browse/rows.js","web/prompt_librarian/browse/chips.js","web/prompt_librarian/browse/bulk.js","web/prompt_librarian/browse/selection.js","web/prompt_librarian/browse/picker.js","web/prompt_librarian/browse/grouped-source.js","web/prompt_librarian/browse/index.js","web/prompt_librarian/browse/virtual-list.js","web/prompt_librarian/browse/paged-source.js"],"modal":["web/prompt_librarian/modal/drafts.js","web/prompt_librarian/modal/host.js","web/prompt_librarian/modal/keys.js","web/prompt_librarian/modal/data.js","web/prompt_librarian/modal/target.js","web/prompt_librarian/modal/layers.js","web/prompt_librarian/modal/panes.js","web/prompt_librarian/modal/ctx.js","web/prompt_librarian/modal/binding.js","web/prompt_librarian/modal/shell.js","web/prompt_librarian/modal/close.js","web/prompt_librarian/modal/storage.js","web/prompt_librarian/modal/index.js","web/prompt_librarian/modal/state.js","web/prompt_librarian/modal/glyphs.js"],"pickers":["web/prompt_librarian/pickers/tags.js","web/prompt_librarian/pickers/snippets.js","web/prompt_librarian/pickers/common.js","web/prompt_librarian/pickers/popover.js","web/prompt_librarian/pickers/caret.js","web/prompt_librarian/pickers/mirror.js","web/prompt_librarian/pickers/menu.js","web/prompt_librarian/pickers/threshold.js","web/prompt_librarian/pickers/index.js","web/prompt_librarian/pickers/wildcards.js","web/prompt_librarian/pickers/tokenize.js"],"api":["web/prompt_librarian/api/caps.js","web/prompt_librarian/api/meta.js","web/prompt_librarian/api/request.js","web/prompt_librarian/api/index.js","web/prompt_librarian/api/lanes.js","web/prompt_librarian/api/routes.js"]},"edges":[{"from":"root","to":"oldpy","kind":"import","source":"__init__.py","target":"prompt_store/__init__.py"},{"from":"root","to":"p_node","kind":"import","source":"__init__.py","target":"prompt_librarian/__init__.py"},{"from":"root","to":"p_node","kind":"import","source":"__init__.py","target":"prompt_librarian/__init__.py"},{"from":"p_node","to":"p_wildcards","kind":"import","source":"prompt_librarian/node.py","target":"prompt_librarian/wildcards/__init__.py"},{"from":"p_node","to":"p_store","kind":"import","source":"prompt_librarian/node.py","target":"prompt_librarian/store/__init__.py"},{"from":"p_search","to":"p_labels","kind":"import","source":"prompt_librarian/search/index.py","target":"prompt_librarian/labels/__init__.py"},{"from":"p_wildcards","to":"p_store","kind":"import","source":"prompt_librarian/wildcards/sources.py","target":"prompt_librarian/store/__init__.py"},{"from":"p_wildcards","to":"p_store","kind":"import","source":"prompt_librarian/wildcards/sources.py","target":"prompt_librarian/store/__init__.py"},{"from":"p_dedupe","to":"p_search","kind":"import","source":"prompt_librarian/dedupe/core.py","target":"prompt_librarian/search/__init__.py"},{"from":"p_dedupe","to":"p_search","kind":"import","source":"prompt_librarian/dedupe/matching.py","target":"prompt_librarian/search/__init__.py"},{"from":"p_api","to":"p_dedupe","kind":"import","source":"prompt_librarian/api/indexing.py","target":"prompt_librarian/dedupe/__init__.py"},{"from":"p_api","to":"p_search","kind":"import","source":"prompt_librarian/api/indexing.py","target":"prompt_librarian/search/__init__.py"},{"from":"p_api","to":"p_store","kind":"import","source":"prompt_librarian/api/indexing.py","target":"prompt_librarian/store/__init__.py"},{"from":"p_api","to":"p_dedupe","kind":"import","source":"prompt_librarian/api/queries.py","target":"prompt_librarian/dedupe/__init__.py"},{"from":"p_api","to":"p_search","kind":"import","source":"prompt_librarian/api/queries.py","target":"prompt_librarian/search/__init__.py"},{"from":"p_api","to":"p_store","kind":"import","source":"prompt_librarian/api/queries.py","target":"prompt_librarian/store/__init__.py"},{"from":"p_api","to":"p_store","kind":"import","source":"prompt_librarian/api/config.py","target":"prompt_librarian/store/__init__.py"},{"from":"p_api","to":"p_dedupe","kind":"import","source":"prompt_librarian/api/utils.py","target":"prompt_librarian/dedupe/__init__.py"},{"from":"p_api","to":"p_search","kind":"import","source":"prompt_librarian/api/utils.py","target":"prompt_librarian/search/__init__.py"},{"from":"p_api","to":"p_store","kind":"import","source":"prompt_librarian/api/utils.py","target":"prompt_librarian/store/__init__.py"},{"from":"p_api","to":"p_store","kind":"import","source":"prompt_librarian/api/registration.py","target":"prompt_librarian/store/__init__.py"},{"from":"p_api","to":"p_dedupe","kind":"import","source":"prompt_librarian/api/routes/prompts.py","target":"prompt_librarian/dedupe/__init__.py"},{"from":"p_api","to":"p_store","kind":"import","source":"prompt_librarian/api/routes/prompts.py","target":"prompt_librarian/store/__init__.py"},{"from":"p_api","to":"p_store","kind":"import","source":"prompt_librarian/api/routes/snippets.py","target":"prompt_librarian/store/__init__.py"},{"from":"p_api","to":"p_store","kind":"import","source":"prompt_librarian/api/routes/bulk.py","target":"prompt_librarian/store/__init__.py"},{"from":"p_api","to":"p_store","kind":"import","source":"prompt_librarian/api/routes/versions.py","target":"prompt_librarian/store/__init__.py"},{"from":"p_api","to":"p_store","kind":"import","source":"prompt_librarian/api/routes/taxonomy.py","target":"prompt_librarian/store/__init__.py"},{"from":"p_api","to":"p_store","kind":"import","source":"prompt_librarian/api/routes/library.py","target":"prompt_librarian/store/__init__.py"},{"from":"p_api","to":"p_dedupe","kind":"import","source":"prompt_librarian/api/routes/dupes.py","target":"prompt_librarian/dedupe/__init__.py"},{"from":"p_api","to":"p_store","kind":"import","source":"prompt_librarian/api/routes/dupes.py","target":"prompt_librarian/store/__init__.py"},{"from":"p_api","to":"p_wildcards","kind":"import","source":"prompt_librarian/api/routes/wildcards.py","target":"prompt_librarian/wildcards/__init__.py"},{"from":"p_api","to":"p_store","kind":"import","source":"prompt_librarian/api/routes/wildcards.py","target":"prompt_librarian/store/__init__.py"},{"from":"entry","to":"shared","kind":"import","source":"web/prompt_librarian/index.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"entry","to":"shared","kind":"import","source":"web/prompt_librarian/index.js","target":"web/prompt_librarian/shared/singleton.js"},{"from":"entry","to":"shared","kind":"import","source":"web/prompt_librarian/index.js","target":"web/prompt_librarian/shared/styles.js"},{"from":"entry","to":"node","kind":"import","source":"web/prompt_librarian/index.js","target":"web/prompt_librarian/node/face.js"},{"from":"entry","to":"node","kind":"import","source":"web/prompt_librarian/index.js","target":"web/prompt_librarian/node/hydrate.js"},{"from":"entry","to":"modal","kind":"lazy","source":"web/prompt_librarian/index.js","target":"web/prompt_librarian/modal/index.js"},{"from":"node","to":"shared","kind":"import","source":"web/prompt_librarian/node/hydrate.js","target":"web/prompt_librarian/shared/singleton.js"},{"from":"node","to":"api","kind":"lazy","source":"web/prompt_librarian/node/hydrate.js","target":"web/prompt_librarian/api/meta.js"},{"from":"node","to":"shared","kind":"import","source":"web/prompt_librarian/node/bind.js","target":"web/prompt_librarian/shared/singleton.js"},{"from":"node","to":"shared","kind":"import","source":"web/prompt_librarian/node/face.js","target":"web/prompt_librarian/shared/singleton.js"},{"from":"node","to":"shared","kind":"import","source":"web/prompt_librarian/node/face.js","target":"web/prompt_librarian/shared/text.js"},{"from":"node","to":"shared","kind":"import","source":"web/prompt_librarian/node/face.js","target":"web/prompt_librarian/shared/format.js"},{"from":"node","to":"api","kind":"lazy","source":"web/prompt_librarian/node/face.js","target":"web/prompt_librarian/api/index.js"},{"from":"node","to":"shared","kind":"import","source":"web/prompt_librarian/node/widgets.js","target":"web/prompt_librarian/shared/singleton.js"},{"from":"compare","to":"shared","kind":"import","source":"web/prompt_librarian/compare/compare.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"compare","to":"shared","kind":"import","source":"web/prompt_librarian/compare/compare.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"compare","to":"shared","kind":"import","source":"web/prompt_librarian/compare/versions.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"compare","to":"shared","kind":"import","source":"web/prompt_librarian/compare/versions.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"compare","to":"shared","kind":"import","source":"web/prompt_librarian/compare/versions.js","target":"web/prompt_librarian/shared/text.js"},{"from":"compare","to":"shared","kind":"import","source":"web/prompt_librarian/compare/versions.js","target":"web/prompt_librarian/shared/format.js"},{"from":"compare","to":"shared","kind":"import","source":"web/prompt_librarian/compare/versions.js","target":"web/prompt_librarian/shared/timing.js"},{"from":"compare","to":"browse","kind":"lazy","source":"web/prompt_librarian/compare/versions.js","target":"web/prompt_librarian/browse/virtual-list.js"},{"from":"compare","to":"shared","kind":"import","source":"web/prompt_librarian/compare/common.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"compare","to":"shared","kind":"import","source":"web/prompt_librarian/compare/common.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"compare","to":"shared","kind":"import","source":"web/prompt_librarian/compare/diff.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"compare","to":"shared","kind":"import","source":"web/prompt_librarian/compare/diff.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"compare","to":"shared","kind":"import","source":"web/prompt_librarian/compare/diff.js","target":"web/prompt_librarian/shared/format.js"},{"from":"compare","to":"shared","kind":"import","source":"web/prompt_librarian/compare/merge-editor.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"browse","to":"shared","kind":"import","source":"web/prompt_librarian/browse/rows.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"browse","to":"shared","kind":"import","source":"web/prompt_librarian/browse/rows.js","target":"web/prompt_librarian/shared/text.js"},{"from":"browse","to":"shared","kind":"import","source":"web/prompt_librarian/browse/rows.js","target":"web/prompt_librarian/shared/format.js"},{"from":"browse","to":"shared","kind":"import","source":"web/prompt_librarian/browse/chips.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"browse","to":"shared","kind":"import","source":"web/prompt_librarian/browse/bulk.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"browse","to":"shared","kind":"import","source":"web/prompt_librarian/browse/bulk.js","target":"web/prompt_librarian/shared/format.js"},{"from":"browse","to":"shared","kind":"import","source":"web/prompt_librarian/browse/selection.js","target":"web/prompt_librarian/shared/format.js"},{"from":"browse","to":"shared","kind":"import","source":"web/prompt_librarian/browse/selection.js","target":"web/prompt_librarian/shared/text.js"},{"from":"browse","to":"shared","kind":"import","source":"web/prompt_librarian/browse/picker.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"browse","to":"pickers","kind":"lazy","source":"web/prompt_librarian/browse/picker.js","target":"web/prompt_librarian/pickers/index.js"},{"from":"browse","to":"shared","kind":"import","source":"web/prompt_librarian/browse/index.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"browse","to":"shared","kind":"import","source":"web/prompt_librarian/browse/index.js","target":"web/prompt_librarian/shared/timing.js"},{"from":"browse","to":"shared","kind":"import","source":"web/prompt_librarian/browse/index.js","target":"web/prompt_librarian/shared/text.js"},{"from":"browse","to":"shared","kind":"import","source":"web/prompt_librarian/browse/index.js","target":"web/prompt_librarian/shared/format.js"},{"from":"browse","to":"shared","kind":"import","source":"web/prompt_librarian/browse/virtual-list.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"browse","to":"shared","kind":"import","source":"web/prompt_librarian/browse/virtual-list.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"browse","to":"shared","kind":"import","source":"web/prompt_librarian/browse/virtual-list.js","target":"web/prompt_librarian/shared/timing.js"},{"from":"browse","to":"shared","kind":"import","source":"web/prompt_librarian/browse/paged-source.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/host.js","target":"web/prompt_librarian/shared/singleton.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/keys.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/data.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/data.js","target":"web/prompt_librarian/shared/format.js"},{"from":"modal","to":"api","kind":"import","source":"web/prompt_librarian/modal/data.js","target":"web/prompt_librarian/api/request.js"},{"from":"modal","to":"api","kind":"import","source":"web/prompt_librarian/modal/data.js","target":"web/prompt_librarian/api/lanes.js"},{"from":"modal","to":"api","kind":"import","source":"web/prompt_librarian/modal/data.js","target":"web/prompt_librarian/api/routes.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/target.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"modal","to":"api","kind":"import","source":"web/prompt_librarian/modal/target.js","target":"web/prompt_librarian/api/routes.js"},{"from":"modal","to":"api","kind":"import","source":"web/prompt_librarian/modal/target.js","target":"web/prompt_librarian/api/meta.js"},{"from":"modal","to":"node","kind":"import","source":"web/prompt_librarian/modal/target.js","target":"web/prompt_librarian/node/bind.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/layers.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/layers.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/panes.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/panes.js","target":"web/prompt_librarian/shared/singleton.js"},{"from":"modal","to":"browse","kind":"lazy","source":"web/prompt_librarian/modal/panes.js","target":"web/prompt_librarian/browse/index.js"},{"from":"modal","to":"inspector","kind":"lazy","source":"web/prompt_librarian/modal/panes.js","target":"web/prompt_librarian/inspector/index.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/ctx.js","target":"web/prompt_librarian/shared/index.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/ctx.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"modal","to":"api","kind":"import","source":"web/prompt_librarian/modal/ctx.js","target":"web/prompt_librarian/api/request.js"},{"from":"modal","to":"api","kind":"import","source":"web/prompt_librarian/modal/ctx.js","target":"web/prompt_librarian/api/lanes.js"},{"from":"modal","to":"api","kind":"import","source":"web/prompt_librarian/modal/ctx.js","target":"web/prompt_librarian/api/caps.js"},{"from":"modal","to":"api","kind":"import","source":"web/prompt_librarian/modal/ctx.js","target":"web/prompt_librarian/api/routes.js"},{"from":"modal","to":"api","kind":"import","source":"web/prompt_librarian/modal/ctx.js","target":"web/prompt_librarian/api/meta.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/binding.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/binding.js","target":"web/prompt_librarian/shared/singleton.js"},{"from":"modal","to":"node","kind":"import","source":"web/prompt_librarian/modal/binding.js","target":"web/prompt_librarian/node/bind.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/shell.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/shell.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/shell.js","target":"web/prompt_librarian/shared/singleton.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/close.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/close.js","target":"web/prompt_librarian/shared/singleton.js"},{"from":"modal","to":"api","kind":"import","source":"web/prompt_librarian/modal/close.js","target":"web/prompt_librarian/api/lanes.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/storage.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"modal","to":"api","kind":"import","source":"web/prompt_librarian/modal/storage.js","target":"web/prompt_librarian/api/routes.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/index.js","target":"web/prompt_librarian/shared/singleton.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/index.js","target":"web/prompt_librarian/shared/styles.js"},{"from":"modal","to":"api","kind":"import","source":"web/prompt_librarian/modal/index.js","target":"web/prompt_librarian/api/caps.js"},{"from":"modal","to":"api","kind":"import","source":"web/prompt_librarian/modal/index.js","target":"web/prompt_librarian/api/routes.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/state.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"modal","to":"shared","kind":"import","source":"web/prompt_librarian/modal/state.js","target":"web/prompt_librarian/shared/singleton.js"},{"from":"pickers","to":"shared","kind":"import","source":"web/prompt_librarian/pickers/snippets.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"pickers","to":"shared","kind":"import","source":"web/prompt_librarian/pickers/snippets.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"pickers","to":"shared","kind":"import","source":"web/prompt_librarian/pickers/snippets.js","target":"web/prompt_librarian/shared/text.js"},{"from":"pickers","to":"shared","kind":"import","source":"web/prompt_librarian/pickers/common.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"pickers","to":"shared","kind":"import","source":"web/prompt_librarian/pickers/popover.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"pickers","to":"shared","kind":"import","source":"web/prompt_librarian/pickers/popover.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"pickers","to":"shared","kind":"import","source":"web/prompt_librarian/pickers/popover.js","target":"web/prompt_librarian/shared/singleton.js"},{"from":"pickers","to":"shared","kind":"import","source":"web/prompt_librarian/pickers/mirror.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"pickers","to":"shared","kind":"import","source":"web/prompt_librarian/pickers/mirror.js","target":"web/prompt_librarian/shared/singleton.js"},{"from":"pickers","to":"shared","kind":"import","source":"web/prompt_librarian/pickers/mirror.js","target":"web/prompt_librarian/shared/timing.js"},{"from":"pickers","to":"shared","kind":"import","source":"web/prompt_librarian/pickers/menu.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"pickers","to":"shared","kind":"import","source":"web/prompt_librarian/pickers/threshold.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"pickers","to":"shared","kind":"import","source":"web/prompt_librarian/pickers/wildcards.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"pickers","to":"shared","kind":"import","source":"web/prompt_librarian/pickers/wildcards.js","target":"web/prompt_librarian/shared/dom.js"},{"from":"pickers","to":"shared","kind":"import","source":"web/prompt_librarian/pickers/wildcards.js","target":"web/prompt_librarian/shared/text.js"},{"from":"api","to":"shared","kind":"import","source":"web/prompt_librarian/api/caps.js","target":"web/prompt_librarian/shared/singleton.js"},{"from":"api","to":"shared","kind":"import","source":"web/prompt_librarian/api/meta.js","target":"web/prompt_librarian/shared/ns.js"},{"from":"api","to":"shared","kind":"import","source":"web/prompt_librarian/api/meta.js","target":"web/prompt_librarian/shared/singleton.js"},{"from":"api","to":"shared","kind":"import","source":"web/prompt_librarian/api/request.js","target":"web/prompt_librarian/shared/format.js"},{"from":"api","to":"shared","kind":"import","source":"web/prompt_librarian/api/lanes.js","target":"web/prompt_librarian/shared/singleton.js"},{"from":"root","to":"p_api","kind":"import","source":"__init__.py","target":"prompt_librarian/api/__init__.py"},{"from":"inspector","to":"pickers","kind":"lazy","source":"web/prompt_librarian/inspector/neighbours.js","target":"web/prompt_librarian/pickers/index.js"},{"from":"inspector","to":"compare","kind":"lazy","source":"web/prompt_librarian/inspector/neighbours.js","target":"web/prompt_librarian/compare/index.js"}]}</script>
+<script>
+// Documentation only: this page never loads application code or connects to ComfyUI.
+const source = JSON.parse(document.getElementById('source-data').textContent);
+const definitions = {
+  root: ['Pack entry', '__init__.py', 'HOST', 'Registers both Python node classes, exposes web/ to ComfyUI, defines the original Library routes, and registers the Librarian API.'],
+  p_node: ['Librarian node', 'node.py + package entry', 'PYTHON', 'Executes PromptLibrarian: expands wildcards using the seed, records usage when the saved body matches, and outputs prompt text.'],
+  p_api: ['API routes', 'api/', 'PYTHON', 'Handles /prompt_librarian/* requests: prompts, search, duplicates, taxonomy, snippets, versions, bulk operations, wildcards, and library storage. Wires store changes to index invalidation.'],
+  p_store: ['Store', 'store/', 'PYTHON', 'Owns SQLite persistence and library operations: records, versions, snippets, usage, metadata, import/export, and change notifications. JSON is a portable or legacy format.'],
+  p_wildcards: ['Wildcards', 'wildcards/', 'PYTHON', 'Resolves seeded choices such as {a|b}, __file__ references, and [[snippet]] references. Uses the store for default sources and snippet lookup.'],
+  p_dedupe: ['Duplicate detection', 'dedupe/', 'PYTHON', 'Matches similar prompts, scans duplicate groups, caches candidate indexes, and produces text differences. Reuses search normalization and preview helpers.'],
+  p_search: ['Search', 'search/', 'PYTHON', 'Parses queries, builds indexes, scores fuzzy matches, applies filters, and groups results. Uses labels to derive readable prompt titles.'],
+  p_labels: ['Labels', 'labels/', 'PYTHON', 'Derives short display labels from prompt content and corpus term frequencies. Labels are calculated rather than stored as prompt names.'],
+  oldpy: ['Original Library', 'prompt_store/', 'LEGACY', 'The independent PromptLibrary node and category-based prompts.json persistence. Its HTTP routes live in the pack entry. It does not import the Librarian stack.'],
+  entry: ['Extension entry', 'index.js', 'BROWSER', 'Registers prompt-librarian.ui with ComfyUI, builds the node face, hydrates widgets, and loads the modal on demand.'],
+  node: ['Node UI', 'node/', 'BROWSER', 'Builds the canvas node face, hydrates metadata, and binds the text widget to the panel.'],
+  modal: ['Modal controller', 'modal/', 'BROWSER', 'Owns the panel shell, state, keyboard handling, drafts, layers, node binding, and data refresh. Loads browse and inspector panes lazily and supplies their shared context.'],
+  browse: ['Browse', 'browse/', 'BROWSER', 'Renders search, filters, grouped and virtualized result lists, selection, and bulk actions. Receives API access through the modal context.'],
+  inspector: ['Inspector', 'inspector/', 'BROWSER', 'Edits the selected prompt, handles drafts and save gates, and displays duplicate matches. Receives API and DOM helpers through the modal context; loads pickers and comparison dialogs on demand.'],
+  pickers: ['Pickers', 'pickers/', 'BROWSER', 'Reusable popovers for tags, snippets, wildcard files, thresholds, and token information. API access is supplied through context.'],
+  compare: ['Compare & history', 'compare/', 'BROWSER', 'Shows text diffs, merge editors, and version history. Reuses the browse virtual list for long histories and receives API access through context.'],
+  api: ['API client', 'api/', 'BROWSER', 'Wraps HTTP requests, endpoint functions, cancellation lanes, capabilities, and metadata caching. Connects to the Python API through ComfyUI.'],
+  shared: ['Shared helpers', 'shared/', 'BROWSER', 'Small DOM, text, formatting, timing, widget, stylesheet, and singleton utilities used across the Librarian browser features.'],
+  oldweb: ['Original Library UI', 'web/prompt_store/', 'LEGACY', 'Registers the separate prompt-library.ui extension. Owns dropdown labels, widget updates, and requests to /prompt_library/*.'],
+  frontend: ['Librarian browser UI', 'web/prompt_librarian/', 'BROWSER', 'The ComfyUI extension, node card, modal, browse pane, inspector, pickers, and dialogs. Open the Browser frontend view to see their imports.'],
+  services: ['Prompt services', 'search/ · dedupe/ · wildcards/', 'PYTHON', 'Search and derived labels, near-duplicate matching, and seeded wildcard expansion. Open the Python backend view for individual dependencies.'],
+};
+const views = {
+  overview: {
+    title:'The whole custom node pack', description:'Two independent node stacks meet at the pack entry. HTTP connects browser code to Python.',
+    nodes:[['root',40,45],['frontend',370,45],['oldweb',700,45],['p_node',40,280],['p_api',370,280],['oldpy',700,280],['services',40,530],['p_store',370,530]],
+    groups:{frontend:['entry','node','modal','browse','inspector','pickers','compare','api','shared'],services:['p_search','p_dedupe','p_labels','p_wildcards']},
+    extra:[['root','frontend','host'],['root','oldweb','host'],['frontend','p_api','http'],['oldweb','root','http']],
+  },
+  python: {
+    title:'Python · registration, execution, and storage', description:'Feature folders are collapsed. Standard library and external ComfyUI imports are omitted.',
+    nodes:[['root',40,30],['p_node',40,250],['p_api',370,30],['oldpy',700,30],['p_wildcards',40,480],['p_store',370,480],['p_dedupe',370,250],['p_search',700,250],['p_labels',700,480]],
+    groups:{}, extra:[],
+  },
+  browser: {
+    title:'JavaScript · the panel and its feature modules', description:'Paths are relative to web/prompt_librarian/ unless shown in full. Context injection is described in each block.',
+    nodes:[['entry',40,30],['modal',370,30],['oldweb',700,30],['node',40,215],['browse',370,215],['inspector',700,215],['api',40,400],['pickers',370,400],['compare',700,400],['shared',370,595]],
+    groups:{}, extra:[],
+  },
+};
+const svg = document.getElementById('graph');
+const detail = document.getElementById('detail');
+const ns = 'http://www.w3.org/2000/svg';
+let current = 'overview', selected = null, edges = [];
+function element(tag, attrs={}, text) {
+  const el=document.createElementNS(ns,tag);
+  Object.entries(attrs).forEach(([key,value])=>el.setAttribute(key,value));
+  if(text!==undefined) el.textContent=text;
+  return el;
+}
+function html(tag,text,className) {
+  const el=document.createElement(tag); if(text!==undefined)el.textContent=text;
+  if(className)el.className=className; return el;
+}
+function members(id) { return views[current].groups[id] || [id]; }
+function files(id) { return members(id).flatMap(key=>source.files[key]||[]).sort(); }
+function render() {
+  const view=views[current];
+  document.getElementById('view-title').textContent=view.title;
+  document.getElementById('view-description').textContent=view.description;
+  document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.view===current)));
+  svg.replaceChildren(element('title',{id:'graph-title'},view.title),element('desc',{id:'graph-description'},'Interactive feature dependency diagram. Arrows point to imported modules. Tab to a module and press Enter for its role, files, and imports.'));
+  const defs=element('defs');
+  for(const [id,color] of [['arrow','#8193ab'],['arrow-active','#88d9b0'],['arrow-host','#ebc17d']]) {
+    const marker=element('marker',{id,viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:6,markerHeight:6,orient:'auto-start-reverse'});
+    marker.append(element('path',{d:'M 0 0 L 10 5 L 0 10 z',fill:color})); defs.append(marker);
+  }
+  svg.append(defs);
+  const positions=Object.fromEntries(view.nodes.map(([id,x,y])=>[id,{x,y}]));
+  const folded=Object.fromEntries(view.nodes.flatMap(([id])=>members(id).map(child=>[child,id])));
+  const unique=new Map();
+  for(const e of source.edges) {
+    const from=folded[e.from],to=folded[e.to];
+    if(!from||!to||from===to)continue;
+    const key=from+'|'+to;
+    if(!unique.has(key))unique.set(key,{from,to,kind:e.kind,evidence:[]});
+    const edge=unique.get(key);edge.evidence.push(e);
+    if(e.kind==='import')edge.kind='import';
+  }
+  edges=[...unique.values(),...view.extra.map(([from,to,kind])=>({from,to,kind,evidence:[]}))];
+  for(const e of edges) {
+    const a=positions[e.from],b=positions[e.to];
+    let sx,sy,tx,ty,d;
+    if(a.y===b.y) {
+      const right=b.x>a.x;sx=a.x+(right?240:0);sy=a.y+52;tx=b.x+(right?0:240);ty=b.y+52;
+      // Long cross-column links travel above the middle card.
+      d=Math.abs(b.x-a.x)>400?`M ${sx} ${sy} C ${sx} ${a.y-35}, ${tx} ${b.y-35}, ${tx} ${ty}`:`M ${sx} ${sy} L ${tx} ${ty}`;
+    } else {
+      const down=b.y>a.y;sx=a.x+120;sy=a.y+(down?104:0);tx=b.x+120;ty=b.y+(down?0:104);
+      const mid=(sy+ty)/2;d=`M ${sx} ${sy} C ${sx} ${mid}, ${tx} ${mid}, ${tx} ${ty}`;
+    }
+    const path=element('path',{d,class:'edge '+e.kind,'marker-end':`url(#${['http','host'].includes(e.kind)?'arrow-host':'arrow'})`});
+    path.append(element('title',{},`${definitions[e.from][0]} → ${definitions[e.to][0]} (${e.kind})`));
+    e.element=path;svg.append(path);
+  }
+  for(const [id,x,y] of view.nodes) {
+    const [title,subtitle,kind]=definitions[id];
+    const g=element('g',{transform:`translate(${x},${y})`,class:'module','data-id':id,tabindex:0,role:'button','aria-label':`${title}: ${subtitle}. Show dependencies.`,'aria-pressed':'false'});
+    g.append(element('rect',{width:240,height:104,rx:11,class:'card'}),element('text',{x:17,y:23,class:'node-kind',fill:kind==='PYTHON'?'#88d9b0':kind==='BROWSER'?'#83b6ff':'#ebc17d'},kind),element('text',{x:17,y:50,class:'node-title'},title),element('text',{x:17,y:76,class:'node-desc'},subtitle));
+    g.addEventListener('click',()=>select(selected===id?null:id));
+    g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select(selected===id?null:id);}});
+    svg.append(g);
+  }
+  select(null);
+}
+function select(id) {
+  selected=id;
+  const related=new Set([id]);
+  edges.forEach(e=>{if(e.from===id||e.to===id){related.add(e.from);related.add(e.to);}});
+  svg.querySelectorAll('.module').forEach(g=>{
+    g.classList.toggle('dim',!!id&&!related.has(g.dataset.id));
+    g.classList.toggle('selected',g.dataset.id===id);
+    g.setAttribute('aria-pressed',String(g.dataset.id===id));
+  });
+  edges.forEach(e=>{
+    const active=e.from===id||e.to===id;
+    e.element.classList.toggle('active',!!id&&active);e.element.classList.toggle('dim',!!id&&!active);
+    e.element.setAttribute('marker-end',`url(#${id&&active?'arrow-active':['http','host'].includes(e.kind)?'arrow-host':'arrow'})`);
+  });
+  detail.replaceChildren();
+  if(!id) {
+    detail.append(html('div','READ THE MAP','eyebrow'),html('h2','From feature to dependency.'),html('p','Select any block to see what it owns, what it imports, and which modules import it. You can also use Tab and Enter.'),html('h3','One block, one responsibility'),html('p','Files inside the same feature folder are folded together. Internal imports and third-party dependencies are omitted to keep the graph readable.'),html('h3','Two separate nodes'),html('p','Prompt Librarian uses SQLite and the richer panel. The original Prompt Library uses its own JSON store and dropdown UI.'),html('h3','Imports vs. runtime'),html('p','Solid and dashed arrows describe source dependencies, not execution order. Dotted arrows add HTTP and host connections in the overview. Injected context and callbacks are not import arrows.'));
+    return;
+  }
+  const [title,path,kind,description]=definitions[id];
+  detail.append(html('div',kind,'eyebrow'),html('h2',title),html('div',path,'muted'),html('p',description));
+  for(const [label,predicate,key] of [['Imports',e=>e.from===id,'to'],['Imported by',e=>e.to===id,'from']]) {
+    detail.append(html('h3',label));
+    const matches=edges.filter(e=>predicate(e)&&!['http','host'].includes(e.kind));
+    if(!matches.length)detail.append(html('div','No cross-feature imports in this view.','muted'));
+    matches.forEach(e=>{const b=html('button',definitions[e[key]][0]+(e.kind==='lazy'?' · lazy':''),'dep');b.onclick=()=>select(e[key]);detail.append(b);});
+  }
+  const connections=edges.filter(e=>(e.from===id||e.to===id)&&['http','host'].includes(e.kind));
+  if(connections.length) {
+    detail.append(html('h3','Runtime connections'));
+    connections.forEach(e=>detail.append(html('p',`${definitions[e.from][0]} → ${definitions[e.to][0]} · ${e.kind==='http'?'HTTP requests':'web extension discovery'}`)));
+  }
+  const list=html('details');list.append(html('summary',`${files(id).length} source files`));const ul=html('ul',undefined,'files');
+  files(id).forEach(path=>{const li=html('li'),a=html('a',path);a.href='./'+path;li.append(a);ul.append(li);});list.append(ul);detail.append(list);
+  const evidence=edges.filter(e=>e.from===id).flatMap(e=>e.evidence);
+  if(evidence.length) {
+    const section=html('details');section.append(html('summary','Import references'));
+    const seen=new Set();evidence.forEach(e=>{const key=e.source+' → '+e.target;if(!seen.has(key)){seen.add(key);section.append(html('div',key+(e.kind==='lazy'?' (lazy)':''),'evidence'));}});detail.append(section);
+  }
+}
+document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>{current=b.dataset.view;render();}));
+document.getElementById('reset').addEventListener('click',()=>select(null));
+document.addEventListener('keydown',e=>{if(e.key==='Escape')select(null);});
+render();
+</script>
+</body>
+</html>

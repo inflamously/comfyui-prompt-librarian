@@ -1,11 +1,5 @@
-/* ==========================================================================
-   Prompt Librarian — modal chrome glyphs
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. `const` data only.
-
-   Built from code points rather than pasted characters so they survive these
-   files being served with a wrong or absent charset header.
-   ========================================================================== */
+/* Use code points so glyphs survive an incorrect response charset.
+ */
 
 export const ARROW = String.fromCharCode(0x2192); // →
 export const MIDDOT = String.fromCharCode(0x00b7); // ·

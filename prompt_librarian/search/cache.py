@@ -13,10 +13,7 @@ _index_owner: int | None = None
 
 
 def get_index(store: Any) -> SearchIndex:
-    """Return a :class:`SearchIndex` for ``store``, rebuilt only on rev bump.
-
-    ``store`` needs exactly two methods: ``rev()`` and ``list_all()``.
-    """
+    """Cache by store.rev(); the store must also expose list_all()."""
     global _index_owner
     rev = int(store.rev())
     key = id(store)

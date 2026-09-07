@@ -1,26 +1,14 @@
-/* ==========================================================================
-   Prompt Librarian — openPopover(), the primitive behind every picker
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only.
-   ========================================================================== */
-
 import { NS } from "../shared/ns.js";
 import { h } from "../shared/dom.js";
 import { warnOnce } from "../shared/singleton.js";
 import { bindKeys, isFn, measure, viewport } from "./common.js";
 
-const GAP = 6; // px between the anchor and the popover
-const EDGE = 8; // px minimum distance to any viewport edge
+const GAP = 6;
+const EDGE = 8;
 const MIN_FLIP_ROOM = 96; // never flip into a slot smaller than this
 
-/**
- * Where a popover mounts.
- *
- * `.pl-layers` is a child of `.pl-root` and a SIBLING of `.pl-card`. That is
- * load-bearing, not cosmetic: `.pl-card` sets `contain: layout paint`, which
- * makes it a containing block for `position: fixed` descendants — a popover
- * positioned from getBoundingClientRect() would be offset by the card's
- * origin. Mounting inside `.pl-card` is therefore refused outright.
+/** Mount outside .pl-card: its layout/paint containment would offset fixed
+ * positioning based on viewport coordinates.
  */
 function mountTarget(ctx) {
   let node = null;
@@ -86,14 +74,7 @@ export function openPopover({
   let placedOnce = false;
   const offs = [];
 
-  /**
-   * The live anchor at call time.
-   *
-   * A picker that stays open across a re-render may be holding an element that
-   * is no longer in the document. A detached node measures as an all-zero rect,
-   * which used to place the popover in the top-left corner. So:
-   * a function anchor is re-read on every reposition, and a detached element
-   * anchor is reported as unusable rather than measured.
+  /** Re-resolve anchors after re-render; detached elements measure as zero rectangles.
    */
   function resolveAnchor() {
     let node = anchor;
@@ -133,14 +114,12 @@ export function openPopover({
       try {
         ctx.popLayer(layerHandle);
       } catch (_) {
-        /* ignore */
       }
     }
     if (el.parentNode) {
       try {
         el.parentNode.removeChild(el);
       } catch (_) {
-        /* ignore */
       }
     }
     if (isFn(onClose)) {
@@ -158,20 +137,15 @@ export function openPopover({
       placedOnce = true;
       return;
     }
-    // No usable anchor. If we were placed before, the anchor has just gone
-    // away under a re-render — keep the position we already have instead of
-    // jumping to the corner. Only an anchor that was never usable parks at the
-    // edge, so the popover is visible rather than left off-screen.
+    // If an anchor disappears, retain the previous position; park at the edge only
+    // when it was never usable.
     if (placedOnce) return;
     el.style.top = `${EDGE}px`;
     el.style.left = `${EDGE}px`;
   }
 
-  // ---- mount --------------------------------------------------------------
-  // Exactly one owner of the outside-click behaviour. With a ctx we hand the
-  // element to the modal's layer stack (closeOnOutside:true) and install NO
-  // document listener of our own: two owners race, and the modal would then see
-  // an empty layer stack on pointerup and close the whole modal.
+  // Give outside-click handling one owner. With ctx, use only the layer stack;
+  // a second listener could pop the layer before the modal handles pointerup.
   if (ctx && isFn(ctx.pushLayer)) {
     try {
       layerHandle = ctx.pushLayer({ el, closeOnOutside: true, onClose: close });
@@ -195,7 +169,6 @@ export function openPopover({
     offs.push(() => document.removeEventListener("pointerdown", onDown, true));
   }
 
-  // ---- content ------------------------------------------------------------
   if (isFn(render)) {
     try {
       const out = render(el, handle);
@@ -207,9 +180,7 @@ export function openPopover({
     }
   }
 
-  // ---- keys ---------------------------------------------------------------
-  // Escape is stopped here so the modal's root handler does not pop a second
-  // layer (with no layers left it calls attemptClose() and the MODAL closes).
+  // Stop Escape here so the modal cannot pop a second layer.
   offs.push(
     bindKeys(ctx, el, (e) => {
       if (!e) return;
@@ -221,10 +192,8 @@ export function openPopover({
     })
   );
 
-  // ---- scroll / resize ----------------------------------------------------
-  // A fixed popover does not follow a scrolling ancestor, so it is dismissed
-  // rather than left hanging next to nothing. `capture: true` catches scroll on
-  // any ancestor (scroll events do not bubble).
+  // Dismiss on ancestor scroll: fixed popovers do not follow anchors. Capture is
+  // required because scroll events do not bubble.
   if (typeof window !== "undefined") {
     const onScroll = (e) => {
       const t = e && e.target;
@@ -244,11 +213,6 @@ export function openPopover({
   return handle;
 }
 
-/**
- * Place `el` against `anchor`: prefer below, flip above on bottom overflow
- * when there is room, clamp both axes into the viewport, and cap the height
- * when nothing fits.
- */
 function place(el, anchor, placement) {
   if (!el || !anchor || !isFn(anchor.getBoundingClientRect)) return null;
   let rect;
@@ -258,8 +222,7 @@ function place(el, anchor, placement) {
     return null;
   }
   if (!rect) return null;
-  // A collapsed rect means the anchor is detached or hidden; measuring it would
-  // place us against the viewport origin.
+  // Hidden/detached anchors measure at the origin; do not place against them.
   if (!rect.width && !rect.height && !rect.top && !rect.left) return null;
 
   const { vw, vh } = viewport();
@@ -269,8 +232,7 @@ function place(el, anchor, placement) {
 
   let size = measure(el);
 
-  // Nothing fits anywhere: cap the height and re-measure once, so the flip
-  // decision below is made against the size we will actually render.
+  // After capping height, remeasure before deciding whether to flip.
   const maxH = Math.max(MIN_FLIP_ROOM, vh - 2 * EDGE);
   if (size.h > maxH) {
     el.style.maxHeight = `${Math.round(maxH)}px`;
@@ -286,7 +248,6 @@ function place(el, anchor, placement) {
   } else if (wantTop) {
     flipped = roomAbove >= Math.min(size.h, MIN_FLIP_ROOM);
   } else {
-    // Overflows the bottom AND there is more usable room above → flip.
     flipped =
       size.h > roomBelow && roomAbove > roomBelow && roomAbove >= Math.min(size.h, MIN_FLIP_ROOM);
   }

@@ -1,34 +1,16 @@
-/* ==========================================================================
-   Prompt Library (the OLD node) — combo label building
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. ComfyUI imports every .js under WEB_DIRECTORY as an
-   extension, so this file is evaluated whether or not anything imports it.
-   Exports and `const` data only.
-
-   A category's prompts are shown in a combo, and a combo can only show one
-   line. These helpers turn full prompt bodies into short, distinguishable
-   labels.
-   ========================================================================== */
-
 /** Shown when a combo has nothing to offer. Also the "no category" sentinel. */
 export const EMPTY_LABEL = "<empty>";
 
 const MAX_LABEL = 50;
 
-/** Collapse whitespace and cap at MAX_LABEL characters. */
 export function truncate(t) {
     const s = (t || "").replace(/\s+/g, " ").trim();
     if (!s) return "(empty)";
     return s.length > MAX_LABEL ? s.slice(0, MAX_LABEL) + "…" : s;
 }
 
-/**
- * Labels for a category's prompts.
- *
- * When the prompts share a long common prefix and/or suffix (the usual case
- * for variations on one base prompt) the shared part is elided and only the
- * differing middle is shown, so the combo lists what actually differs rather
- * than fifty identical openings. Duplicated labels get a `(2)`, `(3)` suffix.
+/** Elide substantial shared prefixes/suffixes so variations remain distinguishable.
+ * Suffix duplicate labels to keep the combo mapping unique.
  */
 export function makeLabels(texts) {
     const tokenize = t => (t || "").trim().split(/\s+/).filter(Boolean);

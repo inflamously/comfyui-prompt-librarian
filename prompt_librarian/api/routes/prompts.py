@@ -1,10 +1,5 @@
-"""A single record's life: read it, write it, merge it away.
-
-Every write here is offloaded and every one that touches exactly one record
-calls :func:`..indexing._patch_dupes` inside the same executor hop, so the
-all-pairs cache is re-keyed rather than thrown away. ``/meta`` is the odd one
-out: a POST that only reads, because a node face wants ten records at once and
-that is a body, not a query string.
+"""Patch duplicate caches inside the same executor hop as single-record writes.
+/meta uses POST for a batch of IDs despite being read-only.
 """
 
 from ... import dedupe
@@ -49,9 +44,7 @@ async def meta(request):
     records = STORE.get_many(ids)
     counts = dedupe.page_dupe_counts(STORE, list(records), _threshold(data.get("threshold")),
                                      rev=_rev())
-    # The same rev-keyed index `/search` labels its rows from, so a node face
-    # and the list row above it can never disagree about what a record is
-    # called.
+    # Use the same revision-keyed labels as search and node faces.
     index = _labeller(records.values())
     out = {}
     for pid, rec in records.items():
@@ -105,8 +98,7 @@ async def update(request):
             notes=_opt(data, "notes"),
             pinned=(_bool(data.get("pinned")) if "pinned" in data else None),
             snapshot=_bool(data.get("snapshot"), True),
-            # The half of "never a silent overwrite" that covers two tabs
-            # editing the same record: a mismatch raises ConflictError -> 409.
+            # Reject stale writes from other tabs with ConflictError (409).
             expect_updated=_opt(data, "expect_updated"),
         )
         _patch_dupes(old, rec, old_rev)

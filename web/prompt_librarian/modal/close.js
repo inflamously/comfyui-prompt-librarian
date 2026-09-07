@@ -1,19 +1,6 @@
-/* ==========================================================================
-   Prompt Librarian — save-on-close and teardown
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-
-   Closing NEVER strands the user. There used to be a `Discard unsaved edits?`
-   bar here that refused to close and made you choose between losing the edit
-   and staying put; every close path hit it, so a dirty buffer meant the modal
-   could not be dismissed at all. Now a dirty buffer is simply saved first.
-
-   The save goes through the ordinary inspector flow (ctx.requestSave), which
-   means the two gates in inspector/save.js still stand: a record changed
-   elsewhere, or a near-duplicate, opens its dialog and the modal STAYS OPEN.
-   Those are the only cases where closing could silently corrupt the library,
-   and they are the only cases that still interrupt.
-   ========================================================================== */
+/* Save dirty edits before closing. Keep the modal open unless the inspector
+ * returns "saved" or "clean"; conflicts and failed writes must remain visible.
+ */
 
 import { NS } from "../shared/ns.js";
 import { singletonBag } from "../shared/singleton.js";
@@ -33,11 +20,6 @@ export function isDirty() {
   }
 }
 
-/**
- * The close button, disabled while a save-on-close is in flight. The save runs
- * a staleness GET and a duplicate POST before it can commit, so without this
- * the button reads as broken for the length of a round trip.
- */
 function setClosingBusy(on) {
   const it = inst();
   const btn = it.els && it.els.close;
@@ -45,18 +27,11 @@ function setClosingBusy(on) {
   try {
     btn.disabled = !!on;
   } catch (_) {
-    /* ignore */
   }
 }
 
-/**
- * Close, saving first when there is anything to save.
- *
- * Returns true only when the modal is already gone. A dirty buffer makes this
- * ASYNCHRONOUS: it returns false and closes later, once ctx.requestSave() has
- * reported "saved" or "clean". "blocked" means the save flow put a decision on
- * screen (remote change / duplicate) and the modal must stay. No current
- * caller reads the return value.
+/** Return true if closed synchronously; dirty edits close asynchronously only
+ * after saved/clean. Other save statuses leave the modal open.
  */
 export function attemptClose() {
   const it = inst();
@@ -67,9 +42,7 @@ export function attemptClose() {
   if (it.closing) return false; // Esc mashing must not stack saves
 
   const save = it.ctx && it.ctx.requestSave;
-  // Dirty with no save hook should be impossible — inspector/index.js
-  // registers both in one block — but an undismissable modal is worse than a
-  // lost buffer, and the sessionStorage draft still holds the text.
+  // Missing hooks must not trap the modal; draft persistence is the fallback.
   if (typeof save !== "function") {
     closeModal();
     return true;
@@ -94,11 +67,7 @@ export function attemptClose() {
   return false;
 }
 
-/**
- * Close and dismantle everything that could outlive the modal: both key
- * layers, the ResizeObserver, the heartbeat, every debounce, every lane, the
- * layer stack. The DOM itself is kept and hidden — rebuilding it on every open
- * costs a frame for nothing.
+/** Tear down listeners, timers, requests, and layers; retain only the hidden shell.
  */
 export function closeModal() {
   const bag = singletonBag();
@@ -123,19 +92,16 @@ export function closeModal() {
     try {
       it.ro.disconnect();
     } catch (_) {
-      /* ignore */
     }
     it.ro = null;
   }
 
-  // Panes register their debounces here so one loop cancels them all.
   const c = it.ctx;
   if (c && Array.isArray(c.debounces)) {
     for (const d of c.debounces) {
       try {
         if (d && typeof d.cancel === "function") d.cancel();
       } catch (_) {
-        /* ignore */
       }
     }
   }
@@ -151,7 +117,6 @@ export function closeModal() {
     try {
       back.focus();
     } catch (_) {
-      /* ignore */
     }
   }
 }

@@ -1,17 +1,6 @@
-/* ==========================================================================
-   Prompt Librarian — caret insertion
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only.
-   ========================================================================== */
-
 import { isFn } from "./common.js";
 
-/**
- * Announce a programmatic value change.
- *
- * Load-bearing: without it the inspector's dirty flag never flips and the
- * 400 ms dupe debounce never fires. `setRangeText` does NOT fire `input` by
- * itself, so exactly one event is dispatched on either path.
+/** setRangeText does not fire input; dispatch once so dirty state and dupe checks update.
  */
 export function dispatchInput(ta) {
   try {
@@ -20,7 +9,6 @@ export function dispatchInput(ta) {
       return;
     }
   } catch (_) {
-    /* fall through */
   }
   try {
     if (typeof document !== "undefined" && isFn(document.createEvent)) {
@@ -33,11 +21,7 @@ export function dispatchInput(ta) {
   }
 }
 
-/**
- * Insert `text` at the caret, replacing any selection, and leave the caret
- * after the insertion.
- *
- * @param {HTMLTextAreaElement|HTMLInputElement} ta
+/** @param {HTMLTextAreaElement|HTMLInputElement} ta
  * @param {string} text
  * @returns {boolean} whether anything was inserted
  */

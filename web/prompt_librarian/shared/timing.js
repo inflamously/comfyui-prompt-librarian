@@ -1,9 +1,3 @@
-/* ==========================================================================
-   Prompt Librarian — debounce / rAF throttle
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports only — neither helper starts a timer until called.
-   ========================================================================== */
-
 /**
  * Debounce with `.cancel()` and `.flush()`.
  *

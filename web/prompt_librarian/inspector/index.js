@@ -1,32 +1,6 @@
-/* ==========================================================================
-   Prompt Librarian — the inspector (the right pane)
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. ComfyUI imports EVERY .js under WEB_DIRECTORY as an
-   extension, so this file is loaded whether or not anything imports it.
-   Exports only — no module-scope work, no listeners, no fetches.
-
-   Owns: the derived label readout / tags, the prompt textarea and its
-   counts, the duplicate-check panel, the four stat tiles, and the action row
-   — plus the save flow, which is the feature this whole pane exists for.
-
-   Feature files in this directory:
-
-     view.js        the markup, built once
-     dupes.js       the live duplicate panel and its threshold control
-     drafts.js      per-record sessionStorage drafts
-     save.js        THE SAVE FLOW — never a silent overwrite
-     neighbours.js  the lazy reaches into pickers/ and compare/
-     layers.js      the pane's own popovers and inline dialogs
-     records.js     pure record/payload shapes
-     helpers.js     the DOM/format helper table, with fallbacks
-
-   They share one mutable `pane` object rather than a closure, which is what
-   lets each of them live in its own file while still reading and writing the
-   same edit buffer. Only this file creates it.
-
-   Never innerHTML. Prompt bodies and tags are user data — h() and
-   textContent only.
-   ========================================================================== */
+/* Feature modules share one mutable pane object, created here.
+ * Render prompt bodies and tags as text, never HTML.
+ */
 
 import { LDQUO, MUL, RDQUO } from "./constants.js";
 import { createDrafts } from "./drafts.js";
@@ -50,14 +24,9 @@ import { buildView } from "./view.js";
 export function mountInspector(el, ctx) {
   const D = resolveHelpers(ctx);
 
-  /* ------------------------------------------------------------------ *
-   * Shared pane state.                                                  *
-   * `buf` is the live edit buffer, mutated in place and never replaced. *
-   * It is mirrored into state.buffer on every change with {silent:true}:*
-   * subscribers must not re-render the pane on every keystroke, but     *
-   * everyone else (close guard, list, node loader) still gets to read   *
-   * the current draft off the state.                                    *
-   * ------------------------------------------------------------------ */
+  /* Mutate buf in place and mirror silently to shared state: guards need fresh
+   * values, but subscribers must not rebuild the editor on each keystroke.
+   */
   const pane = {
     ctx,
     el,
@@ -74,24 +43,14 @@ export function mountInspector(el, ctx) {
     pendingId: null, // id of an in-flight selectPrompt fetch
     leaving: false, // the unsaved-changes gate is on screen
     pendingDraft: null,
-    /**
-     * The last body that arrived FROM the node.
-     *
-     * Deliberately a value, not a flag or a depth counter: `pushBody` is
-     * rAF-coalesced, so it runs a frame after the edit that queued it — any
-     * "we are currently applying an inbound value" marker would already be
-     * cleared by then and would suppress nothing. Comparing the buffer
-     * against the last inbound value still holds a frame later, and
-     * self-clears the moment the user types anything of their own.
+    /** Track the inbound value, not a temporary flag: the outbound rAF callback
+     * runs after inbound processing has finished.
      */
     lastInbound: null,
   };
 
   const subs = [];
 
-  /* ------------------------------------------------------------------ *
-   * Small utilities.                                                    *
-   * ------------------------------------------------------------------ */
 
   const S = () => (typeof ctx.getState === "function" ? ctx.getState() || {} : {});
 
@@ -102,13 +61,7 @@ export function mountInspector(el, ctx) {
     } catch (_) { /* a toast failing must never break a flow */ }
   }
 
-  /**
-   * The "loaded into the node" notice, at most one on screen.
-   *
-   * Arrow-keying down the list is a load per row, and four seconds of toast
-   * each would stack a column of them faster than they expire. Superseding the
-   * previous one keeps the feedback truthful (it always names the prompt that
-   * is in the node now) without turning browsing into a wall of chrome.
+  /** Replace the previous load notice so rapid row navigation cannot stack toasts.
    */
   let lastLoadToast = null;
   function loadToast(label) {
@@ -125,7 +78,6 @@ export function mountInspector(el, ctx) {
     } catch (_) { /* a toast failing must never break a selection */ }
   }
 
-  /** Only an explicit `false` disables a control; unknown caps stay enabled. */
   function capOk(name) {
     const caps = (ctx && ctx.caps) || S().caps || {};
     return caps[name] !== false;
@@ -136,7 +88,6 @@ export function mountInspector(el, ctx) {
     return capOk("diff") && capOk("compare");
   }
 
-  /** Run through a named request lane when one exists. */
   function lane(name, fn) {
     const l = ctx.lanes && ctx.lanes[name];
     if (typeof l === "function") return l(fn);
@@ -154,7 +105,6 @@ export function mountInspector(el, ctx) {
     };
   }
 
-  /** Mirror the buffer into shared state. Silent by default: see above. */
   function syncBuffer(silent = true) {
     try {
       if (typeof ctx.setState === "function") ctx.setState({ buffer: getBuffer() }, { silent: !!silent });
@@ -163,9 +113,6 @@ export function mountInspector(el, ctx) {
 
   Object.assign(pane, { S, toast, capOk, diffOk, lane, isDirty, getBuffer, syncBuffer });
 
-  /* ------------------------------------------------------------------ *
-   * Layers, then markup.                                                *
-   * ------------------------------------------------------------------ */
 
   const layerHost = createLayerHost(pane);
   Object.assign(pane, layerHost);
@@ -178,9 +125,6 @@ export function mountInspector(el, ctx) {
 
   const ta = els.ta;
 
-  /* ------------------------------------------------------------------ *
-   * Rendering.                                                          *
-   * ------------------------------------------------------------------ */
 
   function renderCounts() {
     els.charsEl.textContent = D.fmtInt(D.charCount(pane.buf.body));
@@ -189,14 +133,8 @@ export function mountInspector(el, ctx) {
     renderLabel();
   }
 
-  /**
-   * The handle this record is known by, which is a derived thing.
-   *
-   * While the buffer matches what was saved, the backend's corpus-derived
-   * label is the truth — it knows which of these words no other prompt uses,
-   * and this pane does not. The moment the body is edited that answer is about
-   * text that no longer exists, so the readout falls back to the head of what
-   * is actually in the box and picks the real label back up on save.
+  /** Use the server label for unchanged bodies; edited/unsaved text uses the
+   * local fallback because its corpus label is no longer valid.
    */
   function renderLabel() {
     const rec = pane.current || {};
@@ -275,8 +213,6 @@ export function mountInspector(el, ctx) {
   function renderActions() {
     const hasRec = !!(pane.current && pane.current.id);
     els.delBtn.disabled = !hasRec || pane.saving;
-    // `Update` overwrites the selected record — nothing to overwrite without
-    // one, and it is never the default path (see inspector/save.js).
     els.saveBtn.disabled = !hasRec || pane.saving;
     els.saveNewBtn.disabled = pane.saving;
     els.newBtn.disabled = pane.saving;
@@ -285,9 +221,6 @@ export function mountInspector(el, ctx) {
     els.versV.disabled = !capOk("versions") || !hasRec;
   }
 
-  /* ------------------------------------------------------------------ *
-   * Edit plumbing.                                                      *
-   * ------------------------------------------------------------------ */
 
   function afterEdit(bodyChanged) {
     syncBuffer(true);
@@ -296,22 +229,13 @@ export function mountInspector(el, ctx) {
       pane.dupePaused = false;
       pane.scheduleDupes();
       pane.scheduleDraft();
-      // The one outbound hook. Every edit path funnels through here — the
-      // textarea's `oninput`, insertAtCaret() and setBody() — so binding it in
-      // one place is what keeps the node from ever missing a keystroke.
+      // Route every edit source through one outbound hook.
       pushBody();
     }
   }
 
-  /* ------------------------------------------------------------------ *
-   * Node binding — outbound half.                                       *
-   * --------------------------------------------------------------------
-   * modal/binding.js owns the binding itself (the link toggle, the       *
-   * observer, the echo guard). This end only has to answer one question: *
-   * is this edit ours to push? It is not, when the edit ARRIVED from the *
-   * node — pushing it straight back would be a round trip for nothing,   *
-   * and on a slow frontend a visible one.                                *
-   * ------------------------------------------------------------------ */
+  /* Skip inbound node values to avoid echoing them back after the queued frame.
+   */
 
   /** rAF-coalesced: a fast typist must not force a canvas repaint per key. */
   const pushBody = D.rafThrottle(() => {
@@ -323,10 +247,7 @@ export function mountInspector(el, ctx) {
     } catch (_) { /* the binding is a convenience here, never a dependency */ }
   });
 
-  /**
-   * Push a whole record — body AND link — to the node. Used only on explicit
-   * user selection; see the `push` option on adoptRecord() for why it is not
-   * simply "whenever the record changes".
+  /** Push body and link only on explicit selection, not background refresh.
    */
   function pushRecord(rec) {
     if (!rec || typeof ctx.pushToNode !== "function") return;
@@ -337,17 +258,11 @@ export function mountInspector(el, ctx) {
         String(rec.body == null ? "" : rec.body),
         String(rec.id == null ? "" : rec.id)
       );
-      // Picking a row moves the node's prompt out from under the user, so say
-      // so — every time, since a selection is always deliberate. `unchanged`
-      // means the node already held this record and nothing moved; a silent
-      // no-op there beats a toast claiming a load that did not happen.
+      // Show load feedback only if selection actually changed the node.
       if (res && res.ok && !res.unchanged) loadToast(D.labelOf(rec) || rec.id);
     } catch (_) { /* never block a selection on the binding */ }
   }
 
-  /* ------------------------------------------------------------------ *
-   * Selection / adoption.                                               *
-   * ------------------------------------------------------------------ */
 
   /**
    * Take a server record as the new selection.
@@ -387,28 +302,8 @@ export function mountInspector(el, ctx) {
     renderFields();
   }
 
-  /**
-   * Unsaved-changes gate, run before the selection moves off an edited record.
-   *
-   * Picking a row in the sidebar used to park the edit in a sessionStorage
-   * draft and switch away without a word. The draft bar does surface it again
-   * later, but only if the user happens to come back to that exact record —
-   * so from where the user stands the edit simply vanished. Hence the ask.
-   *
-   * Three answers, and the cancel is the one every dismissal maps to:
-   *   "save"    commit, and only switch if the commit actually landed. A
-   *             conflict or dupe gate returns "blocked" with its own dialog on
-   *             screen; switching then would yank the record out from under
-   *             the decision the user is being asked to make.
-   *   "discard" drop the buffer AND the parked draft — "discard" has to mean
-   *             gone, or the draft bar resurrects it on the next visit and
-   *             makes a liar out of this dialog.
-   *   cancel    stay put, and put `currentId` back so the sidebar highlight
-   *             re-follows the record still in the editor.
-   *
-   * Degrades to the old park-a-draft behaviour when the host modal has no
-   * choiceDialog (inspector/ is mounted by panes.js and must tolerate an older
-   * or partial modal).
+  /** Gate selection changes so unsaved edits are saved or explicitly discarded
+   * before adopting another record.
    *
    * @param {string} nextId the record about to be selected
    * @returns {Promise<boolean>} true when the switch may proceed
@@ -418,12 +313,10 @@ export function mountInspector(el, ctx) {
     const curId = rec && rec.id ? String(rec.id) : "";
     if (curId && curId === String(nextId)) return true;
     if (!isDirty()) return true;
-    // Nothing typed at all — an empty buffer is not worth a dialog.
     if (!pane.buf.body.trim() && !curId) return true;
     if (typeof ctx.choiceDialog !== "function") { pane.saveDraft(); return true; }
 
-    // Always a create: leaving an edit behind is exactly where an accidental
-    // overwrite hurts most. Overwriting stays on the `Update` button.
+    // Leaving creates a record; overwrites require explicit Update.
     const asNew = true;
     const label = rec ? D.labelOf(rec) || rec.id : "";
     let answer = "cancel";
@@ -453,9 +346,7 @@ export function mountInspector(el, ctx) {
       pane.discardDraft();
       if (curId) {
         pane.clearDraft(curId);
-        // Roll the buffer back to the stored record BEFORE leaving. Clearing
-        // only the sessionStorage draft would leave the buffer dirty, and the
-        // draft-parking line below would helpfully write it straight back.
+        // Clean the buffer before leaving, or draft parking would recreate the discarded edit.
         adoptRecord(pane.current);
       }
       return true;
@@ -464,7 +355,6 @@ export function mountInspector(el, ctx) {
     return false;
   }
 
-  /** Point `currentId` back at what the editor is actually showing. */
   function restoreSelection() {
     try {
       if (typeof ctx.setState === "function") {
@@ -485,14 +375,9 @@ export function mountInspector(el, ctx) {
     // modal/ctx.js may both patch `currentId` (which we subscribe to) and call
     // ctx.inspector.select() for the same click; one fetch is enough.
     if (pane.pendingId != null && pane.pendingId === String(id)) return;
-    // Re-picking the row that is already open, with edits in the box: the
-    // fetch below would adopt the stored record and silently eat them. The
-    // gate cannot help here — there is nothing to switch to — so the only
-    // right answer is to leave the editor alone.
+    // Re-selecting an edited record must not reload and discard its buffer.
     if (pane.renderedId && pane.renderedId === String(id) && isDirty()) return;
-    // One question at a time: a second row clicked while the gate is on screen
-    // would stack dialogs, and answering the first would then switch to the
-    // wrong record.
+    // Serialize leave decisions so a second click cannot redirect the first answer.
     if (pane.leaving) return;
     pane.leaving = true;
     let mayLeave;
@@ -502,8 +387,7 @@ export function mountInspector(el, ctx) {
       pane.leaving = false;
     }
     if (!mayLeave || pane.disposed) return;
-    // Park the outgoing edit anyway: "save" and "discard" both leave a clean
-    // buffer, so this only ever fires on the no-dialog fallback path.
+    // Only the no-dialog fallback can still have an outgoing dirty buffer.
     if (pane.current && pane.current.id && String(pane.current.id) !== String(id) && isDirty()) pane.saveDraft();
     pane.pendingId = String(id);
     let r;
@@ -519,16 +403,12 @@ export function mountInspector(el, ctx) {
     let rec;
     try { rec = unwrapRecord(ensureOk(r)); } catch (err) { toast("could not load prompt: " + errMsg(err), "error"); return; }
     if (!rec || !rec.id) { toast("prompt not found", "error"); return; }
-    // The user picked this row, so it goes to the node — body and link both.
     adoptRecord(rec, { push: true });
     pane.maybeOfferDraft(rec);
     pane.scheduleDupes.cancel();
     pane.runDupes(false);
   }
 
-  /* ------------------------------------------------------------------ *
-   * Field editors.                                                      *
-   * ------------------------------------------------------------------ */
 
   function removeTag(tag) {
     pane.buf.tags = pane.buf.tags.filter((t) => t !== tag);
@@ -563,9 +443,6 @@ export function mountInspector(el, ctx) {
     afterEdit(true);
   }
 
-  /* ------------------------------------------------------------------ *
-   * Rating — optimistic, reverts on failure.                            *
-   * ------------------------------------------------------------------ */
 
   function onStarClick(e) {
     const t = e && e.target;
@@ -589,7 +466,7 @@ export function mountInspector(el, ctx) {
     const next = Math.max(0, Math.min(5, Math.round(value)));
     if (next === prev) return;
     pane.ratingBusy = true;
-    pane.current.rating = next; // optimistic
+    pane.current.rating = next;
     renderStars(next);
     try {
       const r = await ctx.API.rate(id, next);
@@ -604,7 +481,7 @@ export function mountInspector(el, ctx) {
       }
     } catch (err) {
       if (pane.current && pane.current.id === id) {
-        pane.current.rating = prev; // revert
+        pane.current.rating = prev;
         renderStars(prev);
       }
       toast("could not save rating: " + errMsg(err), "error");
@@ -613,9 +490,6 @@ export function mountInspector(el, ctx) {
     }
   }
 
-  /* ------------------------------------------------------------------ *
-   * Delete.                                                             *
-   * ------------------------------------------------------------------ */
 
   async function remove() {
     if (!pane.current || !pane.current.id) return;
@@ -647,20 +521,8 @@ export function mountInspector(el, ctx) {
     if (typeof ctx.refreshAll === "function") ctx.refreshAll();
   }
 
-  /* ------------------------------------------------------------------ *
-   * New prompt.                                                         *
-   * ------------------------------------------------------------------ */
 
-  /**
-   * Empty the editor and start an unsaved prompt.
-   *
-   * Deselecting is the whole trick: with `current`/`baseline` gone, the pane is
-   * in exactly the state it has before anything is picked, so Save becomes a
-   * create and the dupe panel, stats and draft bar all reset themselves.
-   *
-   * It goes through the same unsaved-changes gate a row click does — clearing
-   * the box is a way of leaving the record too, and the one thing this button
-   * must never do is throw away an edit the user has not saved.
+  /** Deselect before clearing so Save creates a new record. Gate unsaved changes first.
    */
   async function newPrompt() {
     if (pane.disposed || pane.leaving) return;
@@ -675,23 +537,17 @@ export function mountInspector(el, ctx) {
 
     pane.pendingId = null;
     pane.dupeSeq++; // any in-flight dupe answer is about the old body
-    // Not silent: the sidebar highlight follows `current`, and it has to let
-    // go of the row whose text is no longer in the editor.
+    // Notify state subscribers so the old row highlight clears.
     adoptRecord(null, { silent: false });
     try {
       if (typeof ctx.setState === "function") ctx.setState({ currentId: null });
     } catch (_) { /* the highlight is cosmetic; never block on it */ }
     pane.publishDupes([], false);
-    // The node's textarea is the same value seen from the canvas, so it clears
-    // with this one. setBody() is the only path that pushes, which is why the
-    // adoptRecord() above (deliberately push-free) cannot do it.
+    // Use setBody to clear the bound node too; adoptRecord does not push by default.
     setBody("");
     focusBody();
   }
 
-  /* ------------------------------------------------------------------ *
-   * Public surface.                                                     *
-   * ------------------------------------------------------------------ */
 
   /**
    * Replace the prompt body.
@@ -748,18 +604,12 @@ export function mountInspector(el, ctx) {
     focusBody,
   });
 
-  /* ------------------------------------------------------------------ *
-   * The feature modules. Each attaches its own functions to `pane`.     *
-   * ------------------------------------------------------------------ */
 
   const { scheduleDupes } = createDupes(pane);
   const { scheduleDraft } = createDrafts(pane);
   createNeighbours(pane);
   createSave(pane);
 
-  /* ------------------------------------------------------------------ *
-   * Subscriptions.                                                      *
-   * ------------------------------------------------------------------ */
 
   function onCurrentChanged() {
     if (pane.disposed) return;
@@ -767,9 +617,7 @@ export function mountInspector(el, ctx) {
     const rec = st.current || null;
     const id = rec && rec.id ? String(rec.id) : null;
     if (id === pane.renderedId) {
-      // Same record. Only re-adopt when the user has nothing to lose; a
-      // background refresh must never eat an in-progress edit (the staleness
-      // check on save is what covers that case).
+      // Do not re-adopt during an edit; save-time concurrency checks handle remote changes.
       if (rec && !isDirty()) adoptRecord(rec);
       return;
     }
@@ -800,27 +648,14 @@ export function mountInspector(el, ctx) {
       ctx.subscribe("currentId", onCurrentIdChanged),
       ctx.subscribe("dupes", () => { if (!pane.disposed) pane.renderDupes(); }),
       ctx.subscribe("caps", () => { if (!pane.disposed) { applyCaps(); renderActions(); } }),
-      // No `targetOk` subscription: nothing in this pane's action row depends
-      // on the target node any more. The header chip (modal/target.js) is the
-      // one place that reports a stale target.
     ];
     for (const off of offs) if (typeof off === "function") subs.push(off);
   }
 
-  /* ------------------------------------------------------------------ *
-   * Registration on the shared ctx.                                     *
-   * --------------------------------------------------------------------
-   * modal/ctx.js documents these hooks on the ctx object it hands every  *
-   * pane (`ctx.inspector = {select}` and `ctx.isDirty`), and it discards *
-   * the return value of mountInspector — so registering here is what     *
-   * wires the list's row activation and the close-guard to this pane.    *
-   * Purely additive, and undone on unmount.                              *
-   * ------------------------------------------------------------------ */
+  /* Register on the stable context; the modal reaches panes through these hooks.
+   */
   const registered = { inspector: false, isDirty: false, requestSave: false, debounces: false };
-  /**
-   * Always a promise, never a throw: the modal's Ctrl+S and close paths await
-   * this and must not have to defend against a synchronous exception.
-   * Resolves to the save-status vocabulary documented in inspector/save.js.
+  /** Always return a promise of a save status; Ctrl+S and close await this hook.
    */
   function requestSave(asNew) {
     return Promise.resolve()
@@ -839,8 +674,7 @@ export function mountInspector(el, ctx) {
         ctx.isDirty = isDirty;
         registered.isDirty = true;
       }
-      // Paired with ctx.isDirty on purpose: close.js only reaches for this
-      // hook once isDirty() has already said there is something to save.
+      // Register requestSave with isDirty so close never observes only one hook.
       if (typeof ctx.requestSave !== "function") {
         ctx.requestSave = requestSave;
         registered.requestSave = true;
@@ -852,9 +686,6 @@ export function mountInspector(el, ctx) {
     }
   } catch (_) { /* a frozen ctx just means no registration */ }
 
-  /* ------------------------------------------------------------------ *
-   * Initial paint (from whatever the state already holds).              *
-   * ------------------------------------------------------------------ */
   {
     const st = S();
     if (st.current) adoptRecord(st.current);
@@ -870,7 +701,6 @@ export function mountInspector(el, ctx) {
     try { scheduleDraft.cancel(); } catch (_) {}
     // A queued rAF push would fire into a node we no longer own the pane for.
     try { pushBody.cancel(); } catch (_) {}
-    // Abort in-flight lane work when the lane exposes a way to.
     try {
       const l = ctx.lanes || {};
       for (const key of ["dupe", "record"]) {

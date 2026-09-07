@@ -1,36 +1,5 @@
-"""Prompt Librarian domain — node, store, search, dedupe, wildcards and routes.
-
-Module layout, highest layer first (each may import the ones below it, never
-the ones above — enforced by the import-linter contract in ``pyproject.toml``):
-
-``node``
-    The ``PromptLibrarian`` ComfyUI node.
-``api``
-    The ``/prompt_librarian/*`` aiohttp routes — a package of its own:
-    ``config`` (constants), ``utils`` (route table and coercion), ``indexing``
-    and ``queries`` (the plumbing a write and a read share), ``routes`` (the
-    handlers, one module per feature group), ``api`` (that package assembled
-    into a table), ``registration`` (the startup wiring), ``schemas`` (what
-    each endpoint takes and returns, as dataclasses) and ``openapi`` (those
-    two as a spec, loaded only by the script that emits it). Registered by
-    the pack root via
-    :func:`prompt_librarian.api.register`; importing this package does not
-    touch aiohttp.
-``wildcards``
-    ``{a|b}`` / ``__file__`` / ``[[snippet]]`` expansion.
-``dedupe``
-    Near-duplicate detection and diffing.
-``search``
-    Normalisation, tokenising, ranking.
-``labels``
-    Corpus-derived display handles for records.
-``store``
-    Persistence — the bottom of the stack. ``sqlite_store`` owns the live
-    database; JSON/JSONL are migration and portable export formats.
-
-Only the node is re-exported here; the pack root imports ``api`` explicitly,
-inside its own guard, so a failure in the route stack cannot take the node down
-with it.
+"""Keep API imports in the pack root's separate guard so route failures cannot
+prevent the node from loading. Domain layering is enforced in pyproject.toml.
 """
 
 from .node import PromptLibrarian

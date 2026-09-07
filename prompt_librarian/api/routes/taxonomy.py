@@ -1,10 +1,3 @@
-"""The filter rail: the tags, with counts.
-
-Tags have no write endpoint of their own — they exist only as a field on
-records, so ``/bulk/retag`` is where they are written and this is where they
-are read.
-"""
-
 from ...store import STORE
 from .. import schemas
 from ..utils import _json, _route

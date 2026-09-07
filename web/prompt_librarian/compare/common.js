@@ -1,23 +1,7 @@
-/* ==========================================================================
-   Prompt Librarian — dialog plumbing shared by compare / merge / versions
-   --------------------------------------------------------------------------
-   INERT ON IMPORT. Exports and `const` data only — no listeners, no fetches,
-   no DOM writes at module scope.
-
-   ----------------------------------------------------------------------
-   KEYBOARD: read the KEY ISOLATION block at the top of modal/keys.js first.
-   The modal installs a window-CAPTURE guard that calls
-   stopImmediatePropagation() on every keydown/keyup/keypress originating
-   inside `.pl-root`. A plain `el.addEventListener("keydown", …)` in these
-   files would therefore NEVER fire. Every key handler in this directory goes
-   through `bindKey()` below, which uses `ctx.onKey(el, type, fn)` (the modal's
-   key bus) and falls back to the namespaced `pl:keydown` mirror. Do not
-   "simplify" it back to a plain listener.
-   ----------------------------------------------------------------------
-
-   Never innerHTML: prompt bodies, names and version text are user data that
-   round-trips through JSON. h() + textContent only.
-   ========================================================================== */
+/* Use bindKey/ctx.onKey, not native key listeners: modal/keys.js stops
+ * native events at window capture. pl:keydown is the fallback mirror.
+ * Render prompt and version text through textContent, never innerHTML.
+ */
 
 import { NS } from "../shared/ns.js";
 import { h } from "../shared/dom.js";
@@ -42,19 +26,13 @@ export function quote(s) {
   return LDQUO + str(s) + RDQUO;
 }
 
-/** Word tokens, the same `\S+` split the backend's differ uses. */
 export function tokensOf(text) {
   const s = str(text).trim();
   if (!s) return [];
   return s.split(/\s+/);
 }
 
-/** `{prompt: rec}` / `{record: rec}` / `rec` -> rec. */
-/** Unwrap `{prompt, label}` / `{record}` / a bare record.
- *
- * The derived `label` rides in the envelope beside the record, never inside
- * it — a derived field inside would reach the exported file. Carry it onto the
- * unwrapped copy, which is local and is never sent back.
+/** Carry the envelope's derived label onto a view copy, not the stored record.
  */
 export function unwrapRecord(res) {
   if (!res || typeof res !== "object") return null;
@@ -67,7 +45,6 @@ export function unwrapRecord(res) {
   return rec;
 }
 
-/** A record's display handle: the backend's derived label, else the body head. */
 export function labelOf(rec, n = 64) {
   if (!rec) return "";
   const given = rec.label == null ? "" : String(rec.label).trim();
@@ -111,13 +88,7 @@ export function confirmWith(ctx, opts) {
   return Promise.resolve(false);
 }
 
-/**
- * Bind a key handler that survives the modal's window-capture guard.
- *
- * `ctx.onKey(el, type, fn)` is the supported bus. The `pl:<type>` CustomEvent
- * mirror is the documented fallback (the modal dispatches it on the same
- * target with `detail.event` pointing at the original), used when ctx has no
- * onKey — a plain "keydown" listener would be silently dead.
+/** Prefer the context key bus; use the namespaced mirror when unavailable.
  *
  * @returns {() => void} unbind
  */
@@ -146,11 +117,7 @@ export function isTextEntry(node) {
   return tag === "input" || tag === "textarea" || tag === "select" || node.isContentEditable === true;
 }
 
-/* --------------------------------------------------------------------------
-   Clipboard
-   -------------------------------------------------------------------------- */
 
-/** Feature-detected clipboard write with the hidden-textarea fallback. */
 export function copyText(text) {
   const s = str(text);
   const nav = typeof navigator !== "undefined" ? navigator : null;
@@ -185,19 +152,12 @@ function execCopy(s) {
     try {
       if (ta && ta.parentNode) ta.parentNode.removeChild(ta);
     } catch (_) {
-      /* ignore */
     }
   }
 }
 
-/* --------------------------------------------------------------------------
-   Layers and small widgets
-   -------------------------------------------------------------------------- */
 
-/**
- * Push `el` as a modal layer. Falls back to appending into the root when the
- * modal shell is not built (tests, or this directory loaded standalone), so a
- * dialog is never a silent no-op.
+/** Fall back to mounting in the root when no modal layer stack is available.
  */
 export function openLayer(ctx, el, opts = {}) {
   let handle = null;
@@ -245,7 +205,6 @@ export function openLayer(ctx, el, opts = {}) {
       try {
         ctx.popLayer(handle);
       } catch (_) {
-        /* ignore */
       }
       fire(); // no-op when popLayer already ran the handler
     },
@@ -261,12 +220,10 @@ export function focusFirst(scope) {
     try {
       el.focus();
     } catch (_) {
-      /* ignore */
     }
   }
 }
 
-/** `.pl-btn` with the pack's modifier vocabulary. */
 export function btn(label, opts = {}) {
   const kind = opts.kind || "";
   const extra =
@@ -295,7 +252,6 @@ export function btn(label, opts = {}) {
   return el;
 }
 
-/** Three shimmering bars, reusing the list's skeleton rules. */
 export function skeleton(lines = 3) {
   const box = h("div", { className: "pl-row-skel", "aria-hidden": "true" });
   for (let i = 0; i < lines; i++) {
@@ -304,7 +260,6 @@ export function skeleton(lines = 3) {
   return box;
 }
 
-/** An error row with a retry button — never a bare throw into the console. */
 export function errorRow(message, onRetry) {
   const box = h("div", { className: "pl-list-empty", role: "alert" }, str(message));
   if (typeof onRetry === "function") {

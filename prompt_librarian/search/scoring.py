@@ -20,12 +20,7 @@ def tok(
     tier_edit1: float,
     edit1_min_len: int,
 ) -> float:
-    """Tier score of one query token against one field's token set.
-
-    Evaluated in tier order and short-circuiting: the ``qt in fset``
-    frozenset test is O(1) and is the overwhelmingly common case, so the
-    linear scans below it almost never run.
-    """
+    """Try the O(1) exact match before linear fuzzy scans."""
     if not fset:
         return 0.0
     if qt in fset:
@@ -57,11 +52,8 @@ def score_doc(
     pop_bonus: float,
     rec_bonus: float,
 ) -> tuple[float, int]:
-    """Return ``(score, matched_bitmask)`` for one doc.
-
-    The bitmask records which query tokens scored > 0 in at least one field,
-    so the AND gate for ``mode="all"`` costs one integer compare instead of a
-    second pass over the fields.
+    """Return (score, matched_bitmask); the mask supports mode="all" without
+    rescanning fields.
     """
     tokens = pq.tokens
     n = len(tokens)
@@ -84,7 +76,7 @@ def score_doc(
 
     qnorm = pq.qnorm
     if qnorm:
-        if qnorm in doc.head_norm:  # phrase bonus: str.__contains__
+        if qnorm in doc.head_norm:
             score += phrase_head
         if qnorm in doc.body_norm:
             score += phrase_body

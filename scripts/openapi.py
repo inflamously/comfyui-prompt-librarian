@@ -5,9 +5,9 @@
     python scripts/openapi.py --format json    # the spec, to stdout
     python scripts/openapi.py -o openapi.json  # the spec, to a file
 
-The listing needs nothing but the standard library — importing the route table
-touches neither ComfyUI nor aiohttp. The spec needs pydantic, which generates
-every schema from the dataclasses in ``prompt_librarian/api/schemas.py``:
+The CLI only; the work lives in ``prompt_librarian/api/openapi/``. The listing
+needs nothing but the standard library. The spec needs pydantic, which
+generates every schema from the dataclasses in ``prompt_librarian/api/schemas/``:
 
     pip install -e ".[dev]"
 """
@@ -22,7 +22,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from prompt_librarian.api.utils import _ROUTES  # noqa: E402  (follows sys.path)
+from prompt_librarian.api import openapi  # noqa: E402  (follows sys.path)
 
 _VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"', re.MULTILINE)
 
@@ -37,32 +37,15 @@ def pack_version():
     return match.group(1) if match else "0"
 
 
-def table():
-    """The route table as aligned text — what routes exist, at a glance."""
-    width = max(len(route.path) for route in _ROUTES)
-    out = []
-    for route in _ROUTES:
-        out.append(f"{route.method.upper():<4} {route.path:<{width}}  {route.spec.op}")
-        if route.spec.summary:
-            out.append(f"{'':<4} {'':<{width}}  {route.spec.summary}")
-        takes = route.spec.query or route.spec.body
-        out.append(f"{'':<4} {'':<{width}}  {takes.__name__ + ' ' if takes else ''}"
-                   f"-> {route.spec.returns.__name__}")
-    out.append("")
-    out.append(f"{len(_ROUTES)} routes")
-    return "\n".join(out)
-
-
 def spec(indent):
     """The OpenAPI document as text, or an exit with an actionable message."""
     try:
-        from prompt_librarian.api import openapi
+        doc = openapi.document(version=pack_version())
     except ImportError as exc:
         raise SystemExit(f"{exc}\n\nThe spec is generated with pydantic: "
                          'install the dev extras with `pip install -e ".[dev]"`, '
                          "or use the default --format table, which needs nothing.") from exc
-    return json.dumps(openapi.document(version=pack_version()),
-                      indent=indent or None, sort_keys=False) + "\n"
+    return json.dumps(doc, indent=indent or None, sort_keys=False) + "\n"
 
 
 def main(argv=None):
@@ -76,7 +59,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     if args.format == "table" and not args.out:
-        print(table())
+        print(openapi.table())
         return 0
 
     text = spec(args.indent)
@@ -85,7 +68,7 @@ def main(argv=None):
         return 0
     with open(args.out, "w", encoding="utf-8") as handle:
         handle.write(text)
-    print(f"wrote {args.out} ({len(_ROUTES)} routes)", file=sys.stderr)
+    print(f"wrote {args.out}", file=sys.stderr)
     return 0
 
 

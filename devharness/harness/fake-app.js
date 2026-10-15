@@ -95,7 +95,7 @@ const graph = {
 };
 
 const canvas = {
-  // Passed as the second argument to every widget callback in node/text-sync.js, so
+  // Passed as the second argument to every widget callback in modal/node/text-sync.js, so
   // it must be a stable object rather than undefined.
   selectNode(node) {
     window.dispatchEvent(new CustomEvent("dev:select", { detail: { id: node && node.id } }));

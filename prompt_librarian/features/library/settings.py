@@ -26,11 +26,7 @@ def version_cap(lib: Library) -> int:
 def update_settings(
     lib: Library, dupe_threshold: object = None, version_cap: object = None
 ) -> dict[str, Any]:
-    """Change only the settings given; returns the new settings block.
-
-    Raises:
-        ValueError: ``dupe_threshold`` is not a number.
-    """
+    """Change only the settings given; returns the new settings block."""
     changes: dict[str, Any] = {}
     if dupe_threshold is not None:
         try:

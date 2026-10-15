@@ -24,18 +24,7 @@ def update_prompt(
     snapshot: bool = True,
     expect_updated: str | None = None,
 ) -> Record:
-    """Change the fields given (``None`` leaves one alone) and return the record.
-
-    ``expect_updated`` is checked inside the write transaction, so another tab
-    or process cannot slip a change in between. The pre-edit body becomes a
-    version only when the body changed and ``snapshot`` is set; the stored
-    ``version_cap`` setting bounds the history.
-
-    Raises:
-        NotFoundError: Unknown id.
-        ConflictError: ``expect_updated`` is not the stored ``updated``.
-        BodyTooLargeError: Nothing is written.
-    """
+    """Change the fields given (``None`` leaves one alone) and return the record."""
     with lib.write("update") as work:
         rec = entries.get(work.con, pid)
         if rec is None:
@@ -57,10 +46,7 @@ def update_prompt(
 def _apply(
     rec: Record, changes: dict[str, object], snapshot: bool, cap: Callable[[], int]
 ) -> Record | None:
-    """The edited record, or ``None`` when nothing would change.
-
-    Only a body snapshot grows the history, so only then is the stored cap read.
-    """
+    """The edited record, or ``None`` when nothing would change."""
     wanted = {key: value for key, value in changes.items() if key in _FIELDS and value is not None}
     cleaned = clean_record({**rec, **wanted})
     if all(cleaned[key] == rec[key] for key in _FIELDS):

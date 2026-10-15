@@ -1,0 +1,77 @@
+/* Page layout for the widget gallery only; the widgets themselves are styled
+   by the pack's shared/ui sheets, exactly as in the modal. */
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: #070912;
+}
+
+#wg-root {
+  display: block;
+  padding: 24px;
+}
+
+#wg-root h1 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+#wg-root .wg-intro {
+  margin: 0 0 20px;
+  color: var(--pl-text-dim);
+}
+
+#wg-root .wg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+#wg-root .wg-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--pl-bg-pane);
+  border: 1px solid var(--pl-border-soft);
+  border-radius: var(--pl-radius-sm);
+}
+
+#wg-root .wg-card > h2 {
+  margin: 0;
+  font-family: var(--pl-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--pl-text-dim);
+}
+
+#wg-root .wg-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+#wg-root .wg-list {
+  position: relative;
+  height: 260px;
+  border: 1px solid var(--pl-border-soft);
+  border-radius: var(--pl-radius-sm);
+}
+
+#wg-root .wg-out {
+  font-family: var(--pl-mono);
+  font-size: 11.5px;
+  color: var(--pl-text-dim);
+}
+
+/* The modal's .pl-root is fixed and full-screen; this page scrolls, so pin the
+   overlay hosts to the viewport instead. */
+#wg-root > .pl-layers,
+#wg-root > .pl-toasts {
+  position: fixed;
+}

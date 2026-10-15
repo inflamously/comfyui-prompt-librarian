@@ -5,14 +5,7 @@ from . import _index, _pictures
 
 
 def order_word_images(root: str, word: str, ids: list[str]) -> dict[str, object]:
-    """Put the word's pictures in the order of ``ids`` and rebuild its mosaic.
-
-    Ids that are not the word's are ignored; pictures left out keep their
-    relative order after the listed ones, so a stale client loses nothing.
-
-    Raises:
-        NotFoundError: The word has no pictures.
-    """
+    """Put the word's pictures in the order of ``ids`` and rebuild its mosaic."""
     key = _index.normalize(word)
     with _index.LOCK:
         index = _index.read_index(root)

@@ -12,23 +12,7 @@ SOURCES = ("manual", "generated")
 def attach_word_image(
     root: str, words: str | list[str], source: str, kind: str = "manual"
 ) -> dict[str, object]:
-    """Add a thumbnail of ``source`` to each word's pictures (at most nine per word).
-
-    Args:
-        root: The word-images directory.
-        words: One word or phrase, or several; each is normalized before storing.
-        source: Path of an existing image file.
-        kind: ``generated`` by the batch generator, or ``manual``.
-
-    Returns:
-        The first word's public entry (``word``, ``version``, ``source``,
-        ``page``, ``pictures``), plus ``words``: every updated entry, and
-        ``skipped``: the words that already had nine pictures.
-
-    Raises:
-        ValueError: No word given, every word is full, or the file is not a readable image.
-        NotFoundError: ``source`` does not exist.
-    """
+    """Add a thumbnail of ``source`` to each word's pictures (at most nine per word)."""
     keys = list(dict.fromkeys(k for k in map(_index.normalize, _as_list(words)) if k))
     if not keys:
         raise ValueError("word is empty")

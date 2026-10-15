@@ -55,13 +55,7 @@ def invalidate(rev: int | None = None) -> None:
 
 
 def carry_forward(old_rev: int, new_rev: int) -> int:
-    """Re-key all-pairs results from ``old_rev`` to ``new_rev``.
-
-    Only for writes that changed no body and no id (usage, tags, settings):
-    similarity reads bodies alone, so pairs and groups are still exact.
-    Single-probe results carry ``used``/``updated`` and stay behind.
-    Returns the number of results carried.
-    """
+    """Re-key all-pairs results to ``new_rev`` after a body-preserving write; returns the count."""
     old_rev, new_rev = int(old_rev), int(new_rev)
     with _lock:
         keys = [key for key in _all_cache if key[0] == old_rev]

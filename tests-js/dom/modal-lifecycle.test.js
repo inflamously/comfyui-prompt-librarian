@@ -14,21 +14,21 @@ const node = (id, body = `node ${id}`) => ({
 beforeEach(async () => {
   env = setupDom();
   modal = await imp(M + "index.js");
-  state = await imp(M + "state.js");
+  state = await imp(M + "instance.js");
   modal.setHost({ app: env.app });
   it = state.inst();
   mounts = []; refreshes = []; seeds = [];
   env.app.graph._nodes = [node(1), node(2)];
-  it.paneLoads = {
-    list: Promise.resolve({ mountList(el, ctx) {
+  it.paneMounters = {
+    list(el) {
       mounts.push("list");
       el.innerHTML = '<input class="pl-search-in">';
-      ctx.list = { refresh: async (opts) => { refreshes.push(opts); } };
-    } }),
-    inspector: Promise.resolve({ mountInspector(el, ctx) {
+      return { refresh: async (opts) => { refreshes.push(opts); } };
+    },
+    inspector() {
       mounts.push("inspector");
-      ctx.inspector = { setBody(body) { seeds.push(body); ctx.setState({ buffer: { body, tags: [] } }); } };
-    } }),
+      return { setBody(body) { seeds.push(body); state.slice("inspector").set({ buffer: { body, tags: [] } }); } };
+    },
   };
   env.api.route("/prompt_librarian/taxonomy", { tags: ["synthetic"], total: 3 });
 });
@@ -47,7 +47,7 @@ test("concurrent opens share initialization and seed only the latest target", as
   const held = deferred(); ping(() => held.promise);
   const first = modal.openModal({ targetNodeId: 1 });
   const second = modal.openModal({ targetNodeId: 2 });
-  assert.equal(it.state.targetNodeId, 2);
+  assert.equal(it.store.slice("shell").get("targetNodeId"), 2);
   assert.match(it.els.target.textContent, /#2 Target 2/);
   assert.equal(env.api.callsTo("/ping").length, 1);
   held.resolve({ rev: 7, threshold: 85 });
@@ -55,7 +55,7 @@ test("concurrent opens share initialization and seed only the latest target", as
   assert.deepEqual(mounts.sort(), ["inspector", "list"]);
   assert.equal(refreshes.length, 1);
   assert.deepEqual(seeds, ["node 2"]);
-  assert.equal(it.state.dupes.threshold, .85);
+  assert.equal(it.store.slice("dupes").get("threshold"), .85);
   assert.equal(document.activeElement, it.root.querySelector(".pl-search-in"));
 });
 
@@ -68,7 +68,7 @@ test("closing during ping prevents taxonomy, pane mounts, rebinding and focus", 
   assert.equal(env.api.callsTo("/taxonomy").length, 0);
   assert.deepEqual(mounts, []);
   assert.equal(it.binding, null);
-  assert.equal(it.state.rev, 0);
+  assert.equal(it.store.slice("library").get("rev"), 0);
   assert.equal(document.activeElement, outside);
   assert.equal(it.root.hidden, true);
 });
@@ -80,7 +80,7 @@ test("closing during taxonomy ignores its result and never mounts", async () => 
   const opening = modal.openModal(); await flush();
   assert.equal(env.api.callsTo("/taxonomy").length, 1);
   modal.closeModal(); held.resolve({ tags: ["late"], total: 100 }); await opening;
-  assert.deepEqual(it.state.tags, []);
+  assert.deepEqual(it.store.slice("library").get("tags"), []);
   assert.deepEqual(mounts, []);
 });
 
@@ -92,8 +92,8 @@ test("reopening does not wait for an invalidated ping or accept its late state",
   await modal.openModal({ targetNodeId: 2 });
   old.resolve({ rev: 99 }); await first;
   assert.equal(it.root, root);
-  assert.equal(it.state.rev, 2);
-  assert.equal(it.state.targetNodeId, 2);
+  assert.equal(it.store.slice("library").get("rev"), 2);
+  assert.equal(it.store.slice("shell").get("targetNodeId"), 2);
   assert.equal(refreshes.length, 1);
   assert.deepEqual(seeds, ["node 2"]);
 });
@@ -109,48 +109,23 @@ test("retargeting an open pane takes effect before pending initialization comple
   assert.equal(mounts.length, 2);
 });
 
-test("pending pane imports are shared across reopen and stale mounts are skipped", async () => {
-  ping();
-  const held = deferred();
-  const listModule = await it.paneLoads.list;
-  it.paneLoads.list = held.promise;
-  const first = modal.openModal(); await flush();
-  assert.deepEqual(mounts, ["inspector"], "inspector must not wait for the list import");
-  modal.closeModal();
-  const second = modal.openModal({ targetNodeId: 2 }); await flush();
-  held.resolve(listModule); await Promise.all([first, second]);
-  assert.deepEqual(mounts, ["inspector", "list"]);
-  assert.equal(refreshes.length, 1);
-  assert.equal(it.binding.node.id, 2);
-});
-
-test("closing during pane import prevents mounting after it resolves", async () => {
-  ping(); const held = deferred();
-  const listModule = await it.paneLoads.list; it.paneLoads.list = held.promise;
-  const opening = modal.openModal(); await flush(); modal.closeModal();
-  held.resolve(listModule); await opening;
-  assert.deepEqual(mounts, ["inspector"]);
-  assert.equal(refreshes.length, 0);
-  assert.equal(it.binding, null);
-});
-
 for (const failed of ["list", "inspector"]) {
   test(`${failed} mount failure leaves its sibling usable and retries on reopen`, async () => {
-    ping(); const good = await it.paneLoads[failed];
-    it.paneLoads[failed] = Promise.resolve({ [failed === "list" ? "mountList" : "mountInspector"]() { throw Error("synthetic mount fault"); } });
+    ping(); const good = it.paneMounters;
+    it.paneMounters = { ...good, [failed]() { throw Error("synthetic mount fault"); } };
     await modal.openModal();
-    assert.equal(it.mounted[failed], false);
-    assert.equal(it.mounted[failed === "list" ? "inspector" : "list"], true);
+    assert.equal(it.panes[failed], null);
+    assert.notEqual(it.panes[failed === "list" ? "inspector" : "list"], null);
     assert.match(it.els[failed === "list" ? "rail" : "inspect"].textContent, /unavailable|not available/);
-    modal.closeModal(); it.paneLoads[failed] = Promise.resolve(good);
+    modal.closeModal(); it.paneMounters = good;
     await modal.openModal();
-    assert.equal(it.mounted[failed], true);
+    assert.notEqual(it.panes[failed], null);
   });
 }
 
 test("closing during list refresh does not move focus afterward", async () => {
   ping(); await modal.openModal();
-  const held = deferred(); it.ctx.list.refresh = () => held.promise;
+  const held = deferred(); it.panes.list.refresh = () => held.promise;
   const opening = modal.openModal(); await flush(); modal.closeModal();
   const outside = document.body.appendChild(document.createElement("button")); outside.focus();
   held.resolve(); await opening;
@@ -166,8 +141,8 @@ test("each opening installs and removes one heartbeat and matching event listene
   const add = mock.method(window, "addEventListener");
   const remove = mock.method(window, "removeEventListener");
   await modal.openModal();
-  const root = it.root, ctx = modal.ctx();
-  const subs = [...it.subs.values()].reduce((n, s) => n + s.size, 0);
+  const root = it.root, panes = { ...it.panes };
+  const subs = it.store.listenerCount();
   for (let i = 0; i < 2; i++) {
     assert.equal(intervals.size, 1);
     modal.closeModal();
@@ -178,8 +153,8 @@ test("each opening installs and removes one heartbeat and matching event listene
       assert.ok(remove.mock.calls.some(c => c.arguments.every((v, j) => v === args[j])));
     }
     await modal.openModal();
-    assert.equal(it.root, root); assert.equal(modal.ctx(), ctx);
-    assert.equal([...it.subs.values()].reduce((n, s) => n + s.size, 0), subs);
+    assert.equal(it.root, root); assert.deepEqual(it.panes, panes);
+    assert.equal(it.store.listenerCount(), subs);
   }
   assert.equal(mounts.length, 2);
   modal.closeModal();
@@ -211,7 +186,7 @@ test("heartbeat reconciles deletion, replacement and link preference without usa
   await modal.openModal({ targetNodeId: 1 });
   const original = env.app.graph._nodes[0];
   env.app.graph._nodes = []; heartbeat();
-  assert.equal(it.binding, null); assert.equal(it.state.targetOk, false);
+  assert.equal(it.binding, null); assert.equal(it.store.slice("shell").get("targetOk"), false);
   assert.match(it.els.target.textContent, /no Librarian node/);
   original.widgets[0].value = "deleted node edit";
   assert.equal(seeds.at(-1), "node 1");
@@ -239,40 +214,32 @@ test("responsive navigation keeps Browse/Edit selection consistent across widths
 });
 
 test("actual optional panes mount, seed from the node, and survive reopening", async () => {
-  ping(); it.paneLoads = {};
+  ping(); it.paneMounters = null;
   env.api.route("/prompt_librarian/search", { hits: [], total: 0 });
   env.api.route("/prompt_librarian/dupes", { matches: [] });
   env.api.route("/prompt_librarian/autocomplete", { items: [] });
   await modal.openModal({ targetNodeId: 1 });
-  assert.deepEqual(it.mounted, { list: true, inspector: true });
-  assert.equal(it.ctx.inspector.getBuffer().body, "node 1");
-  const list = it.ctx.list, inspector = it.ctx.inspector;
+  const { list, inspector } = it.panes;
+  assert.ok(list && inspector, "both panes mounted");
+  assert.equal(inspector.getBuffer().body, "node 1");
   modal.closeModal(); await modal.openModal({ targetNodeId: 2 });
-  assert.equal(it.ctx.list, list); assert.equal(it.ctx.inspector, inspector);
+  assert.equal(it.panes.list, list); assert.equal(it.panes.inspector, inspector);
   assert.equal(inspector.getBuffer().body, "node 2");
 });
 
-test("a pending inspector is seeded even if binding is requested before it mounts", async () => {
-  ping(); const held = deferred();
-  const inspectorModule = await it.paneLoads.inspector; it.paneLoads.inspector = held.promise;
+test("binding waits for the inspector, then seeds it from the node", async () => {
+  env.api.reset(); ping(); const held = deferred();
+  env.api.route("/prompt_librarian/taxonomy", () => held.promise);
   const opening = modal.openModal(); await flush();
   const { syncBinding } = await imp(M + "target/binding.js"); syncBinding();
   assert.equal(it.binding, null);
-  held.resolve(inspectorModule); await opening;
+  held.resolve({ tags: [], total: 0 }); await opening;
   assert.deepEqual(seeds, ["node 1"]);
-});
-
-test("a failed optional import does not block its sibling", async () => {
-  ping(); const held = deferred(); it.paneLoads.list = held.promise;
-  const opening = modal.openModal(); await flush();
-  held.reject(Error("synthetic import failure")); await opening;
-  assert.equal(it.mounted.list, false); assert.equal(it.mounted.inspector, true);
-  assert.match(it.els.rail.textContent, /unavailable/);
 });
 
 test("a completed save from an old session cannot close a reopened modal", async () => {
   ping(); await modal.openModal(); const held = deferred();
-  it.ctx.isDirty = () => true; it.ctx.requestSave = () => held.promise;
+  Object.assign(it.panes.inspector, { isDirty: () => true, requestSave: () => held.promise });
   assert.equal(modal.attemptClose(), false); await flush();
   modal.closeModal(); await modal.openModal();
   held.resolve("saved"); await flush();
@@ -284,8 +251,8 @@ test("closing clears both toast expiration and animation timers", async () => {
   const timers = new Set();
   mock.method(globalThis, "setTimeout", (fn) => { timers.add(fn); return fn; });
   mock.method(globalThis, "clearTimeout", (fn) => timers.delete(fn));
-  const toast = modal.toast("synthetic toast"); toast.click();
+  const toast = it.toaster.show("synthetic toast"); toast.click();
   assert.equal(timers.size, 2); modal.closeModal();
-  assert.equal(timers.size, 0); assert.equal(it.toastCleanup.size, 0);
+  assert.equal(timers.size, 0); assert.equal(it.toaster.size, 0);
   assert.equal(it.els.toasts.children.length, 0);
 });

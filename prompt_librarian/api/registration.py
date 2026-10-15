@@ -10,11 +10,7 @@ log = logging.getLogger(__name__)
 
 
 def register(routes):
-    """Attach every route to an aiohttp ``RouteTableDef``.
-
-    Idempotent, and returns ``{(method, path): handler}`` so the handlers can
-    be driven directly in tests without standing up a server.
-    """
+    """Attach every route to an aiohttp ``RouteTableDef``; returns ``{(method, path): handler}``."""
     _get_web()
     for route in _ROUTES:
         getattr(routes, route.method)(route.path)(route.handler)

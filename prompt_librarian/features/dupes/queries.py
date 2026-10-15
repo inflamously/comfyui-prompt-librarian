@@ -1,9 +1,4 @@
-"""Dupes' SQL: records that could clear a similarity threshold for a probe text.
-
-A disk-backed equivalent of ``DupeIndex.candidates``: rare shared tokens, plus
-records of similar token count for short probes, then the length bound and the
-token-overlap bound. Scoring still happens in :mod:`.core`.
-"""
+"""Dupes' SQL: records that could clear a similarity threshold for a probe text."""
 
 import sqlite3
 from typing import Any

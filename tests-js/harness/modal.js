@@ -2,13 +2,13 @@
    The middle tier — modal chrome without the panes
 
    openModal() is the WRONG entry point when pane contents are not what is under
-   test: it mounts browse/ and inspector/, fetches taxonomy, and pulls the whole
+   test: it mounts the browse and inspector panes, fetches taxonomy, and pulls the whole
    transport in behind it. For the shell's own behaviour — closing, Ctrl+S, key
    isolation, layers — all that is needed is:
 
-       buildShell(); wireShell(); installKeyGuards();
+       buildShell(); wireShell(); installKeyGuards(root);
 
-   and then a hand-rolled `it.ctx`. No network, no panes, no DOM fixtures.
+   and then a hand-rolled inspector on `it.panes`. No network, no panes, no DOM fixtures.
 
    This is the tier the save-on-close work lives in, so it is the tier that
    covers it.
@@ -21,39 +21,33 @@ const M = "prompt_librarian/modal/";
 /**
  * Build the shell and hand back the handles a test needs.
  *
- * @param {object} ctxPatch overrides merged onto the default fake ctx. The two
- *   hooks that matter are `isDirty()` and `requestSave(asNew)` — the duck-typed
- *   contract inspector/index.js registers and modal/lifecycle/close.js consumes.
+ * @param {object} inspectorPatch overrides merged onto the fake inspector. The
+ *   hooks that matter are `isDirty()`, `requestSave(asNew)` and `getBuffer()` —
+ *   the InspectorPane methods modal/lifecycle/close.js and Ctrl+S call.
  */
-export async function openShell(ctxPatch = {}) {
+export async function openShell(inspectorPatch = {}) {
   const shell = {
     ...await imp(M + "shell/layout.js"),
     ...await imp(M + "shell/navigation.js"),
     ...await imp(M + "shell/responsive.js"),
   };
-  const state = await imp(M + "state.js");
-  const keys = await imp(M + "input/keys.js");
+  const instance = await imp(M + "instance.js");
+  const { setModalVisible } = await imp(M + "shell/visibility.js");
+  const keys = await imp("prompt_librarian/shared/keys.js");
   const close = await imp(M + "lifecycle/close.js");
-  const layers = {
-    ...await imp(M + "overlays/layers.js"),
-    ...await imp(M + "overlays/dialogs.js"),
-    ...await imp(M + "overlays/toasts.js"),
-  };
 
   shell.buildShell();
   shell.wireShell();
-  keys.installKeyGuards();
-
-  const it = state.inst();
-  it.ctx = {
+  const it = instance.inst();
+  it.teardown.push(keys.installKeyGuards(it.root));
+  it.panes.inspector = {
     isDirty: () => false,
     requestSave: async () => "saved",
-    debounces: [],
-    ...ctxPatch,
+    ...inspectorPatch,
   };
   // closeModal() no-ops unless the modal is actually open.
   it.open = true;
-  state.setModalVisible(true);
+  setModalVisible(true);
 
   return {
     it,
@@ -61,8 +55,9 @@ export async function openShell(ctxPatch = {}) {
     els: it.els,
     closeBtn: it.els.close,
     shell,
-    state,
-    layers,
+    slice: instance.slice,
+    setModalVisible,
+    layers: it.layers,
     attemptClose: close.attemptClose,
     closeModal: close.closeModal,
     isDirty: close.isDirty,

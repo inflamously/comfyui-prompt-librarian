@@ -1,6 +1,6 @@
 import { API } from "../../api/routes.js";
 import { invalidateMeta } from "../../api/meta.js";
-import { readNodeText, writeNodeText } from "../../node/text-sync.js";
+import { readNodeText, writeNodeText } from "../node/text-sync.js";
 import { hostApp } from "./host.js";
 import { resolveTarget, refreshTarget } from "./nodes.js";
 

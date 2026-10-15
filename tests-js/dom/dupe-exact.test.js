@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { setupDom } from "../harness/env.js";
 import { imp } from "../harness/mount.js";
 
-const I = "prompt_librarian/inspector/";
+const I = "prompt_librarian/features/inspector/";
 
 const BODY = "a body long enough to be worth checking";
 
@@ -34,16 +34,13 @@ afterEach(() => {
  *   `stored` (the body `GET /prompt` hands back for the match).
  */
 async function makePane(over = {}) {
-  const { resolveHelpers } = await imp(I + "helpers.js");
-  const { createSave } = await imp(I + "save.js");
+  const { SaveFlow } = await imp(I + "save/save-flow.js");
 
   const calls = { create: 0, update: 0, get: [], toasts: [], layers: [], adopted: [] };
   const record = "record" in over ? over.record : null;
   const stored = "stored" in over ? over.stored : BODY;
 
-  const ctx = {
-    ABORTED: Symbol("aborted"),
-    dom: {},
+  const backend = {
     API: {
       get: async (id) => {
         calls.get.push(id);
@@ -64,9 +61,8 @@ async function makePane(over = {}) {
   };
 
   const pane = {
-    ctx,
+    deps: { api: backend.API, dialogs: { confirm: backend.confirmDialog }, onLibraryChanged() {} },
     calls,
-    D: resolveHelpers(ctx),
     buf: { tags: [], body: BODY },
     current: record,
     baseline: record ? JSON.parse(JSON.stringify(record)) : null,
@@ -82,8 +78,7 @@ async function makePane(over = {}) {
     maybeOfferDraft() {},
     compareWith() {},
     compareConflict() {},
-    runDupes() {},
-    scheduleDupes: { cancel() {} },
+    dupes: { check() {} },
     toast: (m) => calls.toasts.push(String(m)),
     adoptRecord(rec) {
       calls.adopted.push(rec.id);
@@ -96,7 +91,8 @@ async function makePane(over = {}) {
       return layer;
     },
   };
-  createSave(pane);
+  pane.saveFlow = new SaveFlow(pane);
+  pane.save = (asNew) => pane.saveFlow.save(asNew);
   return pane;
 }
 

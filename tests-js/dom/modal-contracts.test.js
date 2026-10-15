@@ -7,39 +7,23 @@ let env;
 beforeEach(() => { env = setupDom(); });
 afterEach(() => { env.assertNoErrors(); env.teardown(); });
 
-test("the new public entry preserves its exports and cache-busted singleton/context identity", async () => {
+test("the public entry keeps its exports, and cache-busted copies share one instance and Store", async () => {
   const api = await imp(M + "index.js");
   assert.deepEqual(Object.keys(api).sort(), [
-    "openModal", "setHost", "attemptClose", "closeModal", "isDirty", "getState", "setState", "subscribe",
-    "popLayer", "pushLayer", "toast", "topLayer", "confirmDialog", "ctx", "refreshAll", "getTargetNodeId",
+    "openModal", "setHost", "attemptClose", "closeModal", "isDirty", "refreshAll", "getTargetNodeId",
     "loadIntoNode", "isLinked", "pushToNode", "setLinked",
   ].sort());
-  const context = api.ctx(), state = api.getState();
-  context.requestSave = async () => "clean";
-  const fresh = await imp(M + "context.js", { fresh: true });
-  const freshState = await imp(M + "state.js", { fresh: true });
-  assert.equal(fresh.ctx(), context); assert.equal(freshState.getState(), state);
-  const { buildShell } = await imp(M + "shell/layout.js"); const it = buildShell();
-  assert.equal(context.els, it.els); assert.equal(context.root, it.root);
+  const { inst } = await imp(M + "instance.js");
+  const it = inst(), store = it.store;
+  const freshInstance = await imp(M + "instance.js", { fresh: true });
+  assert.equal(freshInstance.inst(), it); assert.equal(freshInstance.inst().store, store);
+  const { buildShell } = await imp(M + "shell/layout.js", { fresh: true });
+  assert.equal(buildShell(), it);
   assert.equal(window.__PROMPT_LIBRARIAN__.modal, it);
-  assert.equal(await context.requestSave(), "clean");
-});
-
-test("state notifies equal references, deduplicates multi-key callbacks and honors silent/unsubscribe", async () => {
-  const { getState, setState, subscribe } = await imp(M + "state.js");
-  const calls = []; const listener = (state) => calls.push(state);
-  const offA = subscribe("selection", listener), offB = subscribe("currentId", listener);
-  const offStar = subscribe("*", listener);
-  const selection = getState().selection; selection.add("fixture");
-  setState({ selection, currentId: "fixture" });
-  assert.deepEqual(calls, [getState()]);
-  setState({ selection }); assert.equal(calls.length, 2);
-  setState({ currentId: "silent" }, { silent: true }); assert.equal(calls.length, 2);
-  offA(); offB(); offStar(); setState({ selection }); assert.equal(calls.length, 2);
 });
 
 test("draft JSON and link preference keep their existing storage keys and defaults", async () => {
-  const draft = await imp(M + "library/drafts.js");
+  const draft = await imp(M + "drafts.js");
   const prefs = await imp(M + "target/preferences.js");
   const buffer = { body: "synthetic prompt", tags: ["fixture"] };
   draft.saveDraft(null, buffer); assert.equal(sessionStorage.getItem("pl:draft:new"), JSON.stringify(buffer));
@@ -47,5 +31,5 @@ test("draft JSON and link preference keep their existing storage keys and defaul
   assert.equal(draft.loadDraft(null), null);
   assert.equal(prefs.readLinkPref(), true); prefs.writeLinkPref(false);
   assert.equal(localStorage.getItem("pl:link"), "0"); assert.equal(prefs.readLinkPref(), false);
-  const state = await imp(M + "state.js"); assert.equal(state.freshState().link, false);
+  const { initialState } = await imp(M + "instance.js"); assert.equal(initialState().shell.link, false);
 });

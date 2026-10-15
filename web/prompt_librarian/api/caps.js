@@ -12,8 +12,6 @@ export const caps = singleton("caps", () => ({
   versions: true,
   bulk: true,
   taxonomy: true,
-  wildcards: true,
-  snippets: true,
   resolve: true,
   rate: true,
   usage: true,

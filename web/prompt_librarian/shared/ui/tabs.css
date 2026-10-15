@@ -1,0 +1,32 @@
+/* Tab strips: the rail's sort tabs and the compare dialog's diff modes. */
+
+.pl-tabs {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+  padding: 14px 14px 10px;
+  overflow-x: auto;
+}
+
+.pl-tabs [role="tab"] {
+  flex: 0 0 auto;
+  padding: 0 0 3px;
+  border-bottom: 1px solid transparent;
+  background: var(--pl-btn-tint-soft);
+  font-family: var(--pl-mono);
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+  color: var(--pl-text-dim);
+  white-space: nowrap;
+  transition: color var(--pl-fast) ease, border-color var(--pl-fast) ease;
+}
+
+.pl-tabs [role="tab"]:hover {
+  color: var(--pl-text);
+}
+
+.pl-tabs [role="tab"][aria-selected="true"] {
+  color: var(--pl-accent);
+  border-bottom-color: var(--pl-accent);
+}

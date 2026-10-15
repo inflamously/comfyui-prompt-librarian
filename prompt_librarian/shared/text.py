@@ -11,10 +11,7 @@ _WS_RE = re.compile(r"\s+", re.UNICODE)
 
 
 def normalize(text: object) -> str:
-    """Comparison form: NFKC, Unicode casefold (ß → ss), word characters only.
-
-    Non-Latin word characters survive; everything else collapses to single spaces.
-    """
+    """Comparison form: NFKC, Unicode casefold (ß → ss), word characters only."""
     if text is None:
         return ""
     if not isinstance(text, str):

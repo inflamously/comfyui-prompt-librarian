@@ -147,8 +147,9 @@ describe("tier 0 — structure", () => {
     for (const rel of allModules()) {
       if (readWeb(rel).includes("pl-dirty")) stale.push(rel);
     }
-    if (fs.readFileSync(path.join(WEB, "prompt_librarian/librarian.css"), "utf8").includes("pl-dirty")) {
-      stale.push("prompt_librarian/librarian.css");
+    for (const rel of fs.readdirSync(path.join(WEB, "prompt_librarian"), { recursive: true })) {
+      const file = path.join(WEB, "prompt_librarian", String(rel));
+      if (file.endsWith(".css") && fs.readFileSync(file, "utf8").includes("pl-dirty")) stale.push(String(rel));
     }
     assert.deepEqual(stale, [], "`pl-dirty` survived the save-on-close rewrite");
   });
@@ -162,5 +163,117 @@ describe("tier 0 — structure", () => {
       assert.ok(!/^tests/.test(rel), `${rel} looks like test scaffolding inside web/`);
     }
     assert.ok(fs.existsSync(path.join(ROOT, "tests-js")), "tests-js/ should be at the pack root");
+  });
+});
+
+/* ==========================================================================
+   The frontend shape (AGENTS.md, docs/frontend-restructure.md)
+
+   Layers, highest first: index.js, modal/, features/, api/, shared/.
+   ========================================================================== */
+
+const PL = "prompt_librarian/";
+
+
+const MAX_LINES = 300;
+
+
+/** Layer rank of a path under prompt_librarian/, or null outside the layers. */
+function layerOf(rel) {
+  if (rel === "index.js") return 4;
+  const top = rel.split("/")[0];
+  return { modal: 3, features: 2, api: 1, shared: 0 }[top] ?? null;
+}
+
+/** Source with comments removed, so JSDoc `import("…")` types do not count. */
+function code(src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+}
+
+/** Every import of a module: [{spec, target (rel to prompt_librarian/), dynamic}]. */
+function importsOf(rel) {
+  const src = code(readWeb(PL + rel));
+  const found = [];
+  const add = (spec, dynamic) => {
+    // Bare and computed specifiers only matter to the dynamic-import rule.
+    if (!spec.startsWith(".")) return dynamic && found.push({ spec, target: spec, dynamic });
+    const target = path.posix.normalize(path.posix.join(path.posix.dirname(rel), spec));
+    found.push({ spec, target, dynamic });
+  };
+  for (const m of src.matchAll(/(?:^|[\s;])(?:import|export)\s[^'"]*?from\s*["']([^"']+)["']/g)) add(m[1], false);
+  for (const m of src.matchAll(/(?:^|[\s;])import\s*["']([^"']+)["']/g)) add(m[1], false);
+  for (const m of src.matchAll(/\bimport\s*\(\s*(["'`]?)([^"'`)]*)\1/g)) add(m[2], true);
+  return found;
+}
+
+/** Every .js module under prompt_librarian/, relative to it. */
+const modules = () =>
+  allModules()
+    .filter((rel) => rel.startsWith(PL))
+    .map((rel) => rel.slice(PL.length));
+
+describe("tier 0 — frontend shape", () => {
+  test("layers import only downward, and features never import each other", () => {
+    const bad = [];
+    for (const rel of modules()) {
+      const from = layerOf(rel);
+      for (const { target, dynamic } of importsOf(rel)) {
+        if (dynamic) continue; // the dynamic-import rule below owns these
+        const to = layerOf(target);
+        if (to === null || from === null) continue;
+        if (to > from) bad.push(`${rel} -> ${target} (imports upward)`);
+        const [fa, fb] = [rel, target].map((p) => p.startsWith("features/") && p.split("/")[1]);
+        if (fa && fb && fa !== fb) bad.push(`${rel} -> ${target} (feature to feature)`);
+      }
+    }
+    assert.deepEqual(bad, []);
+  });
+
+  test("only modal/app.js and modal/node/ import from features/", () => {
+    const bad = [];
+    for (const rel of modules()) {
+      if (!rel.startsWith("modal/") || rel === "modal/app.js" || rel.startsWith("modal/node/")) continue;
+      for (const { target } of importsOf(rel)) {
+        if (target.startsWith("features/")) bad.push(`${rel} -> ${target}`);
+      }
+    }
+    assert.deepEqual(bad, []);
+  });
+
+  test("the only dynamic import() is index.js -> modal/index.js", () => {
+    const bad = [];
+    for (const rel of modules()) {
+      for (const { spec, target, dynamic } of importsOf(rel)) {
+        if (!dynamic) continue;
+        if (rel === "index.js" && target === "modal/index.js") continue;
+        bad.push(`${rel}: import(${spec})`);
+      }
+    }
+    assert.deepEqual(bad, []);
+  });
+
+  test(`no file is over ${MAX_LINES} lines, stylesheets included`, () => {
+    const files = [
+      ...modules(),
+      ...fs.readdirSync(path.join(WEB, PL), { recursive: true })
+        .map((p) => String(p).split(path.sep).join("/"))
+        .filter((p) => p.endsWith(".css")),
+    ];
+    const long = [];
+    for (const rel of files) {
+      const lines = readWeb(PL + rel).split("\n").length;
+      if (lines > MAX_LINES) long.push(`${rel} (${lines})`);
+    }
+    assert.deepEqual(long, []);
+  });
+
+  test("no ctx bag: features and the modal take explicit dependencies", () => {
+    const bad = modules().filter((rel) => /\bctx\b/.test(code(readWeb(PL + rel))));
+    assert.deepEqual(bad, []);
+  });
+
+  test("file names are kebab-case", () => {
+    const bad = modules().filter((rel) => !/^[a-z0-9-]+$/.test(path.posix.basename(rel, ".js")));
+    assert.deepEqual(bad, []);
   });
 });

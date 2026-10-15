@@ -1,7 +1,4 @@
-"""The serialized text widget is authoritative; prompt_id only links metadata.
-Workflows must run without the library. Import and INPUT_TYPES must not
-access the filesystem: ComfyUI calls INPUT_TYPES during discovery/validation.
-"""
+"""The PromptLibrarian ComfyUI node; workflows must run without the library."""
 
 import hashlib
 import logging
@@ -27,6 +24,7 @@ MAX_SEED = 0xFFFFFFFFFFFFFFFF
 
 class PromptLibrarian:
 
+    # No filesystem access here: ComfyUI calls INPUT_TYPES during discovery.
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -128,11 +126,7 @@ class PromptLibrarian:
     @classmethod
     def IS_CHANGED(cls, text="", prompt_id="", seed=0, resolve_wildcards=True,
                    track_usage=True, **_ignored):
-        """Hash output-affecting inputs; track_usage only affects bookkeeping.
-
-        Include file signatures only for wildcard text, avoiding unrelated reruns
-        and directory scans. A fixed seed remains cacheable.
-        """
+        """Hash output-affecting inputs; track_usage only affects bookkeeping."""
         digest = hashlib.sha256()
         digest.update(str(text or "").encode("utf-8", "replace"))
         digest.update(b"\x00")
@@ -154,10 +148,7 @@ class PromptLibrarian:
 
 
 def _current_app():
-    """The library app, or ``None``: a workflow must render without one.
-
-    Getting it also points wildcards at the library's snippets and files.
-    """
+    """The library app, or ``None``: a workflow must render without one."""
     if app is None:
         return None
     try:

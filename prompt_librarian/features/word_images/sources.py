@@ -34,17 +34,7 @@ def resolve_source(
     filename: str, subfolder: str = "", kind: str = "output",
     roots: Mapping[str, str] | None = None,
 ) -> str:
-    """The absolute path of an image ComfyUI produced, confined to its directory.
-
-    Args:
-        filename: The image's file name.
-        subfolder: Its subfolder inside the directory, as ComfyUI reports it.
-        kind: ``output``, ``input`` or ``temp``.
-        roots: ``{kind: directory}``; defaults to :func:`comfy_roots`.
-
-    Raises:
-        ValueError: Unknown kind, empty name, or a path that leaves the directory.
-    """
+    """The absolute path of an image ComfyUI produced, confined to its directory."""
     root = (comfy_roots() if roots is None else roots).get(kind or "output")
     if not root:
         raise ValueError(f"unknown image type: {kind!r}")

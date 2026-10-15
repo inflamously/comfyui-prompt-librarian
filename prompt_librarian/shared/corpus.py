@@ -1,10 +1,4 @@
-"""The search and duplicate-detection projection of each record.
-
-Normalized body and tag text live on ``entries`` (``body_norm``, ``tags_norm``,
-``sim_norm``); this module owns the ``terms`` postings and the ``prompt_fts``
-FTS5 table, both rewritten inside the transaction that writes the record. It
-also reads the projection back, for search and dupes alike.
-"""
+"""Search and dupe projection of each record: ``terms`` postings and ``prompt_fts``."""
 
 import json
 import sqlite3
@@ -149,11 +143,7 @@ def records_by_id(con: sqlite3.Connection, ids: set[str]) -> list[dict[str, Any]
 
 
 def browse(con: sqlite3.Connection) -> list[dict[str, Any]]:
-    """Preview-sized records for empty-query browsing, in creation order.
-
-    The opening text is enough for labels and A-Z order. ``_chars`` and
-    ``_version_count`` keep the list metadata without reading bodies or history.
-    """
+    """Preview-sized records for empty-query browsing, in creation order."""
     rows = con.execute(
         "SELECT id,preview,tags_json,rating,used,last_run,created,updated,"
         "notes,pinned,chars,versions FROM entries ORDER BY order_no"

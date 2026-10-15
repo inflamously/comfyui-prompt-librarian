@@ -1,9 +1,6 @@
-"""Route decorators assemble the table; register() attaches it to aiohttp.
-Keep expensive scans and writes off the event loop. Responses include rev,
-and store change events are emitted by the store, not the handlers.
-OpenAPI generation stays optional and must not be imported here.
-"""
+"""HTTP API: route decorators assemble the table, register() attaches it to aiohttp."""
 
+# OpenAPI generation is optional; never import it here.
 from . import api, config, queries, registration, routes, schemas, utils
 from .api import handlers
 from .config import BULK_QUERY_LIMIT, CAPABILITIES, PREFIX

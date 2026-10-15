@@ -1,0 +1,71 @@
+/* The compare, merge and versions dialogs: the diff columns and inline changes. */
+
+.pl-root .pl-diff {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+  min-width: 0;
+}
+
+.pl-root .pl-diff-col {
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  padding: 12px;
+  background: var(--pl-bg-input);
+  border: 1px solid var(--pl-border-soft);
+  border-radius: var(--pl-radius-sm);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--pl-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.pl-ins {
+  background: rgba(124, 232, 172, 0.14);
+  color: var(--pl-ins-c);
+  border-radius: 2px;
+}
+
+.pl-del {
+  background: rgba(232, 138, 138, 0.14);
+  color: var(--pl-del-c);
+  border-radius: 2px;
+  text-decoration: line-through;
+  text-decoration-color: rgba(232, 138, 138, 0.6);
+}
+
+/* Diff columns need an empty chunk for each opcode to preserve alignment.
+   Keep placeholders visible before the rAF height measurement arrives. */
+.pl-root .pl-diff-chunk {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pl-root .pl-diff-chunk.is-empty {
+  min-height: 1.4em;
+  border-radius: 2px;
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0 6px,
+    var(--pl-bg-hover) 6px 12px
+  );
+  opacity: 0.5;
+}
+
+.pl-root[data-w="narrow"] .pl-diff {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* A muted one-line note: the diff summary, the merge editor's hint. */
+.pl-cmp-note {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--pl-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

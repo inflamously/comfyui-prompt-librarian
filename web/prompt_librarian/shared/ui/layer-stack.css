@@ -1,0 +1,37 @@
+/* The layer host sits outside .pl-card (see layer-stack.js). One scrim precedes
+   each layer; pl-fade-in is shared with dialog.css. */
+
+.pl-layers {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.pl-layers > * {
+  pointer-events: auto;
+}
+
+.pl-layers:empty {
+  display: none;
+}
+
+/* Each layer's scrim blocks clicks to all layers underneath it. */
+.pl-layer-scrim {
+  position: absolute;
+  inset: 0;
+}
+
+.pl-layer-scrim.is-dim {
+  background: rgba(4, 6, 14, 0.42);
+  animation: pl-fade-in var(--pl-slow) ease-out;
+}
+
+@keyframes pl-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

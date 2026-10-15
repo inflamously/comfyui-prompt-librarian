@@ -1,5 +1,5 @@
 import { hostApp } from "./host.js";
-import { inst, setState } from "../state.js";
+import { slice } from "../instance.js";
 
 export const NODE_CLASS = "PromptLibrarian";
 
@@ -25,8 +25,7 @@ export function librarianNodes() {
  * or workflow replacement.
  */
 export function resolveTarget() {
-  const it = inst();
-  const id = it.state.targetNodeId;
+  const id = slice("shell").get("targetNodeId");
   if (id == null) return null;
   const app = hostApp();
   const graph = app && app.graph;
@@ -46,7 +45,7 @@ export function resolveTarget() {
 }
 
 export function getTargetNodeId() {
-  return inst().state.targetNodeId;
+  return slice("shell").get("targetNodeId");
 }
 
 export function nodeLabel(node) {
@@ -58,8 +57,12 @@ export function nodeLabel(node) {
 /** Publish a fresh graph snapshot, including label/availability changes at the same ID. */
 export function refreshTarget() {
   const node = resolveTarget();
-  setState({
-    ...(inst().state.targetOk !== !!node ? { targetOk: !!node } : {}),
-    target: { label: nodeLabel(node), hasNodes: librarianNodes().length > 0 },
+  const shell = slice("shell");
+  const target = { label: nodeLabel(node), hasNodes: librarianNodes().length > 0 };
+  const prev = shell.get("target");
+  shell.set({
+    targetOk: !!node,
+    // Keep the old object when nothing changed, so the heartbeat repaints nothing.
+    target: prev.label === target.label && prev.hasNodes === target.hasNodes ? prev : target,
   });
 }

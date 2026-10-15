@@ -18,9 +18,8 @@ import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
 import { setupDom } from "../harness/env.js";
-import { imp } from "../harness/mount.js";
+import { mountInspector } from "../harness/inspector.js";
 
-const I = "prompt_librarian/inspector/";
 
 let env;
 beforeEach(() => {
@@ -35,33 +34,18 @@ function record(id, body) {
 }
 
 async function mount({ answer = "cancel", records = {} } = {}) {
-  const { mountInspector } = await imp(I + "index.js");
-
-  const calls = { asks: [], update: [], create: [], state: [], pushed: [] };
+  const calls = { asks: [], update: [], create: [], pushed: [] };
   const store = { ...records };
-
-  const ctx = {
-    ABORTED: Symbol("aborted"),
-    dom: {},
-    API: {
+  const { pane, slice, el } = await mountInspector({
+    api: {
       get: async (id) => (store[id] ? { ok: true, record: store[id] } : { ok: false, error: "not found" }),
       dupes: async () => ({ ok: true, matches: [] }),
       update: async (p) => { calls.update.push(p); return { ok: true, record: { ...store[p.id], ...p, updated: "T1" } }; },
       create: async (p) => { calls.create.push(p); return { ok: true, record: record("new1", p.body) }; },
     },
-    setState(patch) { calls.state.push(patch); },
     pushToNode: (body, id) => { calls.pushed.push([body, id]); return { ok: true }; },
-    saveDraft: () => {},
-    loadDraft: () => null,
-    clearDraft: () => {},
-    choiceDialog: async (opts) => { calls.asks.push(opts); return answer; },
-    confirmDialog: async () => true,
-    toast: () => {},
-  };
-
-  const el = document.createElement("div");
-  document.body.appendChild(el);
-  const pane = mountInspector(el, ctx);
+    dialogs: { choose: async (opts) => { calls.asks.push(opts); return answer; }, confirm: async () => true },
+  });
 
   const btn = [...el.querySelectorAll("button")].find((b) => b.textContent === "New prompt");
   assert.ok(btn, "the button must exist");
@@ -77,7 +61,7 @@ async function mount({ answer = "cancel", records = {} } = {}) {
     await new Promise((r) => setTimeout(r, 20));
   }
 
-  return { pane, ctx, calls, store, el, btn, click };
+  return { pane, slice, calls, store, el, btn, click };
 }
 
 describe("New prompt", () => {
@@ -91,6 +75,7 @@ describe("New prompt", () => {
     const a = record("a", "first");
     const h = await mount({ records: { a } });
     await h.pane.selectPrompt("a");
+    h.slice.set({ currentId: "a" }); // the row the user clicked is highlighted
     assert.equal(h.pane.getBuffer().body, "first");
 
     await h.click();
@@ -98,8 +83,7 @@ describe("New prompt", () => {
     assert.equal(h.pane.getBuffer().body, "", "the box is empty");
     assert.deepEqual(h.pane.getBuffer().tags, [], "and so are the tags");
     assert.equal(h.pane.isDirty(), false, "an empty new prompt is not an unsaved edit");
-    const last = h.calls.state.filter((p) => "currentId" in p).pop();
-    assert.deepEqual(last, { currentId: null }, "the sidebar highlight lets go");
+    assert.equal(h.slice.get("currentId"), null, "the sidebar highlight lets go");
   });
 
   test("clears the node's textarea too", async () => {

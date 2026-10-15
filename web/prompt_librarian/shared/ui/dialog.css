@@ -1,0 +1,47 @@
+/* Centered dialogs on the layer stack (dialog.js and the panes' own dialogs).
+   pl-fade-in comes from layer-stack.css: a dialog only ever opens on the stack. */
+
+.pl-dialog {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(880px, calc(100% - 48px));
+  max-height: calc(100% - 48px);
+  min-height: 0;
+  min-width: 0;
+  padding: 18px;
+  background: var(--pl-bg-chrome);
+  border: 1px solid var(--pl-border);
+  border-radius: 12px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
+  overflow: hidden;
+  /* Animate opacity only; a transform animation would override dialog centering. */
+  animation: pl-fade-in var(--pl-slow) ease-out;
+}
+
+.pl-dialog .pl-dialog-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--pl-text);
+}
+
+.pl-dialog .pl-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  font-size: 13px;
+  color: var(--pl-text-dim);
+}
+
+.pl-dialog .pl-dialog-acts {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  flex: 0 0 auto;
+}

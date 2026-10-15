@@ -8,9 +8,10 @@ import { app } from "../../../scripts/app.js";
 import { NS } from "./shared/ns.js";
 import { warnOnce, singleton } from "./shared/singleton.js";
 import { ensureStyles } from "./shared/styles.js";
-import { buildFace } from "./node/face.js";
-import { setupGraphNode } from "./node/setup.js";
-import { addWordPictureMenu } from "./node/word-picture-menu.js";
+import { buildFace } from "./modal/node/face.js";
+import { setupGraphNode } from "./modal/node/setup.js";
+import { addWordPictureMenu } from "./modal/node/word-picture-menu.js";
+import { followLibrary } from "./modal/node/live-meta.js";
 
 const NODE_CLASS = "PromptLibrarian";
 
@@ -57,6 +58,7 @@ app.registerExtension({
     host().app = app;
     // Inject styles during setup, when the document head is ready.
     ensureStyles();
+    followLibrary(app);
   },
 
   beforeRegisterNodeDef(nodeType) {

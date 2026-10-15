@@ -13,7 +13,7 @@
    These tests pin the new contract: the save goes through, no layer is opened
    from this path, and the outcome is not silent.
 
-   createSave() is driven directly with a hand-built `pane`. The real pane is
+   SaveFlow is driven directly with a hand-built `pane`. The real pane is
    ~700 lines of unrelated rendering; the save flow only ever touches the
    dozen hooks faked below, and that is exactly the surface worth pinning.
    ========================================================================== */
@@ -24,7 +24,7 @@ import assert from "node:assert/strict";
 import { setupDom } from "../harness/env.js";
 import { imp } from "../harness/mount.js";
 
-const I = "prompt_librarian/inspector/";
+const I = "prompt_librarian/features/inspector/";
 
 let env;
 beforeEach(() => {
@@ -46,16 +46,13 @@ function match(id, score = 0.97) {
  *   pane is editing, null for a brand-new one), plus any hook override.
  */
 async function makePane(over = {}) {
-  const { resolveHelpers } = await imp(I + "helpers.js");
-  const { createSave } = await imp(I + "save.js");
+  const { SaveFlow } = await imp(I + "save/save-flow.js");
 
   const calls = { confirm: 0, create: 0, update: 0, toasts: [], layers: [], dupes: [] };
   const matches = over.matches || [];
   const record = "record" in over ? over.record : null;
 
-  const ctx = {
-    ABORTED: Symbol("aborted"),
-    dom: {},
+  const backend = {
     API: {
       get: async (id) => ({ ok: true, record: { id, updated: "T0", body: "stored", tags: [] } }),
       dupes: async (p) => {
@@ -80,10 +77,8 @@ async function makePane(over = {}) {
     },
   };
 
-  const D = resolveHelpers(ctx);
   const pane = {
-    ctx,
-    D,
+    deps: { api: backend.API, dialogs: { confirm: backend.confirmDialog }, onLibraryChanged() {} },
     calls,
     buf: { tags: [], body: "a body long enough to be worth checking" },
     current: record,
@@ -100,8 +95,7 @@ async function makePane(over = {}) {
     maybeOfferDraft() {},
     compareWith() {},
     compareConflict() {},
-    runDupes() { calls.reran = (calls.reran || 0) + 1; },
-    scheduleDupes: { cancel() {} },
+    dupes: { check() { calls.reran = (calls.reran || 0) + 1; } },
     toast: (m) => calls.toasts.push(String(m)),
     adoptRecord(rec) {
       pane.current = rec;
@@ -113,7 +107,8 @@ async function makePane(over = {}) {
       return layer;
     },
   };
-  createSave(pane);
+  pane.saveFlow = new SaveFlow(pane);
+  pane.save = (asNew) => pane.saveFlow.save(asNew);
   return pane;
 }
 

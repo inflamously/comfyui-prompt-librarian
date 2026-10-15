@@ -1,5 +1,5 @@
 import { warnOnce } from "../../shared/singleton.js";
-import { inst } from "../state.js";
+import { inst } from "../instance.js";
 
 import { setPane } from "./navigation.js";
 

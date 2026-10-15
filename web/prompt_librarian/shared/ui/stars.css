@@ -1,0 +1,18 @@
+/* Star ratings: the inspector and the node card. */
+
+.pl-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  font-size: 15px;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  color: var(--pl-star);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.pl-stars[aria-disabled="true"] {
+  cursor: default;
+}

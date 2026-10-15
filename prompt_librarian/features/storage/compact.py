@@ -8,12 +8,7 @@ from ...shared.library import Library
 
 
 def compact(lib: Library) -> tuple[int, int]:
-    """Run SQLite's planner maintenance and VACUUM; returns bytes before and after.
-
-    Raises:
-        ReadOnlyError: The library declares a newer schema.
-        StoreWriteError: The file is corrupt, or SQLite failed.
-    """
+    """Run SQLite's planner maintenance and VACUUM; returns bytes before and after."""
     if lib.readonly():
         raise ReadOnlyError(f"the library at {lib.path} declares a newer schema")
     if lib.corrupt():

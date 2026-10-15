@@ -1,17 +1,20 @@
 """Offload expensive work and stream file transfers in bounded batches."""
 
 import contextlib
-import json
 import os
 import tempfile
 
 from ... import app
 from ...features.library.settings import update_settings
-from ...features.prompts.get import count_prompts, get_prompts, prompt_ids
-from ...features.storage.export import export_library, export_metadata
-from ...features.storage.importing import import_library
-from ...shared.db.schema import SCHEMA_VERSION
-from ...shared.errors import StoreWriteError
+from ...features.storage.export import export_library
+from ...features.storage.export_stream import (
+    EXPORT_BATCH,
+    EXPORT_TAIL,
+    export_head,
+    export_records,
+)
+from ...features.storage.health import library_facts
+from ...features.storage.importing import import_library, import_library_file
 from .. import schemas
 from ..config import CAPABILITIES
 from ..utils import (
@@ -28,37 +31,7 @@ from ..utils import (
     _threshold,
 )
 
-_EXPORT_BATCH = 32
 _UPLOAD_CHUNK = 1 << 20
-
-
-def _json_text(value):
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-
-
-def _export_snapshot():
-    """Small envelope state plus stable ids; never materialises prompt bodies."""
-    return export_metadata(_lib()), prompt_ids(_lib())
-
-
-def _export_prefix(meta):
-    return (
-        "{" + ",".join(
-            f"{_json_text(key)}:{_json_text(meta[key])}"
-            for key in ("schema", "updated", "settings", "snippets", "ignored")
-        ) + ',"prompts":['
-    ).encode("utf-8")
-
-
-def _export_batch(ids):
-    """Serialize one bounded batch away from the event loop."""
-    records = get_prompts(_lib(), ids)
-    return [_json_text(records[pid]).encode("utf-8") for pid in ids if pid in records]
-
-
-def _read_uploaded_json(path):
-    with open(path, encoding="utf-8") as handle:
-        return json.load(handle)
 
 
 def _remove_upload(path):
@@ -113,29 +86,10 @@ def _storage_status():
     return app.storage_status(app.current())
 
 
-def _count():
-    try:
-        return count_prompts(_lib())
-    except StoreWriteError:
-        return 0
-
-
-def _readonly():
-    try:
-        return _lib().readonly()
-    except StoreWriteError:
-        return False
-
-
-
 def _ping_status():
     return {
         "ok": True,
-        "schema": SCHEMA_VERSION,
-        "count": _count(),
-        "path": _lib().path,
-        "corrupt": _lib().corrupt(),
-        "readonly": _readonly(),
+        **library_facts(_lib()),
         "threshold": _threshold(None),
         "capabilities": dict(CAPABILITIES),
         "storage": _storage_status(),
@@ -184,8 +138,7 @@ async def export(request):
         returns=schemas.ExportResponse)
 async def export_file(request):
     """Stream JSON without calling ``export_raw`` or holding all prompts."""
-    meta, ids = await _offload(_export_snapshot)
-    prefix = await _offload(_export_prefix, meta)
+    head, ids = await _offload(export_head, _lib())
 
     response = _get_web().StreamResponse(headers={
         "Content-Type": "application/json; charset=utf-8",
@@ -193,16 +146,16 @@ async def export_file(request):
         "Cache-Control": "no-store",
     })
     await response.prepare(request)
-    await response.write(prefix)
+    await response.write(head)
     first = True
-    for start in range(0, len(ids), _EXPORT_BATCH):
-        encoded = await _offload(_export_batch, ids[start:start + _EXPORT_BATCH])
+    for start in range(0, len(ids), EXPORT_BATCH):
+        encoded = await _offload(export_records, _lib(), ids[start:start + EXPORT_BATCH])
         for record in encoded:
             if not first:
                 await response.write(b",")
             await response.write(record)
             first = False
-    await response.write(b"]}")
+    await response.write(EXPORT_TAIL)
     await response.write_eof()
     return response
 
@@ -239,8 +192,7 @@ async def import_file(request):
         raise ValueError("mode must be merge or replace")
     path = await _spool_upload(request)
     try:
-        raw = await _offload(_read_uploaded_json, path)
-        count = await _offload(import_library, _lib(), raw, mode == "replace")
+        count = await _offload(import_library_file, _lib(), path, mode == "replace")
     finally:
         await _offload(_remove_upload, path)
     return _json({"count": count})

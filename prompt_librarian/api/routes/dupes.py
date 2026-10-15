@@ -3,7 +3,7 @@
 from ... import app
 from ...features import dupes as dupes_feature
 from ...features.library.ignored import ignore_pair, unignore_pair
-from ...features.prompts.get import get_prompt, get_prompts
+from ...features.prompts.get import get_prompt
 from ...shared.errors import NotFoundError
 from .. import schemas
 from ..queries import _all_pairs
@@ -13,11 +13,9 @@ from ..utils import (
     _ignored,
     _int,
     _json,
-    _labeller,
     _lib,
     _offload,
     _query,
-    _rev,
     _route,
     _str,
     _threshold,
@@ -45,19 +43,15 @@ async def dupes_all(request):
         summary="One-vs-N near-duplicate check for one body against the library.",
         body=schemas.DupesBody, returns=schemas.DupesResponse)
 async def dupes(request):
-    """One-vs-N near-duplicate check — the hot path, fired on every edit.
-
-    Runs inline: with the ``(sha1(normalized text), threshold, rev)`` cache a
-    typical call is ~2 ms, and executor dispatch would cost more than the work.
-    """
+    """One-vs-N near-duplicate check, run inline: cached it beats an executor hop."""
     data = await _body(request)
     threshold = _threshold(data.get("threshold"))
     text = data.get("text")
     pid = _str(data.get("id")) or None
     # Required, or saving an existing prompt always reports itself at 100%.
     exclude_id = _str(data.get("exclude_id")) or None
-    matches = dupes_feature.find_similar(
-        app.current().dupe_source,
+    matches = app.similar_prompts(
+        app.current(),
         text=(_str(text) if text is not None else None),
         pid=pid,
         exclude_id=exclude_id,
@@ -65,15 +59,8 @@ async def dupes(request):
         limit=_int(data.get("limit"), 10),
         with_summary=_bool(data.get("summaries"), True),
         ignored=_ignored(),
-        rev=_rev(),
     )
-    # Label a copy: mutating cached matches would retain labels from an old corpus.
-    records = get_prompts(_lib(), [m["id"] for m in matches])
-    index = _labeller(records.values())
-    return _json({
-        "matches": [{**m, "label": index.label_of(m["id"])} for m in matches],
-        "threshold": threshold,
-    })
+    return _json({"matches": matches, "threshold": threshold})
 
 
 @_route("post", "/compare", op="compareBodies",

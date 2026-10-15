@@ -10,11 +10,7 @@ QUALITY = 80
 
 
 def make_thumbnail(source: str | bytes, name: str = "image") -> bytes:
-    """WebP bytes at most ``THUMB_SIZE`` on the longest side, alpha kept.
-
-    Raises:
-        ValueError: Pillow is missing, or ``source`` is not a readable image.
-    """
+    """WebP bytes at most ``THUMB_SIZE`` on the longest side, alpha kept."""
     try:
         from PIL import Image, ImageOps  # noqa: PLC0415 - ships with ComfyUI, optional headless
     except ImportError as exc:

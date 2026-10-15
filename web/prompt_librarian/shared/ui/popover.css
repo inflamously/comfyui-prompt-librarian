@@ -1,0 +1,53 @@
+/* Anchored popovers (popover.js) and the option rows menu.js builds in them. */
+
+.pl-popover {
+  position: fixed;
+  min-width: 180px;
+  max-width: 340px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--pl-bg-chrome);
+  border: 1px solid var(--pl-border);
+  border-radius: var(--pl-radius-sm);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+  animation: pl-pop-in var(--pl-fast) ease-out;
+}
+
+.pl-popover .pl-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  border-radius: 4px;
+  background: var(--pl-btn-tint-soft);
+  font-family: var(--pl-mono);
+  font-size: 12.5px;
+  letter-spacing: 0.01em;
+  color: var(--pl-text-dim);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pl-popover .pl-opt:hover,
+.pl-popover .pl-opt.is-active {
+  background: var(--pl-bg-hover);
+  color: var(--pl-text);
+}
+
+.pl-popover .pl-opt[aria-selected="true"] {
+  color: var(--pl-accent);
+}
+
+@keyframes pl-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

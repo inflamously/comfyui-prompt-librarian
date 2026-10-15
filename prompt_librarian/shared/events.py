@@ -1,9 +1,4 @@
-"""Change events: what a committed write did, for caches and the websocket.
-
-A write reads the previous database revision inside its locked transaction, so
-``old_rev -> new_rev`` names exactly the commit that happened; nothing else can
-land in between. Subscribers use it to carry caches forward or drop them.
-"""
+"""Change events: what a committed write did, for caches and the websocket."""
 
 import logging
 from collections.abc import Callable
@@ -19,23 +14,13 @@ EVENT_USED = "prompt_librarian.used"
 
 @dataclass(frozen=True)
 class Change:
-    """One committed write.
-
-    Attributes:
-        op: What happened, e.g. ``"create"``, ``"usage"``, ``"bulk_retag"``.
-        ids: Record ids the write touched.
-        old_rev: Database revision the write started from.
-        new_rev: Database revision the write committed.
-        bodies_changed: False when no body and no id changed (usage, rating,
-            tags, settings): similarity results are still exact.
-        records: The new record per id, or ``None`` for a deleted id.
-    """
+    """One committed write."""
 
     op: str
     ids: tuple[str, ...] = ()
     old_rev: int = 0
     new_rev: int = 0
-    bodies_changed: bool = True
+    bodies_changed: bool = True  # False when no body or id changed: similarity stays exact
     records: dict[str, Any] = field(default_factory=dict)
 
 
@@ -43,11 +28,7 @@ Subscriber = Callable[[Change], None]
 
 
 class EventBus:
-    """Synchronous fan-out of committed changes.
-
-    A failing subscriber is logged, never raised: the write it reports has
-    already committed. Subscribing the same function twice is a no-op.
-    """
+    """Synchronous fan-out of committed changes; failing subscribers are logged."""
 
     def __init__(self) -> None:
         """Start with no subscribers."""

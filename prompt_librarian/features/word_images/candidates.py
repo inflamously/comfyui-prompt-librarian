@@ -70,17 +70,7 @@ def is_filler(word: str) -> bool:
 def picture_candidates(
     root: str, keywords: Iterable[tuple[str, int]], limit: int = 500
 ) -> tuple[list[str], int]:
-    """The words to generate pictures for, most used first.
-
-    Args:
-        root: The word-images directory; words with a picture, or whose
-            picture the user removed, are skipped.
-        keywords: ``(spelling, use count)`` pairs, most used first.
-        limit: How many words to return.
-
-    Returns:
-        ``(words, total)``: up to ``limit`` words, and how many qualified in all.
-    """
+    """The words to generate pictures for, most used first."""
     taken = set(_index.read_index(root)) | set(_index.read_misses(root))
     words, seen = [], set()
     for text, _count in keywords:

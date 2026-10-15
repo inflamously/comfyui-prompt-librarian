@@ -322,17 +322,13 @@ prompt_store/                 the OLD node's domain — untouched
   __init__.py                 exports PromptLibrary and the prompts.json helpers
   node.py                     the node class and its store
 
-web/prompt_librarian/         the Librarian's frontend — one directory per feature
+web/prompt_librarian/         the Librarian's frontend — layered like the Python side
   index.js                    extension entry (the only file with import-time side effects)
-  shared/                     h(), text/number formatting, timing, the singleton bag
+  modal/                      composition root (app.js), shell, lifecycle, input, target, node/
+  features/                   browse, inspector, dupes, autocomplete, compare, storage, tags,
+                              gallery, word-pictures — independent of each other
   api/                        request primitive, lanes, caps, routes, meta cache
-  node/                       the node's face, widgets, preparation, the node ⇄ panel binding
-  modal/                      overlay shell, state store, key isolation, layers, target
-  browse/                     the left rail: search, filters, virtualised list
-  inspector/                  the right pane: fields, dupe panel, THE SAVE FLOW
-  pickers/                    the popover primitive and its five consumers
-  compare/                    diff, compare/merge and version-history dialogs
-  librarian.css               scoped dark theme
+  shared/                     Component, Store, key bus, styles; ui/ holds the widgets and tokens
 web/prompt_store/             the OLD node's frontend — same split, four files
 scripts/openapi.py            route table -> route listing or OpenAPI spec
 tests/*.py                    Python persistence/API/search tests
@@ -402,7 +398,7 @@ GET `ping`, `search`, `prompt`, `versions`, `version`, `taxonomy`, `dupes/all`, 
 `dupes/ignore`, `snippet`, `settings`, `import`, `import/file`, `storage/{migrate,compact}`. Also exposes a `CAPABILITIES` dict the
 frontend feature-detects against.
 
-**`prompt_librarian/api/schemas/`** + **`openapi.py`** + **`scripts/openapi.py`**
+**`prompt_librarian/api/schemas/`** + **`api/openapi/`** + **`scripts/openapi.py`**
 — the route table, described. Every `@_route` names an OpenAPI operation id, a one-line summary and
 three dataclasses: what the query takes, what the body takes, what comes back.
 
@@ -418,7 +414,7 @@ required; a default is the handler's own fallback (`_int(params.get("chars"), 16
 160`); an attribute docstring becomes the field's description in the spec. Every response inherits
 `Envelope`, which is where the `rev` merged into every payload comes from.
 
-`openapi.py` holds no schema-building code at all: pydantic's `TypeAdapter(T).json_schema()`
+`api/openapi/` (`listing`, `spec`, `components`, `overrides/<group>.py`; tags come from the `routes/<group>.py` a route lives in) holds no schema-building code at all: pydantic's `TypeAdapter(T).json_schema()`
 generates every schema, `$ref`, enum, nullable and default, and what is left is assembly — hoisting
 `$defs` into `components/schemas` and splitting a query dataclass into `parameters[]`. pydantic is a
 `dev` extra; ComfyUI never imports this module, and the route listing does not need it either:
@@ -450,161 +446,75 @@ contains a wildcard form. `_seed_int` coerces a bad widget value instead of rais
 
 ### Web — the Librarian frontend
 
-The frontend mirrors the Python side: **one directory per domain, one file per feature**. Every
-module under `web/prompt_librarian/` is inert on import — ComfyUI loads every `.js` under the web
-directory as an extension, so it is exports and `const` data only, and `index.js` is the single file
-allowed a side effect.
+The frontend is layered like the Python side: `index.js` → `modal/` → `features/` → `api/` →
+`shared/`, each importing only downward, and features never import each other. No build step and no
+runtime dependencies: ComfyUI loads the raw `.js`. `AGENTS.md` holds the rules,
+`docs/frontend-restructure.md` the decisions behind them, and `tests-js/structure.test.js` enforces
+the shape (layers, feature independence, static imports, no file over 300 lines, no `ctx` bag).
 
-**`web/prompt_librarian/index.js`** (122 lines) — the extension entry: one
-`app.registerExtension({name: "prompt-librarian.ui"})`, one stylesheet injection, one `nodeCreated`
-hook. It captures ComfyUI's `app` onto the shared singleton bag (nothing else imports this file —
-that would re-run `registerExtension` under a second cache-busted URL), builds the node face, adds
-`Open Librarian`, and drives the three `setupGraphNode` triggers. `modal/` is imported lazily inside a
-try/catch: a missing panel logs once and the node still works.
+Every module is inert on import, because ComfyUI loads every `.js` under `web/` as an extension;
+`index.js` is the one file with side effects. It registers the extension, builds the node face from
+`modal/node/`, and imports `modal/index.js` lazily inside a try/catch, so a broken panel logs once and
+the node still works.
 
-**`node/`** (4 files, 962 lines) — everything attached to the node itself. `widgets.js` owns the two
-widget names and hides `prompt_id` (it must stay serialized — that string is the only link between a
-workflow and a library record — but has no business taking a row on the canvas). `face.js` builds the
-face in two tiers: a `.pl-node-card` DOM widget when `addDOMWidget` exists **and** the element is
-verified to have mounted one frame later, falling back to plain button widgets otherwise; `open` is
-passed in rather than imported, which is what keeps the entry out of the import graph. `setup.js`
-sets the node up in the graph once its widgets exist. `text-sync.js` reads, writes and watches the text widget, and is the only module that
-touches a LiteGraph widget's internals: `writeNodeText` is the single write path (value first, then
-callback, and it also sets the backing `<textarea>` and dispatches a synthetic `input`, because
-assigning `.value` from JS fires no event and the on-canvas widget would keep painting stale text),
-and `watchNodeText` observes in three independent, individually optional layers — an `input`/`change`
-listener on that element, a chained `Object.defineProperty` over `widget.value`, and `pollNodeText()` driven
-by the modal's existing 1 s heartbeat — because which of them exists depends on a frontend generation
-we cannot detect. The interception **chains onto the original descriptor** rather than replacing it:
-on the legacy frontend `value` is already an accessor over `inputEl`, and a plain data property on top
-silently disconnects the widget from its own element. Echoes are killed in one place for all three
-layers by `lastSeen`, the last value written or observed. `watchNodeText` reference-counts its subscribers,
-so the node card and the panel can both observe one node, and `unwatch` restores exactly the descriptor
-it found.
+**`modal/node/`** — everything attached to the node on the canvas. `face.js` builds a `.pl-node-card`
+DOM widget when `addDOMWidget` exists and the element is verified to have mounted, and falls back to
+button widgets otherwise. `setup.js` prepares the node once its widgets exist. The text widget is
+read in `text-access.js`, watched in `text-watch.js` and written in `text-sync.js` (which also
+re-exports the other two), the only code that touches a LiteGraph widget's internals.
+`writeNodeText` is the single write path: value first, then callback, plus the backing `<textarea>`
+and a synthetic `input`, since assigning `.value` from JS fires no event. `watchNodeText` observes in
+three independent, optional layers: an `input`/`change` listener on the element, an interception of
+`widget.value` that **chains onto the original descriptor** (on the legacy frontend `value` is
+already an accessor over `inputEl`), and `pollNodeText()` on the modal's 1 s heartbeat. One
+`lastSeen` value drops echoes for all three, subscribers are reference-counted, and unwatching
+restores the descriptor it found.
 
-**`shared/`** (9 files, 681 lines) — dependency-free helpers, no ComfyUI import. `dom.js` (the `h()`
-hyperscript, with a `DIRECT_PROPS` set for props that must be assigned rather than `setAttribute`d,
-plus `append` / `clear` / `cls`), `text.js` (grapheme-aware `charCount` / `truncate` / `firstLine`,
-`estimateTokens`, `stars`), `format.js` (`relTime`, `fmtInt`, `escapeQuery`), `timing.js` (`debounce`,
-`rafThrottle`), `styles.js` (`ensureStyles`, resolving the stylesheet URL off `import.meta.url` rather
-than guessing the mount point), `singleton.js` (the `singleton` / `singletonBag` registry that
-survives a module re-import, and `warnOnce`), `widgets.js` (`setComboValues`, duplicated in behaviour
-from the old node rather than imported from it so the two domains stay independently deletable), and
-`index.js` — the barrel `ctx.dom` is built from.
+**`modal/`** — the retained panel. `app.js` is the composition root: it builds every feature with
+its Store slice, the shared services and the callbacks that connect it to the others. The mounted
+panes live on the instance (`inst().panes`), where close, Ctrl+S and the node binding reach them.
+`lifecycle/` opens (sharing initialization across concurrent opens) and closes (save-on-close:
+the inspector's `requestSave` resolves to `saved | clean | blocked | failed | busy`, and only `saved`
+and `clean` let the panel close). `shell/` builds the DOM once; `target/` resolves the target node,
+binds node and editor, and loads records; `input/` traps focus and handles Escape, save and Tab.
 
-**`api/`** (6 files, 659 lines) — the transport. `request.js` is the only module in this domain
-besides the entry that imports from ComfyUI: it uses `api.fetchApi` so the base URL and any
-reverse-proxy prefix apply, and it checks the response content-type before parsing (an unregistered
-route answers with an HTML 404 page, and `res.json()` on that throws a SyntaxError about "<" — an
-unreadable error for the most likely real-world failure). It exports `ApiError` and the `ABORTED`
-sentinel, since a superseded call is not an error and no call site should need an AbortError
-try/catch. `lanes.js` coalesces per concern using both an `AbortController` and a sequence number
-(abort is not synchronous with resolution, so the sequence guard is what actually closes the
-type-fast-get-stale-results race). `caps.js` is optimistic-by-default feature detection, `routes.js`
-is one method per route, and `meta.js` batches every node face on the canvas into one `POST /meta`.
+Each opening has a session identity. Closing invalidates it, aborts requests, removes key and resize
+listeners, stops the heartbeat and toast timers, and closes layers; pending continuations check the
+identity before mounting, rebinding or moving focus. The DOM and the mounted panes survive closing.
 
-**`modal/`** — the retained panel shell and its use cases. `index.js` is the thin
-public entry, including `openModal({ targetNodeId })`. `state.js` keeps the existing singleton
-and the `getState` / `setState` / `subscribe` store: equal references still notify, and silent
-patches remain silent. `context.js` documents the stable, extensible object handed to panes.
+`shared/keys.js` is the file to read before touching anything key-related. A window-capture guard
+stops every key event originating inside `.pl-root`, so ComfyUI's shortcuts (Delete removes the
+node, Ctrl+Z undoes the graph, Space pans) cannot fire while you type, and re-delivers the events on
+its own key bus; a plain `addEventListener("keydown", …)` inside the panel is dead code. Text-entry
+defaults are never prevented; Ctrl/Cmd+S inside `.pl-root` is consumed to save the prompt. On close
+the retained card also drops `aria-modal`: ComfyUI gates global commands on the visibility-blind
+selector `[role="dialog"][aria-modal="true"]`, and leaving it on a hidden card would disable workflow
+save after the Librarian's first use.
 
-| Area | Modules and responsibilities |
-| --- | --- |
-| `lifecycle/` | `open.js` shares initialization across concurrent opens and immediately retargets the mounted editor. `close.js` saves and cleans up per-open resources. `panes.js` independently imports and mounts Browse and Inspector, with placeholders and retry on failure. |
-| `shell/` | `layout.js` builds the retained DOM and wires handlers once; `header.js` renders counts; `navigation.js` switches Browse/Edit; `responsive.js` installs per-open resize handling; `dismissal.js` owns close controls; `glyphs.js` holds labels' symbols. |
-| `input/` | `keys.js` isolates ComfyUI events and supplies the key bus; `focus.js` traps focus; `shortcuts.js` handles Escape, save and Tab. |
-| `overlays/` | `layers.js` owns scrims, stacking and focus restoration; `dialogs.js` supplies confirmations; `toasts.js` manages notifications and their cleanup. |
-| `target/` | `host.js` accesses ComfyUI; `nodes.js` resolves targets by ID and publishes snapshots; `binding.js` mirrors node/editor changes; `load.js` explicitly loads records and counts real usage; `controls.js` renders target/link controls; `preferences.js` preserves `pl:link`. |
-| `library/` | `data.js` refreshes taxonomy and lists; `drafts.js` preserves JSON buffers under `pl:draft:<id>`. |
-| `storage/` | `actions.js` handles status, legacy migration, JSON import/export and shared compaction; `view.js` renders snapshots and invokes callbacks; `controls.js` connects the shell controls through subscriptions. |
+**`features/`** — one directory per feature, each built from `Component` classes (DOM and lifecycle)
+and pure functions (diffing, formatting, query building). `browse/` is the rail: search is
+server-authoritative, the virtual list places every row at `i * --pl-row-h` (an opened duplicate
+cluster is one row plus N ordinary rows), and "all filtered" selection stores the query rather than
+the ids. `inspector/` is the editor pane and its save flow: not-dirty check, staleness check, dupe
+gate (re-run on every save), commit with `expect_updated`, adopt the server's record. `dupes/`,
+`autocomplete/`, `compare/` (diff, compare/merge, versions), `storage/`, `tags/`, `gallery/` and
+`word-pictures/` follow the same pattern. Prompt bodies are user data: never `innerHTML`.
 
-Each opening has a session identity. Closing invalidates it, aborts requests, removes keyboard
-and resize listeners, stops the node heartbeat and toast timers, and closes layers. Pending
-opening continuations check that identity before starting more requests, mounting panes,
-rebinding nodes or moving focus. The DOM, mounted panes, context and retained handlers survive
-closing. A reopen can reuse pending optional-module imports without allowing the old session
-to mount them. Target identity is re-resolved on the 1 s heartbeat to handle graph deletion or
-replacement; linking seeds node → editor because the node holds what the workflow renders.
+**`api/`** — the transport. `request.js` uses ComfyUI's `api.fetchApi`, so the base URL and any
+proxy prefix apply, and checks the content-type before parsing (an unregistered route answers with
+an HTML 404). It exports `ApiError` and the `ABORTED` sentinel: a superseded call is not an error.
+`lanes.js` coalesces per concern with an `AbortController` and a sequence number, `caps.js` is
+optimistic feature detection, `routes.js` one method per route, and `meta.js` batches every node
+face into one `POST /meta`.
 
-`lifecycle/close.js` reaches the inspector through `ctx.isDirty()` and `ctx.requestSave(true)`.
-The save hook resolves to `saved | clean | blocked | failed | busy`; only `saved` and `clean`
-permit closing after a save attempt. These are plain strings so the modal does not need a
-static import of the optional Inspector. The existing missing-hook draft fallback is retained.
-
-`modal/input/keys.js` is the file to read before touching anything key-related. It installs the **key isolation**
-guard — a window-capture listener that calls `stopImmediatePropagation()` on every key event
-originating inside `.pl-root`, so ComfyUI's global shortcuts (Delete removes the node, Ctrl+Z undoes
-the graph, Space pans the canvas) can't fire while you type — and re-delivers those events on its own
-key bus. That is why a plain `addEventListener("keydown", …)` is dead code everywhere else in the
-panel. The guard does not prevent text-entry defaults. Ctrl/Cmd+S is the narrow exception: when its
-target is inside `.pl-root`, the real event is consumed to save the prompt and suppress *Save Page*.
-On close, the retained card also drops `aria-modal`; ComfyUI uses the visibility-blind selector
-`[role="dialog"][aria-modal="true"]` as a global-command gate, so `state.js` changes that marker and
-the retained root's visibility together. Leaving the attribute on a hidden card would disable
-workflow save after the Librarian's first use.
-
-**`browse/`** (8 files) — the left rail: search box with live hit count, filter chips,
-`dupes only`, sort tabs, the virtualised list. `paged-source.js` handles
-200-record pages and the skeleton rows for holes, `grouped-source.js` the duplicate accordion —
-`virtual-list.js` places every row at `i * --pl-row-h`, so an opened cluster is *one row plus N
-ordinary rows*, never one taller row, and this file is the flat-index mapping that makes that true
-while clusters open and close (it also self-heals a remembered index whose record moved out from
-under it). `virtual-list.js` is the recycled window (and
-`compare/versions.js` reuses it for long histories), `rows.js` the row markup and its textContent-only
-paint, `selection.js` the two modes — explicit ids, or the abstract "all filtered", which stores the
-QUERY rather than 1 284 ids because that is the only shape that scales and exactly what the bulk
-endpoints accept — `chips.js`, `picker.js` and `index.js` (`mountList`). All search is
-server-authoritative: there is no local filtering here by design, because the `% match` and near-dupe
-badges are computed by the backend for the current page and a locally-filtered list would show rows
-whose badges disagree with it.
-
-**`inspector/`** (11 files, 2259 lines) — the right pane: the derived label, tags, the prompt textarea
-with char/token counts and the `edited` marker, the duplicate-check panel, the four stat tiles and the
-action row. The feature files share one mutable `pane` object rather than a closure, which is what
-lets each of them live in its own file while still reading and writing the same edit buffer; only
-`index.js` creates it. `view.js` is the markup (built once; every later update is a value write),
-`dupes.js` the live check and its threshold control, `drafts.js` the per-record sessionStorage drafts,
-`neighbours.js` every lazy reach into `pickers/` and `compare/` (each degrading to a toast),
-`layers.js` the pane's own popovers and inline dialogs, `records.js` the pure payload shapes, and
-`helpers.js` the helper table with its fallbacks.
-
-Its half of the node binding is three hooks and no restructuring: `afterEdit()` pushes the buffer
-through an rAF-coalesced `pushBody` (so a fast typist costs one canvas repaint per frame, not per
-keystroke), `setBody(text, {fromNode})` marks the inbound direction and yields to whichever textarea
-holds the caret, and `adoptRecord(rec, {push})` writes body **and** `prompt_id` — opt-in, and set only
-on a user selection or a save, never on deselect, a background refresh, or the initial paint. The echo
-guard is `lastInbound`, a value rather than a flag, because the push is coalesced to the next frame
-and any "currently applying" marker would already be clear by the time it runs.
-
-`save.js` is the reason the pane exists: not-dirty check → staleness check → dupe gate (always re-run
-on save, and deliberately not through the lane, so a keystroke landing mid-save cannot abort it) →
-commit (`create`, or `update` with `expect_updated`, with a 409 re-entering the staleness step) →
-adopt the server's record as both `current` and `baseline`. Its two dialogs are built inline through
-the pane's own layer host rather than through `compare/`, so the safety property still holds on an
-install where `compare/` failed to load. Never `innerHTML` — prompt bodies are user data.
-
-**`pickers/`** (11 files) — one popover primitive, `popover.js`, serving four consumers:
-`tags.js` (with `normalizeTag`, mirroring the store's `clean_tag`), `threshold.js`,
-`snippets.js` and `wildcards.js`, all over the shared `menu.js` body. Plus `caret.js`
-(`insertAtCaret`), `tokenize.js` (the wildcard syntax lexer, deliberately aligned with
-`wildcards/syntax.py` — a highlight that disagrees with the resolver is worse than no highlight) and
-`mirror.js`, the highlight layer rendered behind the textarea, which only lines up if every
-typographic property matches exactly and which tears itself down when its own one-frame height
-self-check says it doesn't. `common.js` carries the `bindKeys` helper and restates the isolation rule.
-
-**`compare/`** (6 files, 1994 lines) — the three big overlays. `diff.js` (`renderDiff()`, the
-split/unified primitive shared by all of them, capped at `MAX_TOKENS_PER_SIDE = 5000` with a visible
-notice rather than a silent truncation), `compare.js` (`openCompare()`, used for dupes, diff-vs-saved
-and versions), `merge-editor.js` (the editable "merge → new" union) and `versions.js` (two-pane
-version history with restore). Every key handler goes through `common.js`'s `bindKey()` on the modal's
-key bus, per the isolation rule above.
-
-**`web/prompt_librarian/librarian.css`** (1836 lines) — the scoped dark theme. Tokens on `.pl-root`,
-then sections for the overlay, header, rail, filter chips, virtual list (including the skeleton rows),
-inspector, mirror/highlighting, stat tiles, action bar, dialogs, diff panes, toasts and popovers.
-Everything is scoped under `.pl-root` / `.pl-node-card` with `pl-`-prefixed class and keyframe names,
-and includes an inbound-defence block restating inherited properties so a stray ComfyUI rule can't
-reach in.
+**`shared/`** — leaf helpers: `component.js`, `store.js` (slices; values are replaced, never
+mutated), `keys.js`, `styles.js` (`useStyles` links a component's sheet once), `pictures.js`, and the
+text, format, timing and DOM helpers. `shared/ui/` holds the domain-free widgets (layer stack,
+dialogs, popover, menu, toasts, virtual list) and the shared sheets, starting with `tokens.css`.
+Every other component keeps its stylesheet beside it. Everything is scoped under `.pl-root` /
+`.pl-node-card` with `pl-`-prefixed classes and keyframes, and `base.css` restates inherited
+properties so a stray ComfyUI rule cannot reach in. `python3 scripts/dev.py widgets` shows every
+shared widget on its own page.
 
 ### Tests
 
@@ -651,7 +561,7 @@ defeats the whole point.)
 | `dom/dupe-gate.test.js` | 10 | **Getting back out of the duplicate gate**, `createSave()` driven with a hand-built pane: the gate blocks and writes nothing, `save anyway` is the *last* dialog (one click, no second confirm) and mutes every pair it listed, an update stays an update rather than forking, a failed mute still leaves the record saved and complains once, and `keep both` mutes only its own row. Plus the split that keeps a mute honest: an already-muted match does not gate the save, but its score is untouched, so every counting surface still sees it. |
 | `dom/dupe-accordion.test.js` | 17 | **The duplicate accordion**, both tiers. `updateRow`'s three row kinds (cluster header badged `N copies`, quiet indented member, ordinary row keeping its near-dupe badge — and a view-less call painting flat, which is how `compare/` reuses the renderer); then the real rail against a stubbed `/search`: four copies are one row, the twisty opens and closes it in place, clicking a header opens *and* selects, ticking a collapsed cluster ticks all four, and "all filtered" counts records rather than rows. |
 | `dom/dupe-panel-muted.test.js` | 9 | **A muted pair is shown, not swallowed.** The live panel lists it marked, counts it in the heading (`3 near matches (2 muted)`), drops the amber when nothing is left to warn about, and un-mutes it back into the gate — including the failure path, and the unsaved draft that has no pair to un-mute in the first place. |
-| `unit/grouped-source.test.js` | 20 | `browse/grouped-source.js` against a fake `PagedSource`: rows vs records, the index shift an open cluster imposes on everything below it, what a row *stands for* when ticked (a collapsed cluster is its whole cluster), ranges loaded in top-level indices, and a stale span self-healing rather than shifting the list by two forever. |
+| `unit/grouped-source.test.js` | 20 | `features/browse/grouped-source.js` against a fake `PagedSource`: rows vs records, the index shift an open cluster imposes on everything below it, what a row *stands for* when ticked (a collapsed cluster is its whole cluster), ranges loaded in top-level indices, and a stale span self-healing rather than shifting the list by two forever. |
 | `dom/shortcuts.test.js` | 12 | Ctrl/Cmd+S follows the active surface against a faithful ComfyUI `window` handler: the Librarian owns the chord while open, closing clears ComfyUI's DOM modal gate, workflow save resumes afterward, prompt save fires once, `e.repeat` is guarded, layers take precedence, and plain typing is never prevented. |
 | `dom/key-isolation.test.js` | 9 | The pack's stated top hazard, against a simulated ComfyUI that registers document-capture listeners first: nothing inside `.pl-root` escapes, everything outside still works, typing is never `preventDefault`-ed, and closing removes **both** layers. |
 
@@ -661,8 +571,8 @@ returned `"clean"`, and save-on-close discarded the retag without a word. It now
 sorted tag array, which no separator could have made safe (`clean_tag()` only collapses whitespace).
 
 What jsdom **cannot** check, and where no test should pretend to: it has no layout engine, so every
-`getBoundingClientRect` is zero. `pickers/mirror.js` caret measurement, popover positioning and
-`browse/virtual-list.js` scroll maths are therefore untested on purpose — an assertion there would
+`getBoundingClientRect` is zero. Completion caret measurement, popover positioning and
+`shared/ui/virtual-list.js` scroll maths are therefore untested on purpose — an assertion there would
 pass forever, including after the code broke. The same goes for CSS: jsdom does not cascade, so the
 one style invariant worth pinning (`.pl-dirty` is gone) is a grep in tier 0, not a DOM assertion.
 
@@ -670,6 +580,7 @@ one style invariant worth pinning (`.pl-dirty` is gone) is a grep in tier 0, not
 
 ```
 python scripts/dev.py            # play: 50 curated prompts, a fake node, the modal open
+python scripts/dev.py widgets    # every shared/ui widget on one page, each on its own
 python scripts/dev.py sim        # replay every scenario and compare to the baseline
 python scripts/dev.py baseline   # replay every scenario and accept the result
 ```

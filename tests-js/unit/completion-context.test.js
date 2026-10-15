@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { imp } from "../harness/mount.js";
-const { completionContext } = await imp("prompt_librarian/inspector/completion-context.js");
+const { completionContext } = await imp("prompt_librarian/features/autocomplete/completion-context.js");
 
 test("Unicode offsets, phrase end eligibility and selections", () => {
   const body = "😀,  cafe\u0301 li  , after";

@@ -1,0 +1,104 @@
+/* Buttons and their variants. */
+
+.pl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding: 10px 18px;
+  border: 1px solid var(--pl-border);
+  border-radius: var(--pl-radius-sm);
+  background: var(--pl-btn-tint);
+  color: var(--pl-text);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--pl-fast) ease, border-color var(--pl-fast) ease,
+    color var(--pl-fast) ease, transform var(--pl-fast) ease;
+}
+
+.pl-btn:hover {
+  background: var(--pl-btn-tint-hover);
+  border-color: var(--pl-border);
+}
+
+.pl-btn:active {
+  transform: translateY(1px);
+}
+
+.pl-btn[disabled],
+.pl-btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+.pl-btn[disabled]:hover,
+.pl-btn[aria-disabled="true"]:hover {
+  background: var(--pl-btn-tint);
+}
+
+.pl-btn-primary {
+  background: var(--pl-accent-soft);
+  border-color: var(--pl-accent);
+  color: var(--pl-accent-ink);
+  font-weight: 700;
+}
+
+.pl-btn-primary:hover {
+  background: #ffe93a;
+  border-color: #ffe93a;
+  color: var(--pl-accent-ink);
+}
+
+.pl-btn-primary[disabled]:hover,
+.pl-btn-primary[aria-disabled="true"]:hover {
+  background: var(--pl-accent);
+}
+
+.pl-btn-accent {
+  background: var(--pl-btn-tint-soft);
+  border-color: var(--pl-accent);
+  color: var(--pl-accent);
+}
+
+.pl-btn-accent:hover {
+  background: var(--pl-accent-soft);
+  border-color: var(--pl-accent);
+  color: var(--pl-accent);
+}
+
+.pl-btn-danger {
+  background: var(--pl-btn-tint-soft);
+  border-color: var(--pl-danger-border);
+  color: var(--pl-danger);
+  margin-left: auto;
+}
+
+.pl-btn-danger:hover {
+  background: rgba(226, 90, 90, 0.1);
+  border-color: var(--pl-danger);
+  color: var(--pl-danger);
+}
+
+.pl-btn-sm {
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 400;
+  border-radius: 5px;
+}
+
+.pl-btn-ghost {
+  background: var(--pl-btn-tint-soft);
+  border-color: transparent;
+  color: var(--pl-text-dim);
+  font-weight: 400;
+}
+
+.pl-btn-ghost:hover {
+  background: var(--pl-bg-hover);
+  color: var(--pl-text);
+}

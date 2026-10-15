@@ -1,7 +1,4 @@
-"""Coercion helpers default on malformed input rather than returning a 500.
-Route Spec types describe OpenAPI contracts; runtime handlers parse requests
-independently, so the declarations must stay aligned.
-"""
+"""Route table, decorators and coercion helpers that default on malformed input."""
 
 import asyncio
 import functools
@@ -80,9 +77,7 @@ def _guard(fn):
 
 
 def _route(method, path, op, returns, summary="", query=None, body=None):
-    """Keep op/query/body/returns on the decorator for OpenAPI generation;
-    they do not parse or validate runtime requests.
-    """
+    """Register a route; op/query/body/returns feed OpenAPI only and do not validate requests."""
     def _deco(fn):
         handler = _guard(fn)
         _ROUTES.append(Route(method, PREFIX + path, handler, Spec(
@@ -185,18 +180,9 @@ def _ignored():
 
 def _labeller(records=None):
     """Use one revision-keyed index so lists, node faces, and versions share labels."""
-    source = app.current().search_source
-    if records is None:
-        return search.get_index(source)
-    return search.SearchIndex(
-        list(records), rev=_rev(), corpus=source.corpus_stats(), df_fn=source.term_df,
-    )
+    return search.labeller(app.current().search_source, records)
 
 
 def _labelled(rec):
-    """Return {prompt, label} inside the write's executor hop: the first label
-    after invalidation may rebuild the search index.
-    """
-    if not rec:
-        return {"prompt": rec, "label": ""}
-    return {"prompt": rec, "label": _labeller([rec]).label_of(_str(rec.get("id")))}
+    """``{prompt, label}``; call inside the write's executor hop (see search.labelled)."""
+    return search.labelled(app.current().search_source, rec)

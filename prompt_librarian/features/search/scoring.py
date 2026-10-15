@@ -48,10 +48,7 @@ def score_doc(
     pop_bonus: float,
     rec_bonus: float,
 ) -> tuple[float, int]:
-    """Return ``(score, matched_bitmask)``.
-
-    The mask supports ``mode="all"`` without rescanning fields.
-    """
+    """Return ``(score, matched_bitmask)``; the mask lets ``mode="all"`` skip a rescan."""
     tokens = pq.tokens
     n = len(tokens)
     if not n:

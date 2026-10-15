@@ -1,8 +1,4 @@
-"""Similarity over record lists, a :class:`DupeIndex`, or a :class:`LibraryDupeSource`.
-
-Keep-both pairs annotate find_similar results; counts still reflect all
-duplicates in the library.
-"""
+"""Similarity over record lists, a :class:`DupeIndex`, or a :class:`LibraryDupeSource`."""
 
 # Exposed for compatibility with callers that instrument SequenceMatcher.
 from .core import difflib as difflib

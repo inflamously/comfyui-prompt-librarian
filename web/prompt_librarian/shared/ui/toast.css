@@ -1,0 +1,63 @@
+/* The toast column (toast.js), bottom right of the modal. */
+
+.pl-toasts {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.pl-toasts > * {
+  pointer-events: auto;
+}
+
+.pl-toasts .pl-toast {
+  max-width: 420px;
+  padding: 9px 13px;
+  background: var(--pl-bg-chrome);
+  border: 1px solid var(--pl-border);
+  border-left: 2px solid var(--pl-accent);
+  border-radius: var(--pl-radius-sm);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  font-size: 12.5px;
+  color: var(--pl-text);
+  animation: pl-toast-in var(--pl-slow) ease-out;
+}
+
+.pl-toasts .pl-toast.is-warn {
+  border-left-color: var(--pl-warn);
+}
+
+.pl-toasts .pl-toast.is-error {
+  border-left-color: var(--pl-danger);
+}
+
+.pl-toasts .pl-toast.is-out {
+  animation: pl-toast-out var(--pl-slow) ease-in forwards;
+}
+
+@keyframes pl-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pl-toast-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}

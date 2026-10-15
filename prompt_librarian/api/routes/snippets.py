@@ -1,6 +1,6 @@
 """Return the complete snippet map so editors can expand snippets locally."""
 
-from ...features.library.snippets import delete_snippet, list_snippets, set_snippet
+from ...features.library.snippets import edit_snippet, list_snippets
 from .. import schemas
 from ..utils import _body, _json, _lib, _offload, _route, _str
 
@@ -17,16 +17,6 @@ async def snippets(request):
         body=schemas.SnippetBody, returns=schemas.SnippetsResponse)
 async def snippet(request):
     data = await _body(request)
-    op = _str(data.get("op") or "set").strip().lower()
-    name = _str(data.get("name"))
-
-    def _work():
-        if op == "set":
-            set_snippet(_lib(), name, _str(data.get("body")))
-        elif op == "delete":
-            delete_snippet(_lib(), name)
-        else:
-            raise ValueError(f"unknown snippet op {op!r}")
-        return list_snippets(_lib())
-
-    return _json({"snippets": await _offload(_work)})
+    return _json({"snippets": await _offload(
+        edit_snippet, _lib(), _str(data.get("op")), _str(data.get("name")), _str(data.get("body")),
+    )})

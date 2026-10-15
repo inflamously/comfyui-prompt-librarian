@@ -77,7 +77,11 @@ export function setupDom({ url = "http://localhost:8188/" } = {}) {
   // never re-evaluated, so the host must be MUTATED in place, never replaced.
   const host = seedHost();
   const api = createApi();
-  Object.assign(host.api, api, { fetchApi: api.fetchApi.bind(api) });
+  Object.assign(host.api, api, {
+    fetchApi: api.fetchApi.bind(api),
+    addEventListener: api.addEventListener.bind(api),
+    removeEventListener: api.removeEventListener.bind(api),
+  });
   host.app._exts.length = 0;
   host.app.graph = { _nodes: [] };
 

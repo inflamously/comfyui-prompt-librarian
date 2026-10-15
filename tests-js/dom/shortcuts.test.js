@@ -20,12 +20,12 @@ afterEach(() => {
   env.teardown();
 });
 
-/** A ctx that records every requestSave call. */
+/** An inspector that records every requestSave call. */
 function recorder(status = "saved") {
   const calls = [];
   return {
     calls,
-    ctx: {
+    inspector: {
       isDirty: () => true,
       requestSave: async (asNew) => {
         calls.push(asNew);
@@ -64,8 +64,8 @@ function comfyWorkflowShortcut() {
 describe("Ctrl+S", () => {
   test("the focused Librarian owns the chord instead of ComfyUI", async () => {
     const workflowSaves = comfyWorkflowShortcut();
-    const { ctx, calls } = recorder();
-    const s = await openShell(ctx);
+    const { inspector, calls } = recorder();
+    const s = await openShell(inspector);
     const promptInput = document.createElement("textarea");
     s.els.inspect.appendChild(promptInput);
     promptInput.focus();
@@ -85,8 +85,8 @@ describe("Ctrl+S", () => {
 
   test("ComfyUI's modal gate blocks its workflow command only while the Librarian is open", async () => {
     const workflowSaves = comfyWorkflowShortcut();
-    const { ctx, calls } = recorder();
-    const s = await openShell(ctx);
+    const { inspector, calls } = recorder();
+    const s = await openShell(inspector);
     const comfyInput = document.createElement("input");
     document.body.appendChild(comfyInput);
     comfyInput.focus();
@@ -110,8 +110,8 @@ describe("Ctrl+S", () => {
     const comfyInput = document.createElement("input");
     document.body.appendChild(comfyInput);
     comfyInput.focus();
-    const { ctx, calls } = recorder();
-    const s = await openShell(ctx);
+    const { inspector, calls } = recorder();
+    const s = await openShell(inspector);
     s.it.previouslyFocused = comfyInput;
 
     s.closeModal();
@@ -132,8 +132,8 @@ describe("Ctrl+S", () => {
   test("Ctrl+S and Cmd+S both request a save, as a create", async () => {
     for (const meta of [false, true]) {
       env.reset();
-      const { ctx, calls } = recorder();
-      const s = await openShell(ctx);
+      const { inspector, calls } = recorder();
+      const s = await openShell(inspector);
 
       s.save({ meta });
       await flush();
@@ -145,8 +145,8 @@ describe("Ctrl+S", () => {
   });
 
   test("a held chord does not queue a save per repeat", async () => {
-    const { ctx, calls } = recorder();
-    const s = await openShell(ctx);
+    const { inspector, calls } = recorder();
+    const s = await openShell(inspector);
 
     s.save();
     s.save({ repeat: true });
@@ -158,8 +158,8 @@ describe("Ctrl+S", () => {
   });
 
   test("the chord is only S with ctrl/meta — modifiers and other keys are ignored", async () => {
-    const { ctx, calls } = recorder();
-    const s = await openShell(ctx);
+    const { inspector, calls } = recorder();
+    const s = await openShell(inspector);
 
     s.save({ altKey: true });
     s.save({ shiftKey: true });
@@ -174,15 +174,15 @@ describe("Ctrl+S", () => {
   test("an open layer owns the chord", async () => {
     // The merge editor binds its own Ctrl+S, and the conflict / duplicate
     // dialogs must not be saved out from under the user.
-    const { ctx, calls } = recorder();
-    const s = await openShell(ctx);
+    const { inspector, calls } = recorder();
+    const s = await openShell(inspector);
 
-    s.layers.pushLayer({ el: document.createElement("div") });
+    s.layers.push({ el: document.createElement("div") });
     s.save();
     await flush();
     assert.deepEqual(calls, [], "a layer is on screen; the chord is not ours");
 
-    s.layers.popLayer();
+    s.layers.pop();
     s.save();
     await flush();
     assert.deepEqual(calls, [true], "and it works again once the layer closes");
@@ -223,8 +223,8 @@ describe("Ctrl+S", () => {
   test("narrow mode brings the editor forward before saving", async () => {
     // Otherwise the toast — and focusBody() on an empty prompt — land on a pane
     // the user cannot see.
-    const { ctx } = recorder();
-    const s = await openShell(ctx);
+    const { inspector } = recorder();
+    const s = await openShell(inspector);
 
     s.root.dataset.w = "narrow";
     s.els.body.dataset.pane = "browse";
@@ -236,8 +236,8 @@ describe("Ctrl+S", () => {
   });
 
   test("wide mode leaves the pane alone", async () => {
-    const { ctx } = recorder();
-    const s = await openShell(ctx);
+    const { inspector } = recorder();
+    const s = await openShell(inspector);
 
     s.root.dataset.w = "wide";
     s.els.body.dataset.pane = "browse";
@@ -249,8 +249,8 @@ describe("Ctrl+S", () => {
   });
 
   test("the browser's Save Page dialog is suppressed, but plain typing is not", async () => {
-    const { ctx } = recorder();
-    const s = await openShell(ctx);
+    const { inspector } = recorder();
+    const s = await openShell(inspector);
 
     const chord = new KeyboardEvent("keydown", {
       key: "s",

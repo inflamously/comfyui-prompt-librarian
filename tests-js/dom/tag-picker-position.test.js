@@ -13,8 +13,8 @@ import assert from "node:assert/strict";
 
 import { setupDom } from "../harness/env.js";
 import { imp } from "../harness/mount.js";
+import { mountInspector } from "../harness/inspector.js";
 
-const I = "prompt_librarian/inspector/";
 
 let env;
 beforeEach(() => {
@@ -46,33 +46,11 @@ function setRect(node, value) {
 }
 
 async function openPicker({ initialTags = [] } = {}) {
-  const { resolveHelpers } = await imp(I + "helpers.js");
-  const { buildView } = await imp(I + "view.js");
-  const { createNeighbours } = await imp(I + "neighbours.js");
-
-  const state = { tags: [{ name: "portrait", count: 4 }, { name: "night", count: 2 }] };
-  const ctx = { getState: () => state };
-  const el = document.createElement("div");
-  document.body.appendChild(el);
-  const buffer = { tags: initialTags.slice(), body: "" };
-  const pane = {
-    ctx,
-    el,
-    D: resolveHelpers(ctx),
-    S: () => state,
-    buf: buffer,
-    addTag(tag) {
-      if (!buffer.tags.includes(tag)) buffer.tags.push(tag);
-    },
-    removeTag(tag) {
-      buffer.tags = buffer.tags.filter((item) => item !== tag);
-      pane.buf = buffer;
-    },
-    capOk: () => true,
-    toast() {},
-    openLocalPopover() { throw new Error("real tag picker should be available"); },
-  };
-  pane.els = buildView(pane).els;
+  const { createTags } = await imp("prompt_librarian/features/tags/index.js");
+  const taxonomy = [{ name: "portrait", count: 4 }, { name: "night", count: 2 }];
+  // No layer stack, as before: the picker mounts on <body> and measures from there.
+  const { pane } = await mountInspector({ tags: createTags({ taxonomy: () => taxonomy }) });
+  pane.buf.tags = initialTags.slice();
 
   setRect(pane.els.textLabel, rect({ left: 180, top: 120, width: 110, height: 16 }));
 
@@ -82,8 +60,7 @@ async function openPicker({ initialTags = [] } = {}) {
   setRect(movingTagButton, rect({ left: 620, top: 82, width: 60, height: 24 }));
   pane.els.tagsRow.appendChild(movingTagButton);
 
-  createNeighbours(pane);
-  await pane.openTagPicker();
+  pane.openTagPicker();
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   const popover = document.querySelector(".pl-pick-tags");

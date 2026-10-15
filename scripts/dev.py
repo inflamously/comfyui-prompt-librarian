@@ -2,6 +2,7 @@
 """Play with the Prompt Librarian, or replay its flows, without ComfyUI.
 
     python scripts/dev.py            play: fresh seeded library, fake node, modal open
+    python scripts/dev.py widgets    every shared/ui widget on one page, each on its own
     python scripts/dev.py sim        replay every scenario and compare to the baseline
     python scripts/dev.py baseline   replay every scenario and accept the result
 
@@ -26,7 +27,7 @@ from scripts.devkit.data import DEFAULT_PROMPT_COUNT  # noqa: E402
 _KEEP = "PL_DEV_KEEP"  # set by the reloader so a re-exec keeps the library
 
 
-def play():
+def play(page="/"):
     run_dir = os.path.join(server.SCRATCH_ROOT, "play")
     library = os.path.join(run_dir, "library.sqlite3")
     keep = os.environ.pop(_KEEP, "") == "1" and os.path.exists(library)
@@ -48,7 +49,7 @@ def play():
     port = int(os.environ.get("PL_DEV_PORT", "8189"))
     print(f"[dev] library : {library}{' (kept)' if keep else ''}")
     print(f"[dev] prompts : {count_prompts(dev_app.lib)}")
-    print(f"[dev] http://127.0.0.1:{port}/")
+    print(f"[dev] http://127.0.0.1:{port}{page}")
     web.run_app(site, host="127.0.0.1", port=port, print=None)
     return 0
 
@@ -73,12 +74,14 @@ def sim(accept=False):
 def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
     mode = args[0] if args else "play"
-    if mode not in ("play", "sim", "baseline") or len(args) > 1:
+    if mode not in ("play", "widgets", "sim", "baseline") or len(args) > 1:
         print(__doc__)
         return 2
     server.require_aiohttp()
     if mode == "play":
         return play()
+    if mode == "widgets":
+        return play("/__dev/widgets")
     return sim(accept=mode == "baseline")
 
 

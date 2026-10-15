@@ -16,13 +16,10 @@ def sim_norm(body: object) -> str:
 
 
 def ratio(a: str, b: str, t: float = 0.0) -> float:
-    """Return the similarity of ``a`` and ``b``, or zero below ``t``.
-
-    ``autojunk=False`` is mandatory for prose-like prompt text: the default
-    heuristic treats common letters and spaces as junk in longer strings.
-    """
+    """Return the similarity of ``a`` and ``b``, or zero below ``t``."""
     if not a or not b:
         return 1.0 if (a == b and t <= 1.0) else 0.0
+    # autojunk would treat common letters and spaces in longer prompts as junk.
     sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
     if t > 0.0:
         if sm.real_quick_ratio() < t:

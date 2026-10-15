@@ -1,4 +1,4 @@
-"""Tests for ``prompt_librarian.api.openapi`` and the types it reads.
+"""Tests for ``prompt_librarian.api.openapi`` (the package) and the types it reads.
 
 The generator is only worth having if it cannot quietly lie, so most of what is
 here is drift protection: every route typed, every response carrying the ``rev``

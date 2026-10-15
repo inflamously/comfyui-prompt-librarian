@@ -90,10 +90,7 @@ def make_doc(rec: dict[str, Any]) -> Doc:
 
 
 class SearchIndex:
-    """Map IDs to docs and tokens to ID postings; sorted vocab supports prefixes.
-
-    Postings also provide document frequencies for labels.
-    """
+    """Map IDs to docs and tokens to ID postings; sorted vocab supports prefixes."""
 
     __slots__ = (
         "docs",

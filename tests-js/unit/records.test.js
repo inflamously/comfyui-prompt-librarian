@@ -1,5 +1,6 @@
 /* ==========================================================================
-   inspector/records.js — the payload/record helpers
+   The payload/record helpers: features/inspector/records.js, plus
+   shared/matches.js (matchesOf, frac, pct) and ensureOk from api/request.js
 
    Zero imports, no DOM, no state: the densest value-per-line in the tree, and
    `sig()` is the dirty comparison the entire save-on-close flow rests on.
@@ -10,7 +11,11 @@ import assert from "node:assert/strict";
 
 import { imp } from "../harness/mount.js";
 
-const R = await imp("prompt_librarian/inspector/records.js");
+const R = {
+  ...(await imp("prompt_librarian/features/inspector/records.js")),
+  ...(await imp("prompt_librarian/shared/matches.js")),
+  ensureOk: (await imp("prompt_librarian/api/request.js")).ensureOk,
+};
 
 describe("errMsg", () => {
   test("reads the useful field off whatever it is handed", () => {
@@ -273,11 +278,5 @@ describe("draftBody", () => {
     assert.equal(R.draftBody(undefined), null);
     assert.equal(R.draftBody({}), null);
     assert.equal(R.draftBody('{"tags":[]}'), null, "valid JSON with no body");
-  });
-});
-
-describe("DRAFT_PREFIX", () => {
-  test("is the sessionStorage keyspace the modal and inspector share", () => {
-    assert.equal(R.DRAFT_PREFIX, "pl:draft:");
   });
 });

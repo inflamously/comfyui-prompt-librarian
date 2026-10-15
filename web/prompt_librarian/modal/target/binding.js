@@ -10,13 +10,13 @@
  * graph, and re-watches when the target was deleted or replaced.
  *
  * Echo suppression (a push must not bounce back as a node edit) lives in
- * node/text-sync.js, not here.
+ * modal/node/text-sync.js, not here.
  */
 
 import { warnOnce } from "../../shared/singleton.js";
-import { pollNodeText, readNodeText, watchNodeText, writeNodeText } from "../../node/text-sync.js";
+import { pollNodeText, readNodeText, watchNodeText, writeNodeText } from "../node/text-sync.js";
 import { hostApp } from "./host.js";
-import { inst, setState } from "../state.js";
+import { inst, slice } from "../instance.js";
 import { resolveTarget } from "./nodes.js";
 import { noteUsage } from "./load.js";
 import { writeLinkPref } from "./preferences.js";
@@ -25,7 +25,7 @@ import { writeLinkPref } from "./preferences.js";
 /* ---- Link toggle ---------------------------------------------------------- */
 
 export function isLinked() {
-  return inst().state.link !== false;
+  return slice("shell").get("link") !== false;
 }
 
 /** Turning the link on pulls from the node, since its text is what the
@@ -33,8 +33,8 @@ export function isLinked() {
  */
 export function setLinked(on) {
   const next = !!on;
-  if (inst().state.link === next) return next;
-  setState({ link: next });
+  if (slice("shell").get("link") === next) return next;
+  slice("shell").set({ link: next });
   writeLinkPref(next);
   syncBinding();
   return next;
@@ -86,7 +86,7 @@ function nodeAlreadyShows(node, values) {
 /* ---- node -> panel -------------------------------------------------------- */
 
 function applyNodeTextToPanel(body) {
-  const inspector = inst().ctx?.inspector;
+  const inspector = inst().panes.inspector;
   if (typeof inspector?.setBody !== "function") return;
   try {
     inspector.setBody(body, { fromNode: true });
@@ -105,7 +105,7 @@ export function syncBinding() {
   const it = inst();
   // Wait for the inspector: it is optional, and seeding before it registers
   // would drop the node's initial text on the floor.
-  if (!it.open || !isLinked() || !it.ctx?.inspector) {
+  if (!it.open || !isLinked() || !it.panes.inspector) {
     detachBinding();
     return;
   }
@@ -157,7 +157,7 @@ function attachBinding(node) {
 
   try {
     const cur = readNodeText(node);
-    if (cur && str(cur.body) !== str(it.state.buffer?.body)) applyNodeTextToPanel(cur.body);
+    if (cur && str(cur.body) !== str(slice("inspector").get("buffer")?.body)) applyNodeTextToPanel(cur.body);
   } catch (err) {
     warnOnce("bind-seed", "could not seed the panel from the node", err);
   }

@@ -11,11 +11,7 @@ from .update import update_prompt
 
 
 def list_versions(lib: Library, pid: str) -> list[dict[str, object]]:
-    """Full version entries, oldest first.
-
-    Raises:
-        NotFoundError: Unknown id.
-    """
+    """Full version entries, oldest first."""
     rec = get_prompt(lib, pid)
     if rec is None:
         raise NotFoundError(f"no prompt with id {pid!r}")
@@ -25,10 +21,7 @@ def list_versions(lib: Library, pid: str) -> list[dict[str, object]]:
 def version_previews(
     lib: Library, pid: str, chars: int = 160, label_fn: Callable[[str], str] | None = None
 ) -> list[dict[str, object]]:
-    """Versions without their full bodies, to keep selection responses small.
-
-    ``label_fn(body)`` is injected so labels stay independent of storage.
-    """
+    """Versions without their full bodies, to keep selection responses small."""
     return [
         {
             "index": index,
@@ -43,11 +36,7 @@ def version_previews(
 
 
 def get_version(lib: Library, pid: str, index: object) -> dict[str, object]:
-    """One version entry by index.
-
-    Raises:
-        NotFoundError: Unknown id, or an index out of range or not a number.
-    """
+    """One version entry by index."""
     entries = list_versions(lib, pid)
     try:
         position = int(index)

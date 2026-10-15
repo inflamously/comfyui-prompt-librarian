@@ -32,15 +32,7 @@ def _absorb_history(target: Record, source: Record, stamp: str) -> None:
 
 
 def merge_prompts(lib: Library, winner_id: str, loser_id: str) -> Record:
-    """Merge ``loser_id`` into ``winner_id`` and delete the loser, in one transaction.
-
-    The winner keeps its id and body; usage adds up, tags union, and the loser's
-    recent history and body join the winner's versions.
-
-    Raises:
-        SameRecordError: The two ids are the same.
-        NotFoundError: Either id is unknown.
-    """
+    """Merge ``loser_id`` into ``winner_id`` and delete the loser, in one transaction."""
     if winner_id == loser_id:
         raise SameRecordError("cannot merge a record into itself")
     with lib.write("merge") as work:
@@ -55,13 +47,7 @@ def merge_prompts(lib: Library, winner_id: str, loser_id: str) -> Record:
 
 
 def merge_into_new(lib: Library, a_id: str, b_id: str, body: str) -> Record:
-    """Create a third record with ``body`` that absorbs both inputs, then delete both.
-
-    Raises:
-        SameRecordError: The two ids are the same.
-        ValueError: ``body`` is blank; neither input is a safe default.
-        NotFoundError: Either id is unknown.
-    """
+    """Create a third record with ``body`` that absorbs both inputs, then delete both."""
     if a_id == b_id:
         raise SameRecordError("cannot merge a record with itself")
     if not str(body or "").strip():

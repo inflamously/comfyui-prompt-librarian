@@ -1,6 +1,4 @@
-"""Resolve query selections inside the mutation's executor hop; resolution may
-scan the library. Return resolved IDs so the client knows what changed.
-"""
+"""Bulk routes; query selections resolve inside the mutation's executor hop."""
 
 from ...features.prompts import bulk as prompts_bulk
 from .. import schemas

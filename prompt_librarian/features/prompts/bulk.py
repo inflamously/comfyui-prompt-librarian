@@ -26,10 +26,7 @@ def bulk_retag(
     remove: list[str] | None = None,
     replace: list[str] | None = None,
 ) -> int:
-    """Add/remove tags, or ``replace`` them outright, in one transaction.
-
-    Returns the number of records whose tags actually changed.
-    """
+    """Add/remove or ``replace`` tags in one transaction; returns how many records changed."""
     stamp = now_iso()
     with lib.write("bulk_retag") as work:
         touched = 0
@@ -54,11 +51,7 @@ def _retagged(
 
 
 def bulk_merge(lib: Library, ids: Iterable[str], winner: str | None = None) -> Record | None:
-    """Merge every id into ``winner`` (the first id by default), one merge at a time.
-
-    Raises:
-        SameRecordError: Fewer than two distinct ids.
-    """
+    """Merge every id into ``winner`` (the first id by default), one merge at a time."""
     order = list(dict.fromkeys(ids))
     if len(order) < 2:
         raise SameRecordError("a merge needs at least two distinct records")

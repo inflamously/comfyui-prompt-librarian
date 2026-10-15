@@ -5,11 +5,7 @@ from typing import Literal
 
 
 class _Schema:
-    """Base for every declaration here — turns attribute docstrings into docs.
-
-    ``ConfigDict`` is only a ``TypedDict``, so the config can be a plain dict
-    literal and this module stays free of the pydantic import.
-    """
+    """Base for every declaration here; turns attribute docstrings into docs."""
 
     __pydantic_config__ = {"use_attribute_docstrings": True}
 
@@ -44,13 +40,7 @@ class VersionPreview(_Schema):
 
 @dataclass
 class Prompt(_Schema):
-    """A library record.
-
-    No name: a record *is* its body. Every response that needs a handle for one
-    carries a derived ``label`` instead, and this type deliberately does not —
-    it is also the shape ``/export`` writes and ``/import`` reads, and a
-    derived field in a file would be a stored name again by another route.
-    """
+    """A library record; no name or label, since a record is its body."""
 
     id: str
     """``uuid4().hex``, stable across edits and never a content hash."""

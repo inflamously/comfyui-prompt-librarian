@@ -1,0 +1,55 @@
+/* Text-link buttons (.pl-link): the header's link toggle and the inline links
+   in the inspector, dupes, compare and storage. The second block refines the
+   first for every .pl-link; keep them in this order. */
+
+.pl-link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--pl-border);
+  border-radius: 999px;
+  background: var(--pl-btn-tint);
+  font-family: var(--pl-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--pl-text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color var(--pl-fast) ease, color var(--pl-fast) ease,
+    background-color var(--pl-fast) ease;
+}
+
+.pl-link:hover {
+  border-color: var(--pl-accent);
+  color: var(--pl-text);
+}
+
+.pl-link.is-on {
+  background: var(--pl-accent-soft);
+  border-color: var(--pl-accent);
+  color: var(--pl-accent);
+}
+
+.pl-link {
+  background: var(--pl-btn-tint-soft);
+  border: 0;
+  padding: 2px 4px;
+  font: inherit;
+  color: var(--pl-text-dim);
+  cursor: pointer;
+  border-bottom: 1px solid transparent;
+  transition: color var(--pl-fast) ease, border-color var(--pl-fast) ease;
+}
+
+.pl-link:hover {
+  color: var(--pl-accent);
+  border-bottom-color: var(--pl-accent);
+}
+
+.pl-link[disabled] {
+  color: var(--pl-text-mute);
+  cursor: default;
+  border-bottom-color: transparent;
+}

@@ -1130,7 +1130,7 @@ def test_store_exceptions_map_to_codes(call, store, monkeypatch, exc, status, co
 
 
 def test_a_handler_bug_never_escapes_the_guard(call, store, monkeypatch):
-    monkeypatch.setattr(api.routes.library, "_count", lambda: 1 / 0)
+    monkeypatch.setattr(api.routes.library, "library_facts", lambda _lib: 1 / 0)
     status, payload = call("get", "/ping")
     assert status == 500
     assert payload["code"] == "internal"

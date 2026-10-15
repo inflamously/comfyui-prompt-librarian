@@ -23,12 +23,7 @@ def get_snippet(lib: Library, name: str) -> str | None:
 
 
 def set_snippet(lib: Library, name: str, body: str) -> dict[str, Any]:
-    """Create or replace a snippet; returns the stored entry.
-
-    Raises:
-        ValueError: The name is empty.
-        BodyTooLargeError: The body is over the record limit.
-    """
+    """Create or replace a snippet; returns the stored entry."""
     key = as_str(name).strip()[: meta.MAX_SNIPPET_NAME_CHARS]
     if not key:
         raise ValueError("snippet name is empty")
@@ -39,14 +34,22 @@ def set_snippet(lib: Library, name: str, body: str) -> dict[str, Any]:
 
 
 def delete_snippet(lib: Library, name: str) -> None:
-    """Delete a snippet.
-
-    Raises:
-        NotFoundError: No snippet has that name; nothing is written.
-    """
+    """Delete a snippet."""
     key = as_str(name).strip()
     with meta.edit(lib, "snippet") as (work, stored):
         if key not in stored["snippets"]:
             work.skip = True
             raise NotFoundError(f"no snippet named {key!r}")
         del stored["snippets"][key]
+
+
+def edit_snippet(lib: Library, op: str, name: str, body: str = "") -> dict[str, dict[str, Any]]:
+    """Apply one ``set`` or ``delete`` and return every snippet afterwards."""
+    op = as_str(op or "set").strip().lower()
+    if op == "set":
+        set_snippet(lib, name, body)
+    elif op == "delete":
+        delete_snippet(lib, name)
+    else:
+        raise ValueError(f"unknown snippet op {op!r}")
+    return list_snippets(lib)

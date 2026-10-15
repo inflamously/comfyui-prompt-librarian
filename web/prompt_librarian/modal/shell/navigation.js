@@ -1,5 +1,5 @@
 import { h } from "../../shared/dom.js";
-import { inst } from "../state.js";
+import { inst } from "../instance.js";
 
 export function createPaneTabs() {
   return h(

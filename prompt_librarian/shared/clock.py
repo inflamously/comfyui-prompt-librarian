@@ -1,8 +1,4 @@
-"""The library's one clock and one id source.
-
-Every timestamp and every new id comes from here, so a harness can pin both
-(``scripts/devkit/sim.py`` does, to make runs deterministic).
-"""
+"""The library's one clock and id source, pinnable for deterministic runs."""
 
 import uuid
 from datetime import datetime, timezone

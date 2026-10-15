@@ -10,13 +10,7 @@ from ...shared.records import Record
 
 
 def record_usage(lib: Library, pid: str, body: object = None) -> Record | None:
-    """Count one run; ``None`` when nothing was counted.
-
-    Only a run whose ``body`` matches the saved body (ignoring surrounding
-    whitespace) counts, so unsaved edits cannot inflate usage. ``updated`` is
-    left alone: a run is not an edit, and bumping it would make an open editor's
-    next save look like a conflict.
-    """
+    """Count one run whose ``body`` matches the saved one; ``None`` when nothing was counted."""
     with lib.write("usage") as work:
         rec = entries.get(work.con, pid)
         if rec is None or (body is not None and as_str(body).strip() != rec["body"].strip()):
@@ -24,5 +18,6 @@ def record_usage(lib: Library, pid: str, body: object = None) -> Record | None:
             return None
         rec["used"] = max(0, as_int(rec.get("used", 0))) + 1
         rec["last_run"] = now_iso()
+        # ``updated`` stays: bumping it would make an open editor's next save conflict.
         entries.put(work, rec)
     return copy.deepcopy(rec)

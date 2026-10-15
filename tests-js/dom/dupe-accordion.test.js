@@ -18,7 +18,7 @@ import assert from "node:assert/strict";
 import { setupDom } from "../harness/env.js";
 import { imp } from "../harness/mount.js";
 
-const B = "prompt_librarian/browse/";
+const B = "prompt_librarian/features/browse/";
 
 let env;
 beforeEach(() => {
@@ -150,51 +150,47 @@ const GROUPED_PAYLOAD = {
 };
 
 /**
- * Mount the real rail against a stubbed /search.
+ * Mount the real rail against a stubbed /search, on a real browse slice.
  *
- * The rail reaches for a dozen ctx hooks; all but `API` are inert here, which
- * is the point — what is under test is index mapping and row counts, not the
- * inspector it would otherwise talk to.
+ * Everything but `api` is inert here, which is the point: what is under test
+ * is index mapping and row counts, not the inspector it would otherwise talk to.
  */
 async function mountRail(payload = GROUPED_PAYLOAD) {
-  const { mountList } = await imp(B + "index.js");
+  const { BrowsePane } = await imp("prompt_librarian/features/browse/index.js");
+  const { Store } = await imp("prompt_librarian/shared/store.js");
   const { API } = await imp("prompt_librarian/api/routes.js");
 
   env.api.route("/prompt_librarian/taxonomy", { tags: [] });
   env.api.route("/prompt_librarian/search", payload);
 
+  const slice = new Store({
+    browse: {
+      query: { q: "", tags: [], dupesOnly: false, sort: "relevance" },
+      selection: new Set(),
+      selectionMode: "ids",
+      anchorIndex: null,
+    },
+  }).slice("browse");
+  let currentId = null;
   const state = {
-    query: { q: "", tags: [], dupesOnly: false, sort: "relevance" },
-    selection: new Set(),
-    selectionMode: "ids",
-    currentId: null,
-    tags: [],
-    dupes: { threshold: 0.9 },
-  };
-  const ctx = {
-    API,
-    debounces: [],
-    getState: () => state,
-    setState: (patch) => Object.assign(state, patch),
-    subscribe: () => () => {},
-    onKey: (el, type, fn) => {
-      el.addEventListener(type, fn);
-      return () => el.removeEventListener(type, fn);
-    },
-    selectPrompt: (id) => {
-      state.currentId = id;
-    },
-    loadIntoNode: () => ({ ok: true }),
-    toast() {},
-    reportError() {},
-    confirmDialog: async () => true,
+    get currentId() { return currentId; },
+    get selection() { return slice.get("selection"); },
   };
 
   const el = document.createElement("div");
   document.body.appendChild(el);
-  const list = mountList(el, ctx);
+  const list = new BrowsePane({
+    api: API,
+    slice,
+    tags: { openPicker() {} },
+    context: () => ({ threshold: 0.9, currentId }),
+    onSelect: (id) => { currentId = id; },
+    onLoad: () => ({ ok: true }),
+    toast() {},
+    reportError() {},
+  }).mount(el);
   await list.refresh();
-  return { list, ctx, state, el };
+  return { list, state, el };
 }
 
 /** The rows the virtual list actually has mounted, in index order. */
@@ -310,7 +306,7 @@ describe("selecting a folded cluster", () => {
 
   test('"all filtered" counts records, so it cannot promise fewer than it deletes', async () => {
     const { list } = await mountRail();
-    list.selectAllFiltered();
+    list.selection.selectAllFiltered();
     assert.equal(list.selection.count(), 5, "not 2, which is the row count");
     env.assertNoErrors();
   });

@@ -1,0 +1,23 @@
+/* The footer's optimize hint and the storage dialog. */
+
+.pl-storage-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--pl-warn, #d9a441);
+}
+
+.pl-storage-hint[hidden] {
+  display: none;
+}
+
+.pl-storage-dialog {
+  width: min(620px, calc(100vw - 32px));
+}
+
+.pl-storage-status {
+  display: grid;
+  gap: 6px;
+  padding: 14px 0 18px;
+  color: var(--pl-muted, #aeb4be);
+}

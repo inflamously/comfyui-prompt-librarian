@@ -1,0 +1,115 @@
+/* Tokens live in shared/ui/tokens.css. Scope selectors to .pl-root or
+   .pl-node-card and prefix keyframes with pl- to avoid leaking into ComfyUI.
+   Reserve !important for reduced motion. Restate inherited typography and box
+   sizing to resist host stylesheet rules. */
+
+/* Restate inherited properties on descendants to resist host element selectors. */
+.pl-root,
+.pl-node-card,
+.pl-wordgen {
+  box-sizing: border-box;
+  font-family: var(--pl-font);
+  font-size: var(--pl-fs);
+  font-weight: 400;
+  font-style: normal;
+  line-height: var(--pl-lh);
+  letter-spacing: normal;
+  text-transform: none;
+  text-align: left;
+  color: var(--pl-text);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+.pl-root *,
+.pl-root *::before,
+.pl-root *::after,
+.pl-node-card *,
+.pl-node-card *::before,
+.pl-node-card *::after {
+  box-sizing: border-box;
+}
+
+/* Form controls do not inherit typography by default. */
+.pl-root input,
+.pl-root textarea,
+.pl-root select,
+.pl-root button,
+.pl-node-card button {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  margin: 0;
+}
+
+/* Restore selection for readable/editable content after disabling it on chrome. */
+.pl-root input,
+.pl-root textarea {
+  user-select: text;
+}
+
+/* :where() keeps reset specificity at zero so component classes can override it. */
+:where(.pl-root, .pl-node-card) :where(button) {
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: var(--pl-btn-tint);
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.pl-root .pl-spacer {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pl-root ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.pl-root ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pl-root ::-webkit-scrollbar-thumb {
+  background: var(--pl-border-soft);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+
+.pl-root ::-webkit-scrollbar-thumb:hover {
+  background: var(--pl-border);
+  background-clip: padding-box;
+}
+
+.pl-root ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.pl-root .pl-list,
+.pl-root .pl-inspect,
+.pl-root .pl-ta {
+  scrollbar-width: thin;
+  scrollbar-color: var(--pl-border-soft) transparent;
+}
+
+/* Reduced-motion overrides must beat every state-specific animation and transition. */
+@media (prefers-reduced-motion: reduce) {
+  .pl-root,
+  .pl-root *,
+  .pl-root *::before,
+  .pl-root *::after,
+  .pl-node-card,
+  .pl-node-card *,
+  .pl-node-card *::before,
+  .pl-node-card *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}

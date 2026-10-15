@@ -11,11 +11,7 @@ WILDCARD_EXT = ".txt"
 
 
 def _safe_name(name: str) -> str | None:
-    """Reject traversal syntax before filesystem access.
-
-    ``path_for`` separately checks resolved containment to catch symlinks
-    escaping the root.
-    """
+    """Reject traversal syntax before filesystem access; ``path_for`` catches symlinks."""
     if not name or "\x00" in name:
         return None
     cleaned = name.replace("\\", "/").strip()

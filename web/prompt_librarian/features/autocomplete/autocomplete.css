@@ -1,0 +1,87 @@
+/* The suggestion menu and the word-picture preview beside it. */
+
+/* Saved-body completion keeps keyboard focus in the panel editor. */
+.pl-root .pl-autocomplete {
+  position: fixed;
+  z-index: 10000;
+  width: max-content;
+  min-width: min(220px, calc(100vw - 16px));
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--pl-border);
+  border-radius: 6px;
+  background: var(--pl-bg-chrome);
+  color: var(--pl-text);
+  box-shadow: 0 4px 16px #0006;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+.pl-root .pl-autocomplete[hidden] { display: none; }
+.pl-root .pl-autocomplete [role="option"] {
+  padding: 6px 9px;
+  cursor: pointer;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: 3px;
+}
+.pl-root .pl-autocomplete [aria-selected="true"] { background: var(--pl-accent-soft); color: var(--pl-accent); }
+
+/* Word picture: one thumbnail beside the completion menu for the highlighted word. */
+.pl-root .pl-autocomplete [role="option"].has-picture::after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--pl-accent);
+  vertical-align: middle;
+  opacity: 0.7;
+}
+.pl-root .pl-word-preview {
+  position: fixed;
+  z-index: 10000;
+  width: 136px;
+  padding: 4px;
+  border: 1px solid var(--pl-border);
+  border-radius: 6px;
+  background: var(--pl-bg-chrome);
+  color: var(--pl-text);
+  box-shadow: 0 4px 16px #0006;
+  box-sizing: border-box;
+}
+.pl-root .pl-word-preview[hidden] { display: none; }
+.pl-root .pl-word-preview img {
+  display: block;
+  width: 128px;
+  height: 128px;
+  object-fit: contain;
+  border-radius: 3px;
+  background: #0003;
+}
+.pl-root .pl-word-preview-caption {
+  margin-top: 3px;
+  font-size: 11px;
+  text-align: center;
+  color: var(--pl-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pl-root .pl-word-preview-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #000a;
+  color: #fff;
+  font-size: 14px;
+  line-height: 20px;
+  cursor: pointer;
+  opacity: 0;
+}
+.pl-root .pl-word-preview:hover .pl-word-preview-remove { opacity: 1; }

@@ -1,8 +1,7 @@
 import { cls, h } from "../../shared/dom.js";
 import { isLinked, setLinked, syncBinding } from "./binding.js";
 import { ARROW, CARET, BROKEN, LINKED } from "../shell/glyphs.js";
-import { popLayer, pushLayer } from "../overlays/layers.js";
-import { inst, setState, subscribe } from "../state.js";
+import { inst, slice } from "../instance.js";
 import { librarianNodes, nodeLabel, refreshTarget } from "./nodes.js";
 
 export function createTargetButton() {
@@ -34,7 +33,7 @@ function openTargetPicker() {
   }
 
   for (const node of nodes) {
-    const selected = String(node.id) === String(instance.state.targetNodeId);
+    const selected = String(node.id) === String(slice("shell").get("targetNodeId"));
     list.appendChild(h(
       "button",
       {
@@ -43,11 +42,11 @@ function openTargetPicker() {
         role: "option",
         "aria-selected": String(selected),
         onclick: () => {
-          setState({ targetNodeId: node.id });
+          slice("shell").set({ targetNodeId: node.id });
           refreshTarget();
           // Seed the new binding from the node's rendered text.
           syncBinding();
-          popLayer(handle);
+          instance.layers.pop(handle);
         },
       },
       nodeLabel(node)
@@ -57,7 +56,7 @@ function openTargetPicker() {
   const bounds = instance.els.target.getBoundingClientRect();
   list.style.top = `${Math.round(bounds.bottom + 6)}px`;
   list.style.left = `${Math.round(bounds.left)}px`;
-  const handle = pushLayer({ el: list, closeOnOutside: true });
+  const handle = instance.layers.push({ el: list, closeOnOutside: true });
 }
 
 export function paintTarget(state) {
@@ -100,11 +99,12 @@ export function paintLink(state) {
 }
 
 export function wireTargetControls() {
-  subscribe("target", paintTarget);
-  subscribe("targetOk", paintTarget);
-  subscribe("link", paintLink);
-  paintTarget(inst().state);
-  paintLink(inst().state);
+  const shell = slice("shell");
+  shell.subscribe("target", () => paintTarget(shell.get()));
+  shell.subscribe("targetOk", () => paintTarget(shell.get()));
+  shell.subscribe("link", () => paintLink(shell.get()));
+  paintTarget(shell.get());
+  paintLink(shell.get());
 }
 
 export function createLinkButton() {

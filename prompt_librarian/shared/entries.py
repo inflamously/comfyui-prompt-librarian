@@ -1,11 +1,4 @@
-"""Rows of the ``entries`` and ``tags`` tables: the prompt records themselves.
-
-Prompt editing, imports and legacy migration all write records through here.
-
-The complete record is ``record_json``; the other columns are the list/sort
-summary (:func:`~prompt_librarian.shared.records.index_entry`) and the corpus
-projection. Every write also runs the library's derived-table writers.
-"""
+"""Rows of the ``entries`` and ``tags`` tables: the prompt records themselves."""
 
 import copy
 import json

@@ -1,8 +1,7 @@
 import { h } from "../../shared/dom.js";
 import { attemptClose } from "../lifecycle/close.js";
 import { TIMES } from "./glyphs.js";
-import { popLayer, topLayer } from "../overlays/layers.js";
-import { inst } from "../state.js";
+import { inst } from "../instance.js";
 
 export function createCloseButton() {
   // The shell retains this handle so save-on-close can disable it during a save.
@@ -24,9 +23,9 @@ export function wireBackdrop() {
   const root = instance.root;
 
   root.addEventListener("pointerdown", (event) => {
-    const layer = topLayer();
+    const layer = instance.layers.top();
     if (layer && layer.closeOnOutside && layer.el && !layer.el.contains(event.target)) {
-      popLayer(layer);
+      instance.layers.pop(layer);
       return;
     }
     instance.backdropDown = event.target === instance.els.backdrop;
@@ -37,7 +36,7 @@ export function wireBackdrop() {
     instance.backdropDown = false;
     // A drag beginning inside the card must never dismiss the panel.
     if (!startedOnBackdrop || event.target !== instance.els.backdrop) return;
-    if (instance.layers.length) return;
+    if (instance.layers.size) return;
     attemptClose();
   });
 }

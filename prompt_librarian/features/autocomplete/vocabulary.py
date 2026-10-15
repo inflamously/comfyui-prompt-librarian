@@ -69,10 +69,7 @@ def project(
     projection: dict[str, Any] | None,
     previous_body: str | None,
 ) -> None:
-    """Library projector: re-learn a record's words only when its body changed.
-
-    Deleted records need nothing here; their sources cascade with ``entries``.
-    """
+    """Library projector: re-learn a record's words only when its body changed."""
     if projection is not None and projection["body"] != previous_body:
         put(con, pid, projection["body"])
 

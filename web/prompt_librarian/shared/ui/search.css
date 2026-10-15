@@ -1,0 +1,35 @@
+/* The search field: the rail's box and the menu filter in shared/ui/menu.js. */
+
+.pl-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: 14px 14px 0;
+  padding: 9px 12px;
+  background: var(--pl-bg-input);
+  border: 1px solid var(--pl-border);
+  border-radius: var(--pl-radius);
+  transition: border-color var(--pl-fast) ease;
+}
+
+.pl-search:focus-within {
+  border-color: var(--pl-accent);
+}
+
+.pl-search-in {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  padding: 0;
+  font-family: var(--pl-mono);
+  font-size: 13.5px;
+  letter-spacing: 0.01em;
+  color: var(--pl-text);
+}
+
+.pl-search-in::placeholder {
+  color: var(--pl-text-mute);
+}

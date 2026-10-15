@@ -1,9 +1,4 @@
-"""Read the WordNet 3.0 database files (``data.*``, ``index.*``, ``*.exc``).
-
-Format: https://wordnet.princeton.edu/documentation/wndb5wn. Only what the
-gallery shows is kept: each synset's words, definition and examples, the
-antonym pointers, and each lemma's senses in frequency order.
-"""
+"""Read the WordNet 3.0 database files (``data.*``, ``index.*``, ``*.exc``)."""
 
 import re
 from collections.abc import Iterable, Iterator

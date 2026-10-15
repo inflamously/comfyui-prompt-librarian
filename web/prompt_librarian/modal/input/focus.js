@@ -1,24 +1,9 @@
-import { inst } from "../state.js";
-
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), ' +
-  'select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-export function focusables(scope) {
-  if (!scope || typeof scope.querySelectorAll !== "function") return [];
-  const out = [];
-  for (const el of scope.querySelectorAll(FOCUSABLE)) {
-    if (el.hidden || el.getAttribute("aria-hidden") === "true") continue;
-    if (el.offsetParent === null && el.getAttribute("tabindex") === null) continue;
-    out.push(el);
-  }
-  return out;
-}
+import { focusables } from "../../shared/dom.js";
+import { inst } from "../instance.js";
 
 function trapScope() {
   const it = inst();
-  const top = it.layers[it.layers.length - 1];
-  return (top && top.el) || it.els.card || it.root;
+  return it.layers?.top()?.el || it.els.card || it.root;
 }
 
 export function handleTab(e) {

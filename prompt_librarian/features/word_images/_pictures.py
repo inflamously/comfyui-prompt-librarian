@@ -1,11 +1,4 @@
-"""A word's pictures: up to nine thumbnails, kept in order, shown as one mosaic.
-
-Each picture is its own file (``<sha1>-<id>.webp``). The word's main file
-(``<sha1>.webp``, what previews and tiles load) is the single picture itself,
-or the mosaic of all of them, rebuilt on every change. Entries written before
-pictures were lists have no ``pics``: their main file is their one picture,
-known as :data:`LEGACY_ID` and copied out on the first change.
-"""
+"""A word's pictures: up to nine thumbnails, kept in order, shown as one mosaic."""
 
 import os
 import secrets
@@ -24,10 +17,7 @@ def picture_file(key: str, picture_id: str) -> str:
 
 
 def pictures(root: str, key: str, entry: dict | None) -> list[dict]:
-    """The word's pictures in order; a legacy entry is moved to its own picture file.
-
-    The caller holds :data:`_index.LOCK`.
-    """
+    """The word's pictures in order, a legacy entry moved to its own file; caller holds LOCK."""
     if not entry:
         return []
     if isinstance(entry.get("pics"), list):
@@ -49,14 +39,7 @@ def new_picture(root: str, key: str, data: bytes, src: str) -> dict:
 
 
 def save(root: str, key: str, pics: list[dict], index: dict[str, dict]) -> dict[str, object]:
-    """Rebuild the main file from ``pics`` and record the entry in ``index``.
-
-    With no pictures left the word is dropped. The caller holds
-    :data:`_index.LOCK` and writes ``index`` afterwards.
-
-    Returns:
-        The public entry with its word, or ``{}`` when the word has no pictures.
-    """
+    """Rebuild the main file from ``pics`` and record it in ``index``; caller holds LOCK."""
     main = os.path.join(root, _index.file_name(key))
     if not pics:
         index.pop(key, None)

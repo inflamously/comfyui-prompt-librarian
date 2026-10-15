@@ -1,0 +1,65 @@
+/* Rail parts only browse has: hit count, row checkboxes, group twisties and
+   members. Lists, rows, chips and tabs are in shared/ui/. */
+
+.pl-hits {
+  flex: 0 0 auto;
+  font-family: var(--pl-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--pl-text-dim);
+  white-space: nowrap;
+}
+
+/* Include input in the selector to beat the form reset's margin specificity. */
+.pl-row input.pl-row-check {
+  grid-area: check;
+  align-self: start;
+  width: var(--pl-check-size);
+  height: var(--pl-check-size);
+  /* Center on the name line box, whose grid row can be taller when badges appear. */
+  margin: calc((var(--pl-row-name-lh) - var(--pl-check-size)) / 2) 0 0;
+  accent-color: var(--pl-accent);
+  cursor: pointer;
+  opacity: 1;
+  margin-top: 1px;
+}
+
+/* Expand clusters into ordinary fixed-height rows; indent them without changing height. */
+/* Center the twisty on the name line; baseline alignment would enlarge the line box. */
+.pl-row-twisty {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-content: start;
+  justify-content: center;
+  width: var(--pl-twisty-size);
+  height: calc(var(--pl-twisty-size));
+  font-size: 20px;
+  line-height: 1;
+  color: var(--pl-warn);
+  user-select: none;
+}
+
+/* hidden must override inline-flex so empty twisty hit boxes disappear. */
+.pl-row-twisty[hidden] {
+  display: none;
+}
+
+.pl-row-twisty:hover {
+  border: 1px solid var(--pl-star);
+}
+
+.pl-row.is-member {
+  padding-left: calc(14px + var(--pl-twisty-size) + 7px);
+}
+
+/* Keep the member rule inside padding so it cannot alter grid or row height. */
+.pl-row.is-member::before {
+  content: "";
+  position: absolute;
+  left: 20px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--pl-border-soft);
+  pointer-events: none;
+}

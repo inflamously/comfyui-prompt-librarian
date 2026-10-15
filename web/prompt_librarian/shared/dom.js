@@ -105,3 +105,25 @@ export function cls(el, cls_, on) {
   if (on) el.classList.add(cls_);
   else el.classList.remove(cls_);
 }
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), ' +
+  'select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** The visible, enabled elements under `scope` that take keyboard focus, in DOM order. */
+export function focusables(scope) {
+  if (!scope || typeof scope.querySelectorAll !== "function") return [];
+  const out = [];
+  for (const el of scope.querySelectorAll(FOCUSABLE)) {
+    if (el.hidden || el.getAttribute("aria-hidden") === "true") continue;
+    if (el.offsetParent === null && el.getAttribute("tabindex") === null) continue;
+    out.push(el);
+  }
+  return out;
+}
+
+/** Fire `input` on a text field after a programmatic change; setRangeText and
+ * `.value =` do not, and listeners (dirty state, dupes, the node) rely on it. */
+export function dispatchInput(field) {
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+}

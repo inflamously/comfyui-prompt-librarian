@@ -1,32 +1,58 @@
+/* Stylesheets load as <link> elements, once per file. A component passes a URL
+ * resolved from its own import.meta.url, which keeps ComfyUI's mount name and
+ * any proxy prefix, and drops the module's cache-busting query:
+ *
+ *     useStyles(new URL("./rail.css", import.meta.url));
+ */
+
 import { NS } from "./ns.js";
 
-export const CSS_LINK_ID = "pl-librarian-css";
+const ATTR = "data-pl-css";
 
-/** Resolve CSS relative to import.meta.url to preserve ComfyUI mount names and
- * proxy prefixes. URL resolution drops the module cache-busting query.
- *
- * @returns {HTMLLinkElement|null} the link element, or null with no document
- */
-export function ensureStyles() {
+/** Add a stylesheet <link> unless that file is already linked; null without a document. */
+export function useStyles(href) {
   if (typeof document === "undefined") return null;
-  const existing = document.getElementById(CSS_LINK_ID);
+  const url = new URL(String(href));
+  const key = url.pathname;
+  const existing = [...document.querySelectorAll(`link[${ATTR}]`)].find(
+    (link) => link.getAttribute(ATTR) === key,
+  );
   if (existing) return existing;
 
-  let href;
-  try {
-    href = new URL("../librarian.css", import.meta.url).href;
-  } catch (err) {
-    console.error(`${NS} could not resolve librarian.css URL`, err);
-    return null;
-  }
-
   const link = document.createElement("link");
-  link.id = CSS_LINK_ID;
   link.rel = "stylesheet";
-  link.href = href;
+  link.href = url.href;
+  link.setAttribute(ATTR, key);
   link.addEventListener("error", () => {
-    console.error(`${NS} failed to load stylesheet: ${href}`);
+    console.error(`${NS} failed to load stylesheet: ${url.href}`);
   });
   (document.head || document.documentElement).appendChild(link);
+  return link;
+}
+
+/* The shared/ui sheets, linked up front in cascade order: the modal, its
+ * features and the node card all build on them, and later sheets (each
+ * component's own) may refine them. */
+const PACK_SHEETS = [
+  "./ui/tokens.css",
+  "./ui/layer-stack.css",
+  "./ui/popover.css",
+  "./ui/dialog.css",
+  "./ui/toast.css",
+  "./ui/base.css",
+  "./ui/link.css",
+  "./ui/search.css",
+  "./ui/chip.css",
+  "./ui/tabs.css",
+  "./ui/list.css",
+  "./ui/text-area.css",
+  "./ui/stars.css",
+  "./ui/button.css",
+];
+
+/** Link the shared sheets; returns the last one's <link>. */
+export function ensureStyles() {
+  let link = null;
+  for (const sheet of PACK_SHEETS) link = useStyles(new URL(sheet, import.meta.url));
   return link;
 }

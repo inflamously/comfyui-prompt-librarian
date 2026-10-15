@@ -1,7 +1,4 @@
-"""The portable JSON envelope: metadata plus every record, as exports write it.
-
-Malformed input is tolerated and unknown keys survive, for forward compatibility.
-"""
+"""The portable JSON envelope: metadata plus every record, as exports write it."""
 
 from typing import Any
 

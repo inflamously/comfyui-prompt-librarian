@@ -50,11 +50,7 @@ def find_similar(  # noqa: C901 - one scoring pass, kept inline on purpose
     ignored: Iterable[Any] = (),
     rev: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Return records similar to ``text`` or to record ``pid``'s body.
-
-    Ignored pairs remain in the result and carry ``ignored: True``. A keep-both
-    decision controls the save dialog; it does not redefine library contents.
-    """
+    """Return records similar to ``text`` or ``pid``'s body; ignored pairs are flagged."""
     disk_backed = isinstance(source, LibraryDupeSource)
     if text is None:
         if pid is None:

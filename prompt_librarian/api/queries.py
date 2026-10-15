@@ -1,11 +1,9 @@
-"""Share query evaluation between search and bulk selection so they target
-the same records. Coalesce concurrent all-pairs scans before offloading.
-"""
+"""Query evaluation shared by search and bulk selection, with coalesced all-pairs scans."""
 
 import asyncio
 
 from .. import app
-from ..features import dupes, search
+from ..features import dupes
 from .config import BULK_QUERY_LIMIT
 from .utils import _bool, _int, _list, _offload, _rev, _str, _threshold
 
@@ -15,11 +13,7 @@ _all_inflight = {}
 
 
 async def _all_pairs(threshold, exhaustive=False):
-    """The library-wide near-duplicate scan, computed once per concurrent set.
-
-    Returns ``dupes.dupe_counts()``'s full result: ``counts``, ``groups`` and
-    ``pairs``.
-    """
+    """The library-wide near-duplicate scan, computed once per concurrent set."""
     # Refresh before keying: external changes may bump rev and split concurrent
     # callers across different keys.
     key = (_rev(), float(threshold), bool(exhaustive))
@@ -53,66 +47,25 @@ async def _all_pairs(threshold, exhaustive=False):
 
 
 def _run_search(params, limit=None, all_pairs=None):
-    """Share query semantics between search and bulk selection.
-
-    match_id annotates above-threshold matches. Grouping and dupes_only need
-    all_pairs; async callers should await the coalesced scan before calling.
-    Keep-both decisions do not remove matches or clusters.
-    """
-    rev = _rev()
-    threshold = _threshold(params.get("threshold"))
-
-    query = _str(params.get("q") or params.get("query") or "")
-    tags = _list(params.get("tags"))
-    dupes_only = _bool(params.get("dupes_only"))
-    grouped = _bool(params.get("group"))
-    sort = _str(params.get("sort") or "relevance")
-    mode = _str(params.get("mode") or "all")
-    offset = _int(params.get("offset"), 0)
-    page = _int(params.get("limit"), 50) if limit is None else limit
-    match_id = _str(params.get("match_id") or "")
-
-    ids = None
-    groups = None
-    if dupes_only or grouped:
-        scan = all_pairs
-        if scan is None:
-            # A caller that did not pre-compute (the bulk re-run path, tests).
-            scan = dupes.dupe_counts(app.current().dupe_source, threshold, rev=rev)
-        if dupes_only:
-            ids = dupes.dupe_ids(scan)
-        if grouped:
-            groups = scan.get("groups") or []
-
-    def _counts(pids):
-        return dupes.page_dupe_counts(app.current().dupe_source, pids, threshold, rev=rev)
-
-    match_fn = None
-    if match_id:
-        def _matches(pids):
-            hits = dupes.find_similar(app.current().dupe_source, pid=match_id, exclude_id=match_id,
-                                       threshold=threshold, limit=0,
-                                       with_summary=False, rev=rev)
-            table = {hit["id"]: hit["score"] for hit in hits}
-            return {pid: table[pid] for pid in pids if pid in table}
-        match_fn = _matches
-
-    return search.search(
-        app.current().search_source, query,
-        tags=tags, dupes_only=dupes_only,
-        sort=sort, mode=mode, offset=offset, limit=page,
-        threshold=threshold, rev=rev, dupe_ids=ids,
-        dupe_count_fn=_counts, match_fn=match_fn, groups=groups,
+    """Parse a search query (``/search`` or a stored bulk one) and run it."""
+    return app.search_prompts(
+        app.current(),
+        _str(params.get("q") or params.get("query") or ""),
+        tags=_list(params.get("tags")),
+        dupes_only=_bool(params.get("dupes_only")),
+        grouped=_bool(params.get("group")),
+        sort=_str(params.get("sort") or "relevance"),
+        mode=_str(params.get("mode") or "all"),
+        offset=_int(params.get("offset"), 0),
+        limit=_int(params.get("limit"), 50) if limit is None else limit,
+        threshold=_threshold(params.get("threshold")),
+        match_id=_str(params.get("match_id") or ""),
+        all_pairs=all_pairs,
     )
 
 
 def _resolve_ids(data):
-    """Ids for a bulk op: explicit ``ids``, or every hit of a stored ``query``.
-
-    "Select all filtered" over 1 284 prompts must not ship 1 284 ids through
-    the browser, so the frontend stores the *query* instead and the server
-    re-runs it. Runs inside the executor with the mutation it feeds.
-    """
+    """Ids for a bulk op: explicit ``ids``, or every hit of a stored ``query``."""
     ids = data.get("ids")
     if isinstance(ids, (list, tuple)) and ids:
         return [_str(pid) for pid in ids if _str(pid)]

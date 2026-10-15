@@ -1,7 +1,4 @@
-"""Labels depend on the surrounding corpus and are display-only.
-
-Use record IDs for identity and search for discovery.
-"""
+"""Corpus-dependent, display-only labels; use record ids for identity."""
 
 from __future__ import annotations
 
@@ -39,11 +36,7 @@ def label_for(
     ndocs: int = 0,
     chars: int = LABEL_CHARS,
 ) -> str:
-    """Return a short display handle for ``body``.
-
-    ``df`` answers how many records contain a term and ``ndocs`` is the corpus
-    size.  With no corpus, the body's opening words are used instead.
-    """
+    """Return a short display handle for ``body``."""
     return _label_for(
         body,
         df,

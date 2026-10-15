@@ -306,9 +306,8 @@ def build_app(dev_app, reset=None, reload=False):
     app = web.Application(middlewares=[no_store])
     dev = web.RouteTableDef()
 
-    @dev.get("/")
-    async def index(request):
-        with open(os.path.join(DEVHARNESS, "index.html"), encoding="utf-8") as fh:
+    def page(name):
+        with open(os.path.join(DEVHARNESS, name), encoding="utf-8") as fh:
             html = fh.read()
         config = json.dumps(
             {
@@ -324,6 +323,14 @@ def build_app(dev_app, reset=None, reload=False):
             f"<script>window.__DEV__ = {config};</script>",
         )
         return web.Response(text=html, content_type="text/html")
+
+    @dev.get("/")
+    async def index(request):
+        return page("index.html")
+
+    @dev.get("/__dev/widgets")
+    async def widgets(request):
+        return page("widgets.html")
 
     @dev.get("/__dev/manifest")
     async def manifest_route(request):

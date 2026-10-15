@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { imp, seedHost } from "../harness/mount.js";
 
 seedHost();
-const T = await imp("prompt_librarian/word-pictures/template.js");
-const R = await imp("prompt_librarian/word-pictures/runner.js");
+const T = await imp("prompt_librarian/features/word-pictures/template.js");
+const R = await imp("prompt_librarian/features/word-pictures/runner.js");
 
 const workflow = () => ({
   "4": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "x.safetensors" } },

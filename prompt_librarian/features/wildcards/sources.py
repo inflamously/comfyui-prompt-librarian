@@ -1,8 +1,4 @@
-"""Where wildcard files live and where ``[[snippets]]`` come from.
-
-The composition root calls :func:`use_snippets` (and ``configure`` in the package);
-wildcards never import the library. Everything here is resolved lazily.
-"""
+"""Where wildcard files live and where ``[[snippets]]`` come from."""
 
 from collections.abc import Callable
 
@@ -23,11 +19,7 @@ def _default_wildcards_dir() -> str:
 
 
 def _snippet_body(source: object, name: str) -> str | None:
-    """Look ``name`` up in ``source``; ``None`` when it does not exist.
-
-    ``source`` may be a dict of ``{name: body}``, a dict of the library's
-    ``{name: {"body": ...}}`` shape, or any callable taking a name.
-    """
+    """Look ``name`` up in ``source``; ``None`` when it does not exist."""
     if source is None:
         return None
     if callable(source):

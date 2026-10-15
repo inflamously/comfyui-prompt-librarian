@@ -20,7 +20,9 @@ const item = (text) => ({ text, scope: "word", source_count: 1 });
 const pic = (version, source = "generated", page = "") => ({ version, source, page });
 
 async function mount(images = { volume: pic(7) }) {
-  const { attachAutocomplete } = await imp("prompt_librarian/inspector/autocomplete.js");
+  const { Autocomplete } = await imp("prompt_librarian/features/autocomplete/index.js");
+  const { createLane } = await imp("prompt_librarian/api/lanes.js");
+  const { installKeyGuards } = await imp("prompt_librarian/shared/keys.js");
   const host = document.createElement("div");
   host.className = "pl-root";
   const ta = document.createElement("textarea");
@@ -34,8 +36,9 @@ async function mount(images = { volume: pic(7) }) {
     wordImage: async (word, v) => { fetched.push([word, v]); return new Blob(["x"]); },
     removeWordImage: async (word) => { removed.push(word); return { removed: true }; },
   };
-  const ac = attachAutocomplete(ta, { API }, host);
-  cleanup.push(() => ac.detach());
+  const uninstall = installKeyGuards(host);
+  const ac = new Autocomplete({ textarea: ta, api: API, caps: {}, lane: createLane("autocomplete") }).mount(host);
+  cleanup.push(() => { ac.destroy(); uninstall(); });
   const type = (value) => {
     ta.focus(); ta.value = value; ta.setSelectionRange(value.length, value.length);
     ta.dispatchEvent(new Event("input", { bubbles: true }));
@@ -73,7 +76,7 @@ test("a word without a picture makes no request and hides the preview", async ()
 
 test("a picture generated in this page shows without refetching the listing", async () => {
   const h = await mount({});
-  const { rememberPicture } = await imp("prompt_librarian/inspector/word-preview.js");
+  const { rememberPicture } = await imp("prompt_librarian/shared/pictures.js");
   await flush();
   rememberPicture("Violet", { version: 4, source: "generated" });
   h.type("vo"); await flush(150);
@@ -82,13 +85,13 @@ test("a picture generated in this page shows without refetching the listing", as
   assert.equal(h.listings.length, 1);
 });
 
-test("dismissing the menu hides the preview and detach removes it", async () => {
+test("dismissing the menu hides the preview and destroy removes it", async () => {
   const h = await mount();
   await flush();
   h.type("vo"); await flush(150);
   h.key("Escape");
   assert.equal(h.box().hidden, true);
-  h.ac.detach(); cleanup.length = 0;
+  h.ac.destroy(); cleanup.length = 0;
   assert.equal(h.box(), null);
   assert.equal(urls.revoked, 1);
 });
@@ -107,7 +110,7 @@ test("the listing is fetched once per page, and a removed word stays removed", a
 });
 
 test("node menu offers picking for image nodes and generating on the Librarian", async () => {
-  const { addWordPictureMenu, shownImageRef } = await imp("prompt_librarian/node/word-picture-menu.js");
+  const { addWordPictureMenu, shownImageRef } = await imp("prompt_librarian/modal/node/word-picture-menu.js");
   function Node() {}
   Node.prototype.getExtraMenuOptions = function (_c, options) { options.push({ content: "core" }); };
   addWordPictureMenu(Node, {});
@@ -136,7 +139,7 @@ test("node menu offers picking for image nodes and generating on the Librarian",
 });
 
 test("the picture dialog takes several words, separated by spaces or commas", async () => {
-  const { askWords, isSingleWord, splitWords } = await imp("prompt_librarian/node/word-picture-menu.js");
+  const { askWords, isSingleWord, splitWords } = await imp("prompt_librarian/modal/node/word-picture-menu.js");
   for (const ok of ["fox", " Fox ", "1girl", "red_fox", "café"]) assert.ok(isSingleWord(ok), ok);
   for (const bad of ["red fox", "fox,", "close-up", "(fox:1.2)", ""]) assert.ok(!isSingleWord(bad), bad);
   assert.deepEqual(splitWords(" red, fox  Fox,,forest "), ["red", "fox", "forest"]);
@@ -154,7 +157,7 @@ test("the picture dialog takes several words, separated by spaces or commas", as
 });
 
 test("the toast names who got the picture and who was full", async () => {
-  const { attachSummary } = await imp("prompt_librarian/node/word-picture-menu.js");
+  const { attachSummary } = await imp("prompt_librarian/modal/node/word-picture-menu.js");
   assert.equal(attachSummary({ word: "fox", words: [{ word: "fox" }, { word: "red" }], skipped: [] }),
     "added to “fox”, “red”");
   assert.equal(attachSummary({ word: "fox", words: [{ word: "fox" }], skipped: ["cat"] }),

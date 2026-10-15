@@ -1,0 +1,81 @@
+/* The node card drawn on the canvas, outside the modal. */
+
+.pl-node-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 9px 10px;
+  background: var(--pl-bg-pane);
+  border: 1px solid var(--pl-border-soft);
+  border-radius: var(--pl-radius-sm);
+  overflow: hidden;
+}
+
+.pl-node-card .pl-nc-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.pl-node-card .pl-nc-name {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-family: var(--pl-mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--pl-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pl-node-card .pl-stars {
+  flex: 0 0 auto;
+  font-size: 13px;
+}
+
+.pl-node-card .pl-nc-used {
+  flex: 0 0 auto;
+  font-family: var(--pl-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--pl-text-mute);
+}
+
+.pl-node-card .pl-nc-body {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--pl-text-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.pl-node-card .pl-nc-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pl-node-card .pl-badge-dupe {
+  padding: 2px 7px;
+  border: 1px solid var(--pl-warn-border);
+  border-radius: 5px;
+  background: var(--pl-warn-chip);
+  font-family: var(--pl-mono);
+  font-size: 10.5px;
+  color: var(--pl-warn);
+  white-space: nowrap;
+}
+
+.pl-node-card .pl-btn {
+  padding: 5px 10px;
+  font-size: 12px;
+}

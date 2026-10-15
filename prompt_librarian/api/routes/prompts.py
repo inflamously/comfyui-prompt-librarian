@@ -1,12 +1,9 @@
-"""Record routes. Caches follow the library's change events, not these handlers.
-/meta uses POST for a batch of IDs despite being read-only.
-"""
+"""Record routes: get, meta, create, update, rate, delete, usage and merge."""
 
 from ... import app
-from ...features import dupes
 from ...features.prompts.create import create_prompt
 from ...features.prompts.delete import delete_prompt
-from ...features.prompts.get import get_prompt, get_prompts
+from ...features.prompts.get import get_prompt
 from ...features.prompts.merge import merge_into_new, merge_prompts
 from ...features.prompts.update import rate_prompt, update_prompt
 from ...features.prompts.usage import record_usage
@@ -18,13 +15,11 @@ from ..utils import (
     _int,
     _json,
     _labelled,
-    _labeller,
     _lib,
     _list,
     _offload,
     _opt,
     _query,
-    _rev,
     _route,
     _str,
     _threshold,
@@ -48,23 +43,7 @@ async def meta(request):
     """Batch metadata for node faces. Ten Librarian nodes = one request."""
     data = await _body(request)
     ids = [_str(pid) for pid in (data.get("ids") or []) if _str(pid)]
-    records = get_prompts(_lib(), ids)
-    counts = dupes.page_dupe_counts(
-        app.current().dupe_source, list(records), _threshold(data.get("threshold")), rev=_rev()
-    )
-    # Use the same revision-keyed labels as search and node faces.
-    index = _labeller(records.values())
-    out = {}
-    for pid, rec in records.items():
-        out[pid] = {
-            "label": index.label_of(pid),
-            "rating": int(rec.get("rating", 0) or 0),
-            "used": int(rec.get("used", 0) or 0),
-            "tags": list(rec.get("tags") or ()),
-            "near_dupes": int(counts.get(pid, 0) or 0),
-            "updated": rec.get("updated", ""),
-        }
-    return _json({"meta": out})
+    return _json({"meta": app.prompt_meta(app.current(), ids, _threshold(data.get("threshold")))})
 
 
 @_route("post", "/create", op="createPrompt",

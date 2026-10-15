@@ -33,7 +33,7 @@ describe("layer scrims", () => {
     const { els, layers } = await openShell();
     const el = env.document.createElement("div");
     el.className = "pl-dialog";
-    layers.pushLayer({ el, closeOnOutside: false });
+    layers.push({ el, closeOnOutside: false });
 
     assert.deepEqual(stack(els), ["pl-layer-scrim is-dim", "pl-dialog"]);
   });
@@ -44,8 +44,8 @@ describe("layer scrims", () => {
     one.className = "pl-dialog one";
     const two = env.document.createElement("div");
     two.className = "pl-dialog two";
-    layers.pushLayer({ el: one, closeOnOutside: false });
-    layers.pushLayer({ el: two, closeOnOutside: false });
+    layers.push({ el: one, closeOnOutside: false });
+    layers.push({ el: two, closeOnOutside: false });
 
     assert.deepEqual(stack(els), [
       "pl-layer-scrim is-dim",
@@ -61,13 +61,13 @@ describe("layer scrims", () => {
     one.className = "pl-dialog one";
     const two = env.document.createElement("div");
     two.className = "pl-dialog two";
-    const h1 = layers.pushLayer({ el: one, closeOnOutside: false });
-    layers.pushLayer({ el: two, closeOnOutside: false });
+    const h1 = layers.push({ el: one, closeOnOutside: false });
+    layers.push({ el: two, closeOnOutside: false });
 
-    layers.popLayer(); // top
+    layers.pop(); // top
     assert.deepEqual(stack(els), ["pl-layer-scrim is-dim", "pl-dialog one"]);
 
-    layers.popLayer(h1);
+    layers.pop(h1);
     assert.deepEqual(stack(els), []);
   });
 
@@ -75,7 +75,7 @@ describe("layer scrims", () => {
     const { els, layers } = await openShell();
     const el = env.document.createElement("div");
     el.className = "pl-popover";
-    layers.pushLayer({ el, scrim: false });
+    layers.push({ el, scrim: false });
 
     assert.deepEqual(stack(els), ["pl-popover"]);
   });

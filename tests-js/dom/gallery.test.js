@@ -33,29 +33,28 @@ async function open({
   installDictionary = async () => ({ installed: true, words: 147306, error: "" }),
   body = "a lake",
 } = {}) {
-  const { openGallery } = await imp("prompt_librarian/gallery/index.js");
-  const { onKey } = await imp("prompt_librarian/modal/input/keys.js");
+  const { createGallery } = await imp("prompt_librarian/features/gallery/index.js");
   const calls = { define: [], wordImage: [], search: [], toasts: [], dict: [], installs: 0 };
   const buffer = body;
-  const ctx = {
-    API: {
+  const gallery = createGallery({
+    api: {
       gallery: async () => ({ words: WORDS, total: WORDS.length }),
       define: async (word) => { calls.define.push(word); return define(word); },
       wordImage: async (word, v) => { calls.wordImage.push([word, v]); return new Blob(["x"]); },
       searchDictionary: async (q) => { calls.dict.push(q); return searchDictionary(q); },
       installDictionary: async () => { calls.installs += 1; return installDictionary(); },
     },
-    onKey,
-    pushLayer: shell.layers.pushLayer,
-    popLayer: shell.layers.popLayer,
+    layers: () => shell.it.layers,
     reportError: (err) => { throw err; },
     toast: (msg) => calls.toasts.push(msg),
-    inspector: { getBuffer: () => ({ body: buffer, tags: [] }) },
-    list: { search: async (q) => calls.search.push(q) },
-    getTargetNodeId: () => 1,
-    app: null,
-  };
-  const handle = openGallery(ctx);
+    confirm: async () => true,
+    base: () => buffer,
+    onFind: async (q) => calls.search.push(q),
+    nodeId: () => 1,
+    renderer: { available: () => false },
+    viewImage: async () => new Blob(["x"]),
+  });
+  const handle = gallery.open();
   await flush();
   const el = handle.el;
   const tiles = () => [...el.querySelectorAll(".pl-gallery-tile")];
@@ -169,18 +168,18 @@ test("find searches Browse and closes", async () => {
   g.tile("golden hour").click(); await flush();
   g.button("find my prompts").click(); await flush();
   assert.deepEqual(g.calls.search, ['"golden hour"']);
-  assert.equal(shell.layers.topLayer(), null, "the gallery closed");
+  assert.equal(shell.layers.top(), null, "the gallery closed");
   assert.ok(urls.revoked >= 1, "thumbnails are released on close");
 });
 
 test("Escape closes the gallery", async () => {
   await open();
   shell.key("Escape");
-  assert.equal(shell.layers.topLayer(), null);
+  assert.equal(shell.layers.top(), null);
 });
 
 test("A/B texts add the word, or take it out when the prompt has it", async () => {
-  const { withAndWithout } = await imp("prompt_librarian/gallery/compare.js");
+  const { withAndWithout } = await imp("prompt_librarian/features/gallery/ab-compare.js");
   assert.deepEqual(withAndWithout("a lake, ", "misty"), { a: "a lake,", b: "a lake, misty", had: false });
   assert.deepEqual(withAndWithout("", "misty"), { a: "", b: "misty", had: false });
   assert.deepEqual(withAndWithout("a Misty lake, dawn", "misty"),
@@ -191,7 +190,8 @@ test("A/B texts add the word, or take it out when the prompt has it", async () =
 });
 
 test("compare renders A then B through the workflow with the same graph", async () => {
-  const { runCompare } = await imp("prompt_librarian/gallery/compare.js");
+  const { runCompare } = await imp("prompt_librarian/features/gallery/ab-compare.js");
+  const { createRenderer } = await imp("prompt_librarian/features/word-pictures/index.js");
   const output = {
     1: { class_type: "PromptLibrarian", inputs: { text: "x" } },
     2: { class_type: "EmptyLatentImage", inputs: { width: 1024, height: 1024, batch_size: 4 } },
@@ -213,10 +213,8 @@ test("compare renders A then B through the workflow with the same graph", async 
     },
   };
   const steps = [];
-  const result = await runCompare({
-    app: { graphToPrompt: async () => ({ output }) }, nodeId: 1, base: "a lake", word: "misty",
-    host, onStep: (s) => steps.push(s),
-  });
+  const renderer = createRenderer({ app: () => ({ graphToPrompt: async () => ({ output }) }), host });
+  const result = await runCompare({ renderer, nodeId: 1, base: "a lake", word: "misty", onStep: (s) => steps.push(s) });
   assert.deepEqual(steps, ["a", "b"]);
   assert.deepEqual(queued.map((p) => p[1].inputs.text), ["a lake", "a lake, misty"]);
   assert.equal(queued[0][3].class_type, "PreviewImage", "nothing lands in the output folder");
@@ -231,7 +229,7 @@ test("pictured words offer arranging; changes repaint the tile", async () => {
   g.tile("misty").click(); await flush();
   const before = g.calls.wordImage.length;
   g.button("arrange pictures (1/9)").click(); await flush();
-  const layer = shell.layers.topLayer();
+  const layer = shell.layers.top();
   assert.ok(layer.el.classList.contains("pl-arrange"));
   assert.match(layer.el.textContent, /Pictures for “misty”/);
   assert.ok(g.calls.wordImage.length > before, "the arrange dialog loads the pictures");

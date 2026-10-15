@@ -23,19 +23,7 @@ _LOCK = threading.Lock()
 
 
 def install(root: str, get: HttpGet = http_get) -> dict[str, object]:
-    """Download and convert the dictionary, unless it is already there.
-
-    Args:
-        root: The dictionary directory.
-        get: The HTTP GET to use (tests pass a fake).
-
-    Returns:
-        The new :func:`dictionary_status`.
-
-    Raises:
-        ServiceUnavailableError: The download failed; nothing was written.
-        ValueError: The download was not a WordNet archive.
-    """
+    """Download and convert the dictionary unless present; returns the new status."""
     with _LOCK:
         if _store.installed(root):
             return dictionary_status(root)
@@ -106,11 +94,7 @@ def _fill(con: sqlite3.Connection, lines: Callable[[str], Iterable[str]]) -> Non
 
 
 def antonyms(synsets: dict[str, Synset], key: str, word: str) -> list[str]:
-    """Opposites of ``word`` in this sense.
-
-    Direct antonym pointers come first. A satellite adjective ("misty") has
-    none of its own, so it borrows the opposites of its head ("dark").
-    """
+    """Opposites of ``word`` in this sense; satellites borrow their head's."""
     synset = synsets[key]
     found = _direct(synsets, synset, word)
     if not found and synset.satellite:

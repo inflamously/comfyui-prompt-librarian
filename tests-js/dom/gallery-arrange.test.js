@@ -18,11 +18,11 @@ const pics = (...ids) => ids.map((id, i) => ({ id, version: i + 1, source: "manu
 const entry = (ids, version = 10) => ({ version, source: "manual", page: "", pictures: pics(...ids) });
 
 async function arrange(ids = ["a", "b", "c"], { confirm = true } = {}) {
-  const { openArrange } = await imp("prompt_librarian/gallery/arrange.js");
+  const { createGallery } = await imp("prompt_librarian/features/gallery/index.js");
   const calls = { order: [], remove: [], images: [], changes: [] };
   let current = entry(ids);
-  const ctx = {
-    API: {
+  const backend = {
+    api: {
       wordImage: async (word, v, _signal, id) => { calls.images.push([word, v, id]); return new Blob(["x"]); },
       orderWordImages: async (word, order) => {
         calls.order.push([word, order]);
@@ -36,13 +36,12 @@ async function arrange(ids = ["a", "b", "c"], { confirm = true } = {}) {
         return { word, removed: true, image: current };
       },
     },
-    pushLayer: shell.layers.pushLayer,
-    popLayer: shell.layers.popLayer,
-    confirmDialog: async () => confirm,
+    layers: () => shell.it.layers,
+    confirm: async () => confirm,
     reportError: (err) => { throw err; },
   };
   const item = { word: "fox", uses: 3, picture: entry(ids) };
-  const handle = openArrange({ ctx, item, onChange: (p) => calls.changes.push(p) });
+  const handle = createGallery(backend).arrange({ item, onChange: (p) => calls.changes.push(p) });
   await flush();
   const el = handle.el;
   const slots = () => [...el.querySelectorAll(".pl-arrange-slot")];
@@ -52,7 +51,7 @@ async function arrange(ids = ["a", "b", "c"], { confirm = true } = {}) {
 }
 
 test("layout grows 1x1, 2x1, 2x2, 3x2, 3x3", async () => {
-  const { gridSize } = await imp("prompt_librarian/gallery/arrange.js");
+  const { gridSize } = await imp("prompt_librarian/features/gallery/words.js");
   assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 9].map(gridSize),
     [[1, 1], [2, 1], [2, 2], [2, 2], [3, 2], [3, 2], [3, 3], [3, 3]]);
 });
@@ -78,7 +77,7 @@ test("arrows reorder through the server and report the new entry", async () => {
   assert.deepEqual(a.calls.order.at(-1), ["fox", ["b", "c", "a"]]);
   assert.ok(a.el.contains(document.activeElement), "focus stays in the dialog after a repaint");
   shell.keyOn(document.activeElement, "Escape");
-  assert.equal(shell.layers.topLayer(), null, "so Esc still closes it");
+  assert.equal(shell.layers.top(), null, "so Esc still closes it");
 });
 
 test("dragging onto an empty slot moves a picture to the end", async () => {

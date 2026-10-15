@@ -20,10 +20,10 @@ export function debounce(fn, ms, opts = {}) {
 
   function invoke() {
     const args = lastArgs;
-    const ctx = lastThis;
+    const self = lastThis;
     lastArgs = null;
     lastThis = null;
-    result = fn.apply(ctx, args || []);
+    result = fn.apply(self, args || []);
     return result;
   }
 

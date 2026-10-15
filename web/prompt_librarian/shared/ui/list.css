@@ -1,0 +1,204 @@
+/* Virtual lists and their fixed-height rows: the browse rail and the versions
+   dialog. Browse-only parts (check, twisty, group members) are in browse.css. */
+
+/* All rows, including expanded group members, must stay --pl-row-h tall. */
+.pl-list {
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain; /* Do not chain scrolling into the ComfyUI canvas. */
+  border-top: 1px solid var(--pl-border-soft);
+  contain: layout paint;
+}
+
+.pl-list:focus-visible {
+  outline-offset: -2px;
+}
+
+.pl-list-spacer {
+  width: 100%;
+  pointer-events: none;
+}
+
+.pl-list-win {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  will-change: transform;
+}
+
+.pl-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "check name  badge"
+    "check body  body"
+    "check meta  meta";
+  align-content: start;
+  gap: 3px 9px;
+  height: var(--pl-row-h);
+  min-width: 0;
+  /* Reserve enough height for both clamped preview lines within the fixed row. */
+  padding: 10px 14px 7px;
+  border-bottom: 1px solid var(--pl-border-soft);
+  background: transparent;
+  cursor: pointer;
+  overflow: hidden;
+  transition: background var(--pl-fast) ease;
+}
+
+.pl-row:hover {
+  background: var(--pl-bg-hover);
+}
+
+.pl-row[aria-selected="true"],
+.pl-row.is-sel {
+  background: var(--pl-bg-sel);
+}
+
+.pl-row-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+  pointer-events: none;
+}
+
+.pl-row[aria-selected="true"] .pl-row-bar,
+.pl-row.is-sel .pl-row-bar {
+  background: var(--pl-accent);
+}
+
+.pl-row-name {
+  grid-area: name;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  font-family: var(--pl-mono);
+  /* Inherit the line-height ratio; a fixed length inflates smaller baseline-aligned spans. */
+  font-size: var(--pl-row-name-fs);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--pl-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pl-row-match {
+  flex: 0 0 auto;
+  font-family: var(--pl-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--pl-warn);
+}
+
+.pl-badge-dupe {
+  grid-area: badge;
+  align-self: start;
+  justify-self: end;
+  padding: 3px 8px;
+  border: 1px solid var(--pl-warn-border);
+  border-radius: 5px;
+  background: var(--pl-warn-chip);
+  font-family: var(--pl-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--pl-warn);
+  white-space: nowrap;
+}
+
+.pl-row-body {
+  grid-area: body;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.42;
+  color: var(--pl-text-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.pl-row[aria-selected="true"] .pl-row-body,
+.pl-row.is-sel .pl-row-body {
+  color: var(--pl-text);
+}
+
+.pl-row-meta {
+  grid-area: meta;
+  min-width: 0;
+  font-family: var(--pl-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--pl-text-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pl-row-skel {
+  cursor: default;
+  pointer-events: none;
+}
+
+.pl-row-skel .pl-row-name,
+.pl-row-skel .pl-row-body,
+.pl-row-skel .pl-row-meta {
+  color: transparent;
+  border-radius: 3px;
+  background-color: var(--pl-skel);
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.06) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-size: 220px 100%;
+  background-repeat: no-repeat;
+  animation: pl-skel-shimmer 1.25s linear infinite;
+}
+
+.pl-row-skel .pl-row-name {
+  width: 42%;
+  height: 11px;
+}
+
+.pl-row-skel .pl-row-body {
+  width: 88%;
+  height: 10px;
+}
+
+.pl-row-skel .pl-row-meta {
+  width: 30%;
+  height: 9px;
+}
+
+@keyframes pl-skel-shimmer {
+  from {
+    background-position: -220px 0;
+  }
+  to {
+    background-position: calc(100% + 220px) 0;
+  }
+}
+
+.pl-list-empty {
+  padding: 28px 16px;
+  font-family: var(--pl-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--pl-text-mute);
+  text-align: center;
+}

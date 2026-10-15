@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { setupDom } from "../harness/env.js";
 import { imp } from "../harness/mount.js";
 import { openShell, flush, deferred } from "../harness/modal.js";
+import { mountInspector } from "../harness/inspector.js";
 
 let env, cleanup;
 beforeEach(() => { env = setupDom(); cleanup = []; });
@@ -10,14 +11,18 @@ afterEach(() => { for (const fn of cleanup) fn(); env.teardown(); });
 const item = (text, scope = "word") => ({ text, scope, source_count: 2 });
 
 async function mount(api = async () => ({ suggestions: [item("volumetric"), item("volumetric lighting", "phrase")] })) {
-  const { attachAutocomplete } = await imp("prompt_librarian/inspector/autocomplete.js");
+  const { Autocomplete } = await imp("prompt_librarian/features/autocomplete/index.js");
+  const { createLane } = await imp("prompt_librarian/api/lanes.js");
+  const { installKeyGuards } = await imp("prompt_librarian/shared/keys.js");
   const host = document.createElement("div");
   const ta = document.createElement("textarea");
   host.appendChild(ta); document.body.appendChild(host);
   const calls = [];
   const ctx = { API: { autocomplete: (params, signal) => { calls.push({ params, signal }); return api(params, signal); } } };
-  const ac = attachAutocomplete(ta, ctx, host);
-  cleanup.push(() => ac.detach());
+  // Keys arrive through the modal's key bus, as they do in the panel.
+  const uninstall = installKeyGuards(host);
+  const ac = new Autocomplete({ textarea: ta, api: ctx.API, caps: {}, lane: createLane("autocomplete") }).mount(host);
+  cleanup.push(() => { ac.destroy(); uninstall(); });
   const type = (value, pos = value.length) => {
     ta.focus(); ta.value = value; ta.setSelectionRange(pos, pos);
     ta.dispatchEvent(new Event("input", { bubbles: true }));
@@ -99,9 +104,9 @@ test("Escape, Enter, selection, blur, IME and failures keep ordinary editing ava
   assert.equal(h.key("Enter").defaultPrevented, false);
 });
 
-test("detach removes listeners and restores textarea attributes", async () => {
+test("destroy removes listeners and restores textarea attributes", async () => {
   const h = await mount();
-  h.type("vo"); await flush(); h.ac.detach();
+  h.type("vo"); await flush(); h.ac.destroy();
   h.type("vol"); await flush();
   assert.equal(h.calls.length, 1);
   assert.equal(h.host.querySelector(".pl-autocomplete"), null);
@@ -117,24 +122,25 @@ test("suggestions render saved text literally", async () => {
 
 test("real panel key bus isolates completion, Escape leaves panel open, input updates linked node", async () => {
   const shell = await openShell();
-  const { onKey } = await imp("prompt_librarian/modal/input/keys.js");
-  const { mountInspector } = await imp("prompt_librarian/inspector/index.js");
+  const { attachAutocomplete } = await imp("prompt_librarian/modal/app.js");
+  // The real wiring talks to the real API, so the suggestions come over the fake transport.
+  env.api.route("/prompt_librarian/autocomplete", { suggestions: [item("volumetric")] });
   const host = document.createElement("div"); shell.els.card.appendChild(host);
-  const pushed = [], states = [];
-  const ctx = {
-    onKey, API: { autocomplete: async () => ({ suggestions: [item("volumetric")] }), dupes: async () => ({ matches: [] }) },
-    setState: (patch) => states.push(patch), pushToNode: (body) => pushed.push(body),
-    toast() {}, saveDraft() {},
-  };
-  const pane = mountInspector(host, ctx);
-  cleanup.push(() => { pane.unmount(); shell.closeModal(); });
+  const pushed = [];
+  const { pane, slice } = await mountInspector({
+    host,
+    attachAutocomplete,
+    api: { dupes: async () => ({ matches: [] }) },
+    pushToNode: (body) => pushed.push(body),
+  });
+  cleanup.push(() => { pane.destroy(); shell.closeModal(); });
   const ta = host.querySelector("textarea");
   const type = () => { ta.focus(); ta.value = "vo"; ta.setSelectionRange(2, 2); ta.dispatchEvent(new Event("input", { bubbles: true })); };
   type();
   pane.setBody("vo", { fromNode: true });
   await flush(130);
   const menu = shell.root.querySelector(".pl-autocomplete");
-  assert.equal(menu.parentNode, shell.root, "fixed menu escapes card containment");
+  assert.ok(shell.root.contains(menu) && !menu.closest(".pl-card"), "fixed menu escapes card containment");
   assert.equal(menu.hidden, false, "an echoed linked-node value must not cancel completion");
   shell.keyOn(ta, "Escape"); assert.equal(shell.it.open, true);
   type(); await flush(130);
@@ -143,7 +149,7 @@ test("real panel key bus isolates completion, Escape leaves panel open, input up
   assert.equal(canvasKeys, 0);
   assert.equal(pane.getBuffer().body, "volumetric");
   assert.equal(pushed.at(-1), "volumetric");
-  assert.equal(states.at(-1).buffer.body, "volumetric");
+  assert.equal(slice.get("buffer").body, "volumetric");
   type(); await flush(130);
   assert.equal(shell.keyOn(ta, "Enter", { shiftKey: true }), true, "Shift+Enter keeps the newline default");
   type(); await flush(130);

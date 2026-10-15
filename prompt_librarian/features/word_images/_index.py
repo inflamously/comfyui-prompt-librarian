@@ -1,11 +1,4 @@
-"""The word index, the miss list and the file naming shared by the use-cases.
-
-``index.json`` maps word -> ``{"v", "src", "page", "size", "pics"}``: the
-version that busts the browser cache, where the first picture came from
-(``manual`` or ``generated``), the web page it represents, its size in bytes,
-and the word's pictures in order (see ``_pictures``).
-``misses.json`` maps word -> when its picture was removed; the generator skips those.
-"""
+"""The word index, the miss list and the file naming shared by the use-cases."""
 
 import hashlib
 import json

@@ -13,11 +13,7 @@ SEARCH_SQL = """SELECT lemma FROM lemmas WHERE lemma >= ? AND lemma < ?
 
 
 def search_words(root: str, prefix: str, limit: int = 20) -> dict[str, object]:
-    """``{"installed", "words"}``: up to ``limit`` lemmas starting with ``prefix``.
-
-    Exact matches come first, then words with more senses, which are the common
-    ones, then shorter words.
-    """
+    """``{"installed", "words"}``: up to ``limit`` lemmas starting with ``prefix``."""
     key = normalize(prefix)
     if not _store.installed(root):
         return {"installed": False, "words": []}

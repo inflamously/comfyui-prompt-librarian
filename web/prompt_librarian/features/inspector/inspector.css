@@ -1,0 +1,109 @@
+/* The inspector: id row, label, tags, counts, stats and actions. The editor
+   field is shared/ui/text-area.css. */
+
+.pl-idrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.pl-new {
+  white-space: nowrap;
+}
+
+.pl-label {
+  min-width: 0;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--pl-bg-input);
+  border: 1px solid var(--pl-border);
+  border-radius: var(--pl-radius-sm);
+  font-family: var(--pl-mono);
+  font-size: 13.5px;
+  letter-spacing: 0.01em;
+  color: var(--pl-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pl-label.is-empty {
+  color: var(--pl-text-mute);
+  font-style: italic;
+}
+
+.pl-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pl-counts {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-family: var(--pl-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--pl-text-dim);
+}
+
+.pl-edited {
+  color: var(--pl-warn);
+}
+
+.pl-edited[hidden] {
+  display: none;
+}
+
+.pl-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-width: 0;
+  border: 1px solid var(--pl-border-soft);
+  border-radius: var(--pl-radius);
+  background: var(--pl-bg-pane);
+  overflow: hidden;
+}
+
+.pl-stat {
+  min-width: 0;
+  padding: 12px 14px 14px;
+  border-left: 1px solid var(--pl-border-soft);
+}
+
+.pl-stat:first-child {
+  border-left: 0;
+}
+
+.pl-stat-k {
+  font-family: var(--pl-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--pl-text-mute);
+}
+
+.pl-stat-v {
+  margin-top: 5px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--pl-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pl-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin-top: auto;
+  padding-top: 4px;
+}

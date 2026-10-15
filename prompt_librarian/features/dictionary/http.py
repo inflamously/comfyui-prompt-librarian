@@ -18,11 +18,7 @@ class ServiceUnavailableError(OSError):
 
 
 def http_get(url: str) -> tuple[int, bytes]:
-    """GET ``url`` and return ``(status, body)``.
-
-    Raises:
-        ServiceUnavailableError: No connection, a timeout, or an HTTP error.
-    """
+    """GET ``url`` and return ``(status, body)``."""
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310 - fixed https host

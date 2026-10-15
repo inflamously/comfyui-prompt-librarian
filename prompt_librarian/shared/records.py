@@ -1,9 +1,4 @@
-"""The prompt record: its shape, validation, version history and merge arithmetic.
-
-Incoming edits go through :func:`clean_record`, which validates and may raise.
-Stored data goes through :func:`coerce_record`, which tolerates oversized bodies
-so existing records stay readable; their next edit must pass validation.
-"""
+"""The prompt record: its shape, validation, version history and merge arithmetic."""
 
 import re
 from typing import Any
@@ -155,12 +150,7 @@ def max_ts(a: str, b: str) -> str:
 
 
 def merge_fields(winner: Record, loser: Record) -> None:
-    """Apply ``loser``'s merge arithmetic onto ``winner`` in place.
-
-    ``used`` summed, tags unioned in the winner's order, ``rating`` max,
-    ``created`` min, ``last_run`` max, ``pinned`` OR'd, notes appended after a
-    ``---`` rule.
-    """
+    """Apply ``loser``'s merge arithmetic onto ``winner`` in place."""
     winner["used"] = max(0, as_int(winner.get("used", 0))) + max(0, as_int(loser.get("used", 0)))
     tags = list(winner.get("tags", []))
     tags += [tag for tag in loser.get("tags", []) if tag not in tags]

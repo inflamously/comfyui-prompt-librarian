@@ -1,6 +1,4 @@
-"""These imports populate utils._ROUTES through decorator side effects.
-Route modules must not import each other; shared work belongs in queries.
-"""
+"""Route modules, imported so their decorators populate utils._ROUTES."""
 
 from . import (
     bulk,

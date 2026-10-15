@@ -1,8 +1,4 @@
-"""The library envelope stored beside the records: settings, snippets, ignored pairs.
-
-Everything here tolerates malformed input and never raises on read. Library
-settings and storage imports both edit it, always inside one write transaction.
-"""
+"""The library envelope stored beside the records: settings, snippets, ignored pairs."""
 
 import contextlib
 import sqlite3
@@ -70,10 +66,7 @@ def clean_pairs(raw: object) -> list[list[str]]:
 
 
 def clean_meta(raw: object) -> Meta:
-    """The stored envelope minus ``prompts``; unknown keys (``migrations``) kept.
-
-    Never calls the clock for an absent envelope, so reading it has no side effects.
-    """
+    """The stored envelope minus ``prompts``; unknown keys (``migrations``) kept."""
     meta = dict(raw) if isinstance(raw, dict) else {}
     meta["schema"] = as_int(meta.get("schema", schema.SCHEMA_VERSION), schema.SCHEMA_VERSION)
     meta["updated"] = as_str(meta.get("updated", ""))
@@ -104,10 +97,7 @@ def load(lib: Library) -> Meta:
 
 @contextlib.contextmanager
 def edit(lib: Library, op: str, ids: tuple[str, ...] = ()) -> Iterator[tuple[Write, Meta]]:
-    """One write that edits the envelope and stamps ``updated``.
-
-    Set ``skip`` on the yielded :class:`Write` when nothing changed.
-    """
+    """One write that edits the envelope and stamps ``updated``."""
     with lib.write(op) as work:
         meta = read(work.con)
         yield work, meta

@@ -19,6 +19,7 @@
 export function createApi() {
   const routes = [];
   const calls = [];
+  const listeners = new Map(); // type -> Set<listener>
 
   const respond = (value) => {
     const spec = value && value.__http ? value : { json: value };
@@ -74,10 +75,22 @@ export function createApi() {
       return Promise.resolve(hit.fn({ url, path: pathname, init, body })).then(respond);
     },
 
-    // The pack never registers listeners today; tier 0 would notice if it did.
-    addEventListener() {},
-    removeEventListener() {},
+    addEventListener(type, fn) {
+      if (!listeners.has(type)) listeners.set(type, new Set());
+      listeners.get(type).add(fn);
+    },
+    removeEventListener(type, fn) {
+      listeners.get(type)?.delete(fn);
+    },
     dispatchEvent() {},
+    /** Deliver a server websocket event, as ComfyUI's api does: `{detail}`. */
+    emit(type, detail) {
+      for (const fn of [...(listeners.get(type) || [])]) fn({ type, detail });
+    },
+    /** How many listeners are registered for `type`. */
+    listening(type) {
+      return listeners.get(type)?.size || 0;
+    },
 
     /** @param {string} prefix @param {any|Function} value payload or handler */
     route(prefix, value) {
@@ -93,6 +106,7 @@ export function createApi() {
     reset() {
       routes.length = 0;
       calls.length = 0;
+      listeners.clear();
     },
   };
   return api;

@@ -7,11 +7,7 @@ from . import _index, _pictures
 
 
 def remove_word_image(root: str, word: str, picture_id: str = "") -> bool:
-    """Delete one picture of ``word`` (by id), or all of them; returns whether anything went.
-
-    When the word is left without pictures it is recorded as skipped, so the
-    batch generator does not make a removed picture again.
-    """
+    """Delete one picture of ``word`` (by id), or all of them; returns whether anything went."""
     key = _index.normalize(word)
     with _index.LOCK:
         index = _index.read_index(root)

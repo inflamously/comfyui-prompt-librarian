@@ -16,11 +16,7 @@ def create_prompt(
     notes: str = "",
     pinned: bool = False,
 ) -> Record:
-    """Validate and store a new record; returns it.
-
-    Raises:
-        BodyTooLargeError: Before anything is written.
-    """
+    """Validate and store a new record; returns it."""
     stamp = now_iso()
     rec = clean_record(
         {

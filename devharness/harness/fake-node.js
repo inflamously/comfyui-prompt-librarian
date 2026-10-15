@@ -1,7 +1,7 @@
 /* ==========================================================================
    The fake LiteGraph node — the most-edited file in the harness.
 
-   node/text-sync.js names three shapes a multiline STRING widget has taken across
+   modal/node/text-sync.js names three shapes a multiline STRING widget has taken across
    ComfyUI generations, and defends against all of them with three observation
    layers. Those defences are normally unreachable: any given install only ever
    exercises one shape. `flavour` makes each one reachable on demand, which is

@@ -5,16 +5,15 @@
 import { NS } from "../../shared/ns.js";
 import { singletonBag } from "../../shared/singleton.js";
 import { cancelAllLanes } from "../../api/lanes.js";
-import { clearToasts } from "../overlays/toasts.js";
-import { popLayer } from "../overlays/layers.js";
-import { inst, setModalVisible } from "../state.js";
+import { inst } from "../instance.js";
+import { setModalVisible } from "../shell/visibility.js";
 
+/** True when the inspector holds unsaved edits. */
 export function isDirty() {
-  const it = inst();
-  const fn = it.ctx && it.ctx.isDirty;
-  if (typeof fn !== "function") return false; // inspector not mounted
+  const { inspector } = inst().panes;
+  if (typeof inspector?.isDirty !== "function") return false; // inspector not mounted
   try {
-    return !!fn();
+    return !!inspector.isDirty();
   } catch (err) {
     console.error(`${NS} isDirty threw`, err);
     return false;
@@ -25,8 +24,8 @@ export function isDirty() {
  * closing must not wait on a save that can only report "blocked".
  */
 function bufferIsEmpty() {
-  const ins = inst().ctx && inst().ctx.inspector;
-  if (!ins || typeof ins.getBuffer !== "function") return false;
+  const ins = inst().panes.inspector;
+  if (typeof ins?.getBuffer !== "function") return false;
   try {
     const buf = ins.getBuffer();
     return !String((buf && buf.body) || "").trim();
@@ -56,9 +55,9 @@ export function attemptClose() {
   }
   if (it.closing) return false; // Esc mashing must not stack saves
 
-  const save = it.ctx && it.ctx.requestSave;
+  const { inspector } = it.panes;
   // Missing hooks must not trap the modal; draft persistence is the fallback.
-  if (typeof save !== "function") {
+  if (typeof inspector?.requestSave !== "function") {
     closeModal();
     return true;
   }
@@ -69,7 +68,7 @@ export function attemptClose() {
   Promise.resolve()
     // `true` = save as new: closing must never silently overwrite a stored
     // prompt. Identical text is adopted rather than duplicated (save.js).
-    .then(() => save(true))
+    .then(() => inspector.requestSave(true))
     .then((status) => {
       if (it.session === session && (status === "saved" || status === "clean")) closeModal();
     })
@@ -98,8 +97,8 @@ export function closeModal() {
   it.closing = false;
   setClosingBusy(false);
 
-  clearToasts();
-  while (it.layers.length) popLayer(it.layers[it.layers.length - 1]);
+  it.toaster.clear();
+  it.layers.clear();
 
   for (const fn of it.teardown.splice(0)) {
     try {
@@ -117,13 +116,10 @@ export function closeModal() {
     it.ro = null;
   }
 
-  const c = it.ctx;
-  if (c && Array.isArray(c.debounces)) {
-    for (const d of c.debounces) {
-      try {
-        if (d && typeof d.cancel === "function") d.cancel();
-      } catch (_) {
-      }
+  for (const cancel of it.cancelOnClose) {
+    try {
+      cancel();
+    } catch (_) {
     }
   }
 

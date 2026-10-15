@@ -1,8 +1,4 @@
-"""The ``state`` key/value table, and the library revision kept in it.
-
-The revision rises by one per committed write. Caches key on it, which is what
-makes a write from another process visible to this one.
-"""
+"""The ``state`` key/value table and the library revision kept in it."""
 
 import sqlite3
 
@@ -30,11 +26,7 @@ def revision(con: sqlite3.Connection) -> int:
 
 
 def bump(con: sqlite3.Connection) -> tuple[int, int]:
-    """Advance the revision inside the caller's write transaction.
-
-    Returns ``(previous, new)``. Read under the write lock, so ``previous`` is
-    exactly the revision this write replaced.
-    """
+    """Advance the revision inside the caller's write; returns ``(previous, new)``."""
     previous = revision(con)
     put(con, "revision", previous + 1)
     return previous, previous + 1

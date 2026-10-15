@@ -42,7 +42,7 @@ function fakeNode({ id = 1, body = "", promptId = "" } = {}) {
 }
 
 async function setup(node) {
-  const state = await imp(M + "state.js");
+  const state = await imp(M + "instance.js");
   const target = await imp(M + "target/load.js");
   const host = await imp(M + "target/host.js");
   host.setHost({ app: env.app });
@@ -50,7 +50,7 @@ async function setup(node) {
     _nodes: [node],
     getNodeById: (nid) => (String(nid) === String(node.id) ? node : null),
   };
-  state.inst().state.targetNodeId = node.id;
+  state.slice("shell").set({ targetNodeId: node.id });
   return target;
 }
 

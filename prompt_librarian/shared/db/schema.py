@@ -1,8 +1,4 @@
-"""The library's own tables: ``state``, ``entries``, ``tags`` and ``metadata``.
-
-Features that keep derived tables (the corpus, autocomplete) create their own;
-this module owns only the records and the library envelope.
-"""
+"""The library's own tables: ``state``, ``entries``, ``tags`` and ``metadata``."""
 
 import json
 import sqlite3
@@ -63,11 +59,7 @@ def use_wal(con: sqlite3.Connection) -> None:
 
 
 def newer_schema(con: sqlite3.Connection) -> bool:
-    """True when the library declares a schema newer than this build understands.
-
-    Raises:
-        sqlite3.DatabaseError: The metadata row is not valid JSON.
-    """
+    """True when the library declares a schema newer than this build understands."""
     if not con.execute("SELECT 1 FROM sqlite_master WHERE name='metadata'").fetchone():
         return False
     row = con.execute("SELECT payload FROM metadata WHERE singleton=1").fetchone()
@@ -78,11 +70,8 @@ def newer_schema(con: sqlite3.Connection) -> bool:
 
 
 def create(con: sqlite3.Connection) -> tuple[str, ...]:
-    """Create the library tables if missing; returns the retired columns present.
-
-    ``executescript`` would commit the caller's transaction, so statements run
-    one by one inside it.
-    """
+    """Create the library tables if missing; returns the retired columns present."""
+    # Not executescript: it would commit the caller's transaction.
     for statement in filter(None, (part.strip() for part in _DDL.split(";"))):
         con.execute(statement)
     con.execute(
@@ -93,11 +82,7 @@ def create(con: sqlite3.Connection) -> tuple[str, ...]:
 
 
 def read_meta(con: sqlite3.Connection) -> dict | None:
-    """The library envelope (settings, snippets, ignored pairs…), or ``None`` if unset.
-
-    Raises:
-        sqlite3.DatabaseError: The metadata row is not valid JSON.
-    """
+    """The library envelope (settings, snippets, ignored pairs…), or ``None`` if unset."""
     row = con.execute("SELECT payload FROM metadata WHERE singleton=1").fetchone()
     if not row:
         return None

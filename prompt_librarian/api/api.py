@@ -1,6 +1,4 @@
-"""Import routes to populate utils._ROUTES through decorator side effects.
-Store notifications are emitted by the store, not this route layer.
-"""
+"""Import routes so their decorators populate utils._ROUTES."""
 
 from . import routes
 from .utils import _ROUTES

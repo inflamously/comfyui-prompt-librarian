@@ -21,11 +21,7 @@ def layout(count: int) -> tuple[int, int]:
 
 
 def compose(images: list[bytes]) -> bytes:
-    """One WebP of ``images`` in reading order, each center-cropped to its cell.
-
-    Raises:
-        ValueError: Pillow is missing, or one of the images is unreadable.
-    """
+    """One WebP of ``images`` in reading order, each center-cropped to its cell."""
     try:
         from PIL import Image, ImageOps  # noqa: PLC0415 - ships with ComfyUI, optional headless
     except ImportError as exc:

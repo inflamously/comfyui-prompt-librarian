@@ -1,10 +1,4 @@
-"""The open library: one database file, its change bus, and its derived tables.
-
-Every write goes through :meth:`Library.write`: one transaction that bumps the
-revision, runs the derived-table writers registered with :meth:`Library.extend`,
-and emits one :class:`~.events.Change` after it commits. There is no in-memory
-copy of the library; SQLite is read directly and caches key on the revision.
-"""
+"""The open library: one database file, its change bus, and its derived tables."""
 
 import contextlib
 import sqlite3
@@ -80,10 +74,7 @@ class Library:
         return self.db.exists()
 
     def prepare(self) -> bool:
-        """Create the schema once per file identity. Returns whether FTS5 is available.
-
-        A library written by a newer build is left untouched.
-        """
+        """Create the schema once per file identity; returns whether FTS5 is available."""
         with _INIT_LOCK:
             cached = _INITIALIZED.get(self.path)
             if cached and cached[0] == file_identity(self.path):
@@ -129,14 +120,7 @@ class Library:
 
     @contextlib.contextmanager
     def write(self, op: str) -> Iterator[Write]:
-        """One write: commit, bump the revision, then emit its :class:`Change`.
-
-        Set ``skip`` on the :class:`Write` for a no-op; nothing is bumped or emitted.
-
-        Raises:
-            ReadOnlyError: The library declares a newer schema.
-            StoreWriteError: SQLite failed; the transaction rolled back.
-        """
+        """One write: commit, bump the revision, then emit its :class:`Change`."""
         try:
             self.prepare()
             with self.db.write() as con:

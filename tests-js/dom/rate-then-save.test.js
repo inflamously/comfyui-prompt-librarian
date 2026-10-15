@@ -15,9 +15,8 @@ import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
 import { setupDom } from "../harness/env.js";
-import { imp } from "../harness/mount.js";
+import { mountInspector } from "../harness/inspector.js";
 
-const I = "prompt_librarian/inspector/";
 
 let env;
 beforeEach(() => {
@@ -28,15 +27,11 @@ afterEach(() => {
 });
 
 async function mount(rec) {
-  const { mountInspector } = await imp(I + "index.js");
-  const calls = { update: [], layers: 0 };
+  const calls = { update: [] };
   const store = { [rec.id]: { ...rec } };
   let clock = 0;
-
-  const ctx = {
-    ABORTED: Symbol("aborted"),
-    dom: {},
-    API: {
+  const { pane, el } = await mountInspector({
+    api: {
       get: async (id) => ({ ok: true, record: { ...store[id] } }),
       dupes: async () => ({ ok: true, matches: [] }),
       rate: async (id, rating) => {
@@ -50,16 +45,7 @@ async function mount(rec) {
         return { ok: true, record: { ...store[p.id] } };
       },
     },
-    setState() {},
-    saveDraft() {},
-    loadDraft: () => null,
-    clearDraft() {},
-    toast: () => {},
-  };
-
-  const el = document.createElement("div");
-  document.body.appendChild(el);
-  const pane = mountInspector(el, ctx);
+  });
   await pane.selectPrompt(rec.id);
   return { pane, calls, store, el };
 }

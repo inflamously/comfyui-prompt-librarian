@@ -23,10 +23,7 @@ import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
 import { setupDom } from "../harness/env.js";
-import { imp } from "../harness/mount.js";
-
-const I = "prompt_librarian/inspector/";
-const M = "prompt_librarian/modal/";
+import { mountInspector } from "../harness/inspector.js";
 
 let env;
 beforeEach(() => {
@@ -41,21 +38,16 @@ function record(id, body) {
 }
 
 /**
- * Mount the real inspector on a hand-built ctx.
+ * Mount the real inspector.
  *
  * `answer` is what the gate's dialog resolves to; `asks` records every call so
  * a test can assert the dialog did NOT open on a clean buffer.
  */
 async function mount({ answer = "cancel", records = {}, api = {} } = {}) {
-  const { mountInspector } = await imp(I + "index.js");
-
-  const calls = { asks: [], update: [], create: [], state: [], drafts: [], cleared: [] };
+  const calls = { asks: [], update: [], create: [], drafts: [], cleared: [] };
   const store = { ...records };
-
-  const ctx = {
-    ABORTED: Symbol("aborted"),
-    dom: {},
-    API: {
+  const h = await mountInspector({
+    api: {
       get: async (id) =>
         store[id] ? { ok: true, record: store[id] } : { ok: false, error: "not found" },
       dupes: async () => ({ ok: true, matches: [] }),
@@ -69,25 +61,17 @@ async function mount({ answer = "cancel", records = {}, api = {} } = {}) {
       },
       ...api,
     },
-    setState(patch) {
-      calls.state.push(patch);
+    drafts: {
+      save: (id, buf) => calls.drafts.push([id, buf]),
+      load: () => null,
+      clear: (id) => calls.cleared.push(id),
     },
-    saveDraft: (id, buf) => calls.drafts.push([id, buf]),
-    loadDraft: () => null,
-    clearDraft: (id) => calls.cleared.push(id),
-    choiceDialog: async (opts) => {
-      calls.asks.push(opts);
-      return answer;
+    dialogs: {
+      choose: async (opts) => { calls.asks.push(opts); return answer; },
+      confirm: async () => true,
     },
-    confirmDialog: async () => true,
-    toast: () => {},
-  };
-
-  const el = document.createElement("div");
-  document.body.appendChild(el);
-  const pane = mountInspector(el, ctx);
-
-  return { pane, ctx, calls, store };
+  });
+  return { ...h, calls, store };
 }
 
 /** Adopt `rec` as the selection, then type over it so the buffer is dirty. */
@@ -96,7 +80,6 @@ async function editing(h, rec, text = "an edited body") {
   h.pane.setBody(text);
   assert.equal(h.pane.isDirty(), true, "precondition: the buffer must be dirty");
   h.calls.asks.length = 0;
-  h.calls.state.length = 0;
 }
 
 describe("the unsaved-changes gate", () => {
@@ -133,8 +116,7 @@ describe("the unsaved-changes gate", () => {
 
     assert.equal(h.calls.asks.length, 1, "the gate asked");
     assert.equal(h.pane.getBuffer().body, "an edited body", "the edit is untouched");
-    const restored = h.calls.state.filter((p) => "currentId" in p).pop();
-    assert.deepEqual(restored, { currentId: "a" }, "the sidebar highlight follows the editor");
+    assert.equal(h.slice.get("currentId"), "a", "the sidebar highlight follows the editor");
   });
 
   test("Discard drops the buffer and the parked draft, then switches", async () => {
@@ -180,8 +162,7 @@ describe("the unsaved-changes gate", () => {
 
     assert.equal(h.calls.create.length, 0, "an empty prompt is never written");
     assert.equal(h.pane.getBuffer().body, "   ", "and the user is left where they were");
-    const restored = h.calls.state.filter((p) => "currentId" in p).pop();
-    assert.deepEqual(restored, { currentId: "a" });
+    assert.equal(h.slice.get("currentId"), "a");
   });
 
   test("a failed save keeps the user on the record too", async () => {
@@ -222,19 +203,6 @@ describe("the unsaved-changes gate", () => {
     assert.equal(h.calls.asks.length, 1);
     assert.equal(h.calls.asks[0].choices.some((c) => c.label === "Save as new"), true);
     assert.equal(h.calls.create.length, 1, "no record to update — it must save as new");
-  });
-
-  test("without choiceDialog the old park-a-draft behaviour is kept", async () => {
-    const a = record("a", "first");
-    const b = record("b", "second");
-    const h = await mount({ records: { a, b } });
-    delete h.ctx.choiceDialog;
-    await editing(h, a);
-
-    await h.pane.selectPrompt("b");
-
-    assert.equal(h.pane.getBuffer().body, "second", "an older modal must still switch");
-    assert.ok(h.calls.drafts.some((d) => d[0] === "a"), "and the edit is parked, not dropped");
   });
 });
 

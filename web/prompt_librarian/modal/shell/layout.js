@@ -1,8 +1,10 @@
 import { createHeader, wireHeader } from "./header.js";
 import { h } from "../../shared/dom.js";
+import { useStyles } from "../../shared/styles.js";
+import { LayerStack } from "../../shared/ui/layer-stack.js";
+import { Toaster } from "../../shared/ui/toast.js";
 import { ARROW } from "./glyphs.js";
-import { inst } from "../state.js";
-import { createStorageHint, wireStorageControls } from "../storage/controls.js";
+import { inst } from "../instance.js";
 
 import { wireTargetControls } from "../target/controls.js";
 import { wireBackdrop } from "./dismissal.js";
@@ -12,6 +14,8 @@ import { wireShortcuts } from "../input/shortcuts.js";
 export function buildShell() {
   const instance = inst();
   if (instance.built) return instance;
+  useStyles(new URL("./shell.css", import.meta.url));
+  useStyles(new URL("./responsive.css", import.meta.url));
 
   const backdrop = h("div", { className: "pl-backdrop" });
   const header = createHeader();
@@ -23,7 +27,7 @@ export function buildShell() {
     rail,
     inspect
   );
-  const storageHint = createStorageHint();
+  const storageHint = header.storageHint;
   const foot = h(
     "div",
     { className: "pl-foot" },
@@ -67,6 +71,8 @@ export function buildShell() {
     toasts,
   });
   instance.root = root;
+  instance.layers = new LayerStack(layers, { root });
+  instance.toaster = new Toaster(toasts);
   instance.built = true;
   document.body.appendChild(root);
   return instance;
@@ -79,7 +85,6 @@ export function wireShell() {
   inst().wired = true;
   wireHeader();
   wireTargetControls();
-  wireStorageControls();
   wireShortcuts();
   wireBackdrop();
 }

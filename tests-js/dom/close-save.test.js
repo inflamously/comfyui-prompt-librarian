@@ -4,7 +4,7 @@
    There used to be a `Discard unsaved edits?` bar here that refused to close,
    so a dirty buffer meant the modal could not be dismissed at all. Now a dirty
    buffer is saved first, and the decision of whether it is safe to close is
-   carried by the five-value status vocabulary defined in inspector/save.js:
+   carried by the five-value status vocabulary defined in features/inspector/save/save-flow.js:
 
        "saved"   committed; safe to close
        "clean"   nothing to write; safe to close
@@ -13,7 +13,7 @@
        "busy"    a save is already in flight — MUST STAY OPEN
 
    modal/ compares that as a plain string and never imports the constant,
-   because inspector/ is lazily loaded and may legitimately be absent. These
+   because the inspector may legitimately be absent (a failed mount). These
    tests pin both halves of that contract.
    ========================================================================== */
 
@@ -31,12 +31,12 @@ afterEach(() => {
   env.teardown();
 });
 
-/** Shorthand: a ctx whose save always reports `status`, counting calls. */
+/** Shorthand: an inspector whose save always reports `status`, counting calls. */
 function saving(status) {
   const calls = [];
   return {
     calls,
-    ctx: {
+    inspector: {
       isDirty: () => true,
       requestSave: async (asNew) => {
         calls.push(asNew);
@@ -67,8 +67,8 @@ describe("attemptClose", () => {
 
   for (const status of ["saved", "clean"]) {
     test(`a dirty buffer that reports "${status}" closes`, async () => {
-      const { ctx, calls } = saving(status);
-      const s = await openShell(ctx);
+      const { inspector, calls } = saving(status);
+      const s = await openShell(inspector);
 
       assert.equal(s.attemptClose(), false, "a dirty close is asynchronous");
       await flush();
@@ -82,8 +82,8 @@ describe("attemptClose", () => {
 
   for (const status of ["blocked", "failed", "busy"]) {
     test(`a dirty buffer that reports "${status}" stays open`, async () => {
-      const { ctx, calls } = saving(status);
-      const s = await openShell(ctx);
+      const { inspector, calls } = saving(status);
+      const s = await openShell(inspector);
 
       s.attemptClose();
       await flush();
@@ -100,8 +100,8 @@ describe("attemptClose", () => {
   test("an unknown status is treated as unsafe and keeps the modal open", async () => {
     // The vocabulary is duplicated as a comment across two modules; a typo on
     // either side must fail closed, not throw the buffer away.
-    const { ctx } = saving("saevd");
-    const s = await openShell(ctx);
+    const { inspector } = saving("saevd");
+    const s = await openShell(inspector);
     s.attemptClose();
     await flush();
     assert.equal(s.it.open, true);
@@ -207,8 +207,8 @@ describe("every close route goes through attemptClose", () => {
   test("the × button, Escape and a backdrop click all save first", async () => {
     for (const route of ["button", "escape", "backdrop"]) {
       env.reset();
-      const { ctx, calls } = saving("saved");
-      const s = await openShell(ctx);
+      const { inspector, calls } = saving("saved");
+      const s = await openShell(inspector);
 
       if (route === "button") s.closeBtn.click();
       else if (route === "escape") s.key("Escape");
@@ -222,8 +222,8 @@ describe("every close route goes through attemptClose", () => {
   });
 
   test("a drag started inside the card and released on the backdrop does NOT close", async () => {
-    const { ctx, calls } = saving("saved");
-    const s = await openShell(ctx);
+    const { inspector, calls } = saving("saved");
+    const s = await openShell(inspector);
 
     s.dragToBackdrop();
     await flush();
@@ -234,16 +234,30 @@ describe("every close route goes through attemptClose", () => {
   });
 
   test("Escape pops a layer instead of closing while one is open", async () => {
-    const { ctx, calls } = saving("saved");
-    const s = await openShell(ctx);
+    const { inspector, calls } = saving("saved");
+    const s = await openShell(inspector);
     const el = document.createElement("div");
-    s.layers.pushLayer({ el });
+    s.layers.push({ el });
 
     s.key("Escape");
     await flush();
 
-    assert.equal(s.it.layers.length, 0, "Escape popped the layer");
+    assert.equal(s.it.layers.size, 0, "Escape popped the layer");
     assert.equal(s.it.open, true, "and did not close the modal");
+    assert.deepEqual(calls, []);
+    env.assertNoErrors();
+  });
+
+  test("a backdrop click under an open dialog closes neither", async () => {
+    const { inspector, calls } = saving("saved");
+    const s = await openShell(inspector);
+    s.layers.push({ el: document.createElement("div"), closeOnOutside: false });
+
+    s.backdropClick();
+    await flush();
+
+    assert.equal(s.it.layers.size, 1, "the dialog stays");
+    assert.equal(s.it.open, true, "and so does the modal");
     assert.deepEqual(calls, []);
     env.assertNoErrors();
   });
@@ -252,21 +266,17 @@ describe("every close route goes through attemptClose", () => {
 describe("closeModal teardown", () => {
   test("drains layers, teardown steps and debounces, and hides the root", async () => {
     const cancelled = [];
-    const s = await openShell({
-      debounces: [
-        { cancel: () => cancelled.push("a") },
-        { cancel: () => cancelled.push("b") },
-        null, // a pane that registered nothing must not break the loop
-      ],
-    });
+    const s = await openShell();
+    s.it.cancelOnClose.add(() => cancelled.push("a"));
+    s.it.cancelOnClose.add(() => cancelled.push("b"));
 
     let torn = 0;
     s.it.teardown.push(() => torn++);
-    s.layers.pushLayer({ el: document.createElement("div") });
+    s.layers.push({ el: document.createElement("div") });
 
     s.closeModal();
 
-    assert.equal(s.it.layers.length, 0, "layer stack drained");
+    assert.equal(s.it.layers.size, 0, "layer stack drained");
     assert.equal(torn, 1, "teardown steps ran");
     assert.deepEqual(cancelled, ["a", "b"], "every pane debounce cancelled");
     assert.equal(s.root.hidden, true);
@@ -306,7 +316,7 @@ describe("closeModal teardown", () => {
     const s = await openShell();
     s.closeModal();
 
-    s.state.setModalVisible(true);
+    s.setModalVisible(true);
 
     assert.equal(s.root.hidden, false);
     assert.equal(s.els.card.getAttribute("aria-modal"), "true");
@@ -316,9 +326,9 @@ describe("closeModal teardown", () => {
 
 describe("attemptClose with an emptied editor", () => {
   test("closes at once without saving, since an empty body cannot be saved", async () => {
-    const { ctx, calls } = saving("blocked");
-    ctx.inspector = { getBuffer: () => ({ tags: [], body: "  \n" }) };
-    const s = await openShell(ctx);
+    const { inspector, calls } = saving("blocked");
+    inspector.getBuffer = () => ({ tags: [], body: "  \n" });
+    const s = await openShell(inspector);
 
     assert.equal(s.attemptClose(), true, "nothing to save, so the close is synchronous");
     assert.equal(s.it.open, false);
@@ -327,9 +337,9 @@ describe("attemptClose with an emptied editor", () => {
   });
 
   test("a non-empty dirty buffer still saves first", async () => {
-    const { ctx, calls } = saving("blocked");
-    ctx.inspector = { getBuffer: () => ({ tags: [], body: "text" }) };
-    const s = await openShell(ctx);
+    const { inspector, calls } = saving("blocked");
+    inspector.getBuffer = () => ({ tags: [], body: "text" });
+    const s = await openShell(inspector);
 
     assert.equal(s.attemptClose(), false);
     await flush();

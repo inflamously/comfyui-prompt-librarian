@@ -1,10 +1,4 @@
-"""One SQLite file, one reused connection per thread.
-
-Opening a connection costs more than most queries the library runs, so each
-thread keeps its own. Connections run in autocommit mode; :meth:`Database.read`
-and :meth:`Database.write` add the transaction, so a multi-query read sees one
-snapshot and a write holds the lock from its first statement.
-"""
+"""One SQLite file, one reused autocommit connection per thread."""
 
 import contextlib
 import os

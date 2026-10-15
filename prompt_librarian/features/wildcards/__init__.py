@@ -1,10 +1,4 @@
-"""Resolve seeded choices, wildcard files, and snippets without import-time I/O.
-
-Escape syntax before expanding snippets, files, then innermost braces.
-Bound passes, per-name recursion, and output size; unresolved forms stay literal.
-Substitution order is deterministic, but edited wildcard files can change
-output for the same seed; the node includes their signature in IS_CHANGED.
-"""
+"""Resolve seeded choices, wildcard files, and snippets without import-time I/O."""
 
 from collections.abc import Callable
 
@@ -31,6 +25,8 @@ from .syntax import (
 MAX_DEPTH = 10
 MAX_PASSES = 20
 MAX_OUTPUT = 200000
+#: How many samples one preview may ask for.
+MAX_SAMPLES = 50
 
 #: Shared instance used when ``resolve()`` is called without ``files=``.
 FILES = WildcardFiles()
@@ -40,11 +36,7 @@ def configure(
     root: str | Callable[[], str] | None = None,
     snippets: Callable[[], dict] | None = None,
 ) -> None:
-    """Point the defaults at a library: its wildcard directory and snippet source.
-
-    ``root`` is a path or zero-argument callable; ``snippets`` a zero-argument
-    callable. Called by the composition root, never at import.
-    """
+    """Point the defaults at a library: its wildcard directory and snippet source."""
     global FILES
     if root is not None:
         FILES = WildcardFiles(root=root)
@@ -70,20 +62,7 @@ def resolve(
     snippets: object = None,
     collect: dict | None = None,
 ) -> str:
-    """Resolve every wildcard form in ``text`` and return the result.
-
-    ``seed`` seeds a private ``random.Random``, so the same ``(text, seed)``
-    always produces the same output. ``files`` is a :class:`WildcardFiles` (or
-    anything with ``options(name)``); ``snippets`` is a dict or callable.
-    Both default to what the composition root configured.
-
-    ``collect``, when a dict, is filled in with ``picks``, ``missing`` and
-    ``warnings`` -- that is how :func:`resolve_verbose` gets its detail
-    without a second resolution pass.
-
-    Never raises for user input: a missing wildcard file or snippet is left as
-    literal text and reported in ``missing``.
-    """
+    """Resolve every wildcard form in ``text``, deterministic per ``seed``; never raises."""
     source = "" if text is None else str(text)
 
     if files is None:
@@ -116,12 +95,24 @@ def resolve_verbose(
     }
 
 
+
+def sample(
+    text: object, seed: int = 0, count: int = 1, *, snippets: object = None
+) -> dict[str, object]:
+    """Resolve ``text`` at ``seed``, ``seed + 1``, ... (``count`` clamped to 1..MAX_SAMPLES)."""
+    count = max(1, min(count, MAX_SAMPLES))
+    first = resolve_verbose(text, seed, snippets=snippets)
+    rest = [resolve(text, seed + offset, snippets=snippets) for offset in range(1, count)]
+    return {**first, "samples": [first["text"], *rest]}
+
+
 __all__ = [
     "FILES",
     "configure",
     "MAX_DEPTH",
     "MAX_OUTPUT",
     "MAX_PASSES",
+    "MAX_SAMPLES",
     "S_LB",
     "S_LSB",
     "S_PIPE",
@@ -136,6 +127,7 @@ __all__ = [
     "referenced_names",
     "resolve",
     "resolve_verbose",
+    "sample",
     "signature",
     "unescape",
 ]

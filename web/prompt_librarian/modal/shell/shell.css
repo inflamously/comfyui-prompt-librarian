@@ -1,0 +1,201 @@
+/* The modal shell: root, backdrop, card, header, target chip, rail and
+   inspector columns, footer. */
+
+.pl-root {
+  position: fixed;
+  inset: 0;
+  z-index: var(--pl-z);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  /* hidden must override the explicit flex display. */
+}
+
+.pl-root[hidden] {
+  display: none;
+}
+
+.pl-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 6, 14, 0.66);
+  backdrop-filter: blur(2px);
+}
+
+.pl-card {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(1440px, 100%);
+  height: min(920px, 100%);
+  min-height: 0;
+  min-width: 0;
+  background: var(--pl-bg-page);
+  border: 1px solid var(--pl-border-soft);
+  border-radius: 14px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  /* Layout/paint containment anchors fixed descendants. Keep viewport-positioned
+   .pl-layers and .pl-toasts outside this card. */
+  contain: layout paint;
+}
+
+.pl-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px 16px;
+  background: var(--pl-bg-chrome);
+  border-bottom: 1px solid var(--pl-border-soft);
+}
+
+.pl-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pl-accent);
+  box-shadow: 0 0 8px rgba(255, 224, 0, 0.5);
+}
+
+.pl-title {
+  flex: 0 0 auto;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--pl-text);
+}
+
+.pl-sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--pl-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--pl-text-dim);
+}
+
+.pl-target {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  padding: 5px 10px;
+  border: 1px solid var(--pl-border);
+  border-radius: 999px;
+  background: var(--pl-btn-tint);
+  font-family: var(--pl-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--pl-text-dim);
+  cursor: pointer;
+  transition: border-color var(--pl-fast) ease, color var(--pl-fast) ease;
+}
+
+.pl-target:hover {
+  border-color: var(--pl-accent);
+  color: var(--pl-text);
+}
+
+.pl-target > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.pl-target.is-stale {
+  border-color: var(--pl-warn-border);
+  background: var(--pl-warn-bg);
+  color: var(--pl-warn);
+}
+
+.pl-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  border: 1px solid var(--pl-border-soft);
+  border-radius: 5px;
+  background: var(--pl-btn-tint);
+  color: var(--pl-text-dim);
+  font-size: 13px;
+  line-height: 1;
+  transition: background var(--pl-fast) ease, color var(--pl-fast) ease;
+}
+
+.pl-close:hover {
+  background: var(--pl-bg-hover);
+  color: var(--pl-text);
+}
+
+.pl-close[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pl-close[disabled]:hover {
+  background: var(--pl-bg-pane);
+  color: var(--pl-text-dim);
+}
+
+.pl-body {
+  display: grid;
+  grid-template-columns: minmax(320px, 34%) minmax(0, 1fr);
+  /* Keep min-height/min-width: 0 on scroll ancestors. The auto minimum can
+   expand the card to fit all content and disable virtualized scrolling. */
+  min-height: 0;
+  min-width: 0;
+  background: var(--pl-bg-page);
+}
+
+.pl-rail {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+  border-right: 1px solid var(--pl-border-soft);
+  background: var(--pl-bg-page);
+}
+
+.pl-inspect {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pl-gap);
+  min-height: 0;
+  min-width: 0;
+  padding: 14px 16px 16px;
+  overflow-y: auto;
+  background: var(--pl-bg-page);
+}
+
+.pl-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 16px;
+  border-top: 1px solid var(--pl-border-soft);
+  background: var(--pl-bg-chrome);
+  font-family: var(--pl-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--pl-text-mute);
+}
+
+.pl-pill {
+  flex: 0 0 auto;
+  padding: 4px 11px;
+  border: 1px solid var(--pl-border);
+  border-radius: 999px;
+  background: var(--pl-bg-pane);
+  color: var(--pl-text-dim);
+  white-space: nowrap;
+}

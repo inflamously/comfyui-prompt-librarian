@@ -79,11 +79,7 @@ class _Context:
             self.missing.append(token)
 
     def afford(self, matched: str, replacement: str) -> bool:
-        """Whether a substitution fits the output budget; tracks the running size.
-
-        ``re.sub`` has no running size, so deltas are tracked here. An expansion
-        over the budget is rejected and the original token stays intact.
-        """
+        """Whether a substitution fits the output budget; tracks the running size."""
         delta = len(replacement) - len(matched)
         if self.size + delta > self.max_output:
             self.overflow = True

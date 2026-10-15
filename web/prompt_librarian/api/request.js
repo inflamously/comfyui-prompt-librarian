@@ -203,3 +203,23 @@ export const comfy = {
     return () => api.removeEventListener(type, listener);
   },
 };
+
+export const EVENT_CHANGED = "prompt_librarian.changed";
+
+/** Call `handler({op, ids, rev})` after every library write, from any tab or a
+ * workflow run (`_broadcast` in prompt_librarian/app.py); returns the unsubscribe. */
+export function onLibraryChanged(handler) {
+  if (!comfy.available()) return () => {};
+  return comfy.on(EVENT_CHANGED, (detail) => handler(detail || {}));
+}
+
+/** The API layer may either throw or hand back `{error, code}`. Unify. */
+export function ensureOk(res) {
+  if (res && typeof res === "object" && res.error) {
+    const e = new Error(String(res.error));
+    e.code = res.code;
+    e.status = res.status;
+    throw e;
+  }
+  return res;
+}

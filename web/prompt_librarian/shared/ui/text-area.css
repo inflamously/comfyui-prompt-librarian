@@ -1,0 +1,68 @@
+/* The editor field: label, textarea frame and its footer line. The inspector,
+   the merge editor and the dupe panel use it. */
+
+.pl-lbl {
+  font-family: var(--pl-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--pl-text-mute);
+}
+
+.pl-ta-wrap {
+  position: relative;
+  display: block;
+  min-height: 190px;
+  min-width: 0;
+  flex: 1 1 auto;
+  background: var(--pl-bg-input);
+  border: 1px solid var(--pl-accent);
+  border-radius: var(--pl-radius);
+  overflow: hidden;
+}
+
+.pl-ta {
+  margin: 0;
+  padding: 13px 14px;
+  border: 0;
+  font-family: var(--pl-font);
+  font-size: 13.5px;
+  line-height: 1.5;
+  letter-spacing: 0.005em;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  tab-size: 4;
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 190px;
+  resize: none;
+  outline: none;
+  background: transparent;
+  color: var(--pl-text);
+  caret-color: var(--pl-accent);
+  overflow-y: auto;
+}
+
+.pl-ta-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  font-family: var(--pl-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--pl-text-dim);
+}
+
+/* Explicit flex display overrides the browser hidden rule; restore hidden here. */
+.pl-ta-foot[hidden] {
+  display: none;
+}
+
+.pl-ta-foot .pl-sep {
+  color: var(--pl-text-mute);
+}

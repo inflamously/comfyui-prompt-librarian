@@ -1,6 +1,4 @@
-"""Await the coalesced all-pairs scan when grouping requires it, so concurrent
-searches do not launch duplicate scans.
-"""
+"""Search and autocomplete routes."""
 
 from ...features.autocomplete.suggest import suggest
 from .. import schemas

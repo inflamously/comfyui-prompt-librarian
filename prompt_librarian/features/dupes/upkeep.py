@@ -1,8 +1,4 @@
-"""Keeping cached duplicate scans in step with library changes.
-
-Subscribed to the library's change bus, so writes from the API, the node and
-bulk edits all take the same path; routes never patch caches themselves.
-"""
+"""Keeping cached duplicate scans in step with library changes."""
 
 from collections.abc import Callable
 

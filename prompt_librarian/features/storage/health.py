@@ -5,6 +5,7 @@ import sqlite3
 from typing import Any
 
 from ...shared import entries
+from ...shared.db.schema import SCHEMA_VERSION
 from ...shared.errors import StoreWriteError
 from ...shared.library import Library
 from .migrate import pending_sources
@@ -66,6 +67,24 @@ def storage_status(lib: Library, legacy_sources: list[str]) -> dict[str, Any]:
         },
     }
 
+
+
+def library_facts(lib: Library) -> dict[str, Any]:
+    """What a client boots from: schema, record count, path and two flags; never raises."""
+    return {
+        "schema": SCHEMA_VERSION,
+        "count": _count(lib),
+        "path": lib.path,
+        "corrupt": lib.corrupt(),
+        "readonly": _readonly(lib),
+    }
+
+
+def _readonly(lib: Library) -> bool:
+    try:
+        return lib.readonly()
+    except StoreWriteError:
+        return False
 
 def _count(lib: Library) -> int:
     if not lib.exists():

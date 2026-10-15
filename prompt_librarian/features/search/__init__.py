@@ -1,8 +1,4 @@
-"""Search a library (through :class:`LibrarySearchSource`) or plain record lists.
-
-ISO-8601 timestamps with a Z suffix sort lexicographically. Scoring weights
-remain configurable through this package's public names.
-"""
+"""Search a library (through :class:`LibrarySearchSource`) or plain record lists."""
 
 from __future__ import annotations
 
@@ -35,6 +31,7 @@ from .config import (
     GROUP_MEMBER_CAP,
 )
 from .index import Doc, SearchIndex, build_index, make_doc
+from .labelling import labelled, labeller
 from .query import ParsedQuery, parse_query
 from .source import LibrarySearchSource
 from .upkeep import on_change
@@ -88,36 +85,7 @@ def search(
     match_fn: Callable[[list[str]], dict[str, float]] | None = None,
     groups: Iterable[Iterable[str]] | None = None,
 ) -> dict[str, Any]:
-    """Run a search.
-
-    ``source`` may be a :class:`SearchIndex`, an iterable of record dicts, or a
-    :class:`LibrarySearchSource` over a library on disk.
-
-    ``dupe_count_fn`` / ``match_fn`` are injected so this module never has to
-    import ``dedupe``.  Both are called **once**, with the list of
-    pids on the current page only, and return ``{pid: value}``:
-    ``dupe_count_fn`` -> int counts, ``match_fn`` -> similarity in [0, 1]
-    against whatever the caller selected (rendered as ``match_pct``).
-
-    ``dupe_ids`` is the precomputed set of ids that have at least one
-    near-duplicate; it is required for ``dupes_only`` to have any effect.  If
-    ``dupes_only`` is requested without it the filter is skipped and
-    ``dupes_partial`` comes back True.
-
-    ``groups`` -- the connected components of the near-duplicate graph, as
-    ``dedupe.dupe_counts()['groups']`` -- turns the result into one row per
-    *cluster* instead of one row per record.  Passed as plain id lists so this
-    module still never imports :mod:`prompt_librarian.features.dupes`.
-
-    Returns::
-
-        {rev, total, record_total, offset, limit, threshold, took_ms,
-         dupes_partial, hits[], groups{rep_id: hit[]}}
-
-    ``total`` counts rows the caller will page over -- clusters and singletons
-    once folding is on -- and ``record_total`` counts the records behind them.
-    Without ``groups`` they are equal and ``groups{}`` is empty.
-    """
+    """Run a search over ``source``; returns one page of scored hits or dupe clusters."""
     return _service.search(
         source,
         query,
@@ -141,6 +109,8 @@ def search(
 
 
 __all__ = [
+    "labelled",
+    "labeller",
     "W_HEAD",
     "W_TAG",
     "W_BODY",

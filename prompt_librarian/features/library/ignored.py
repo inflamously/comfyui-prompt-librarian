@@ -1,8 +1,4 @@
-""""Keep both" decisions: near-duplicate pairs the user chose not to merge.
-
-A muted pair stays in duplicate counts and groups; it only annotates matches so
-the save dialog does not ask again.
-"""
+""""Keep both" decisions: near-duplicate pairs the user chose not to merge."""
 
 import sqlite3
 from typing import Any
@@ -18,11 +14,7 @@ def _pair(a: object, b: object) -> list[str]:
 
 
 def ignore_pair(lib: Library, a: str, b: str) -> bool:
-    """Mute a pair; ``False`` when it already was.
-
-    Raises:
-        ValueError: The ids are missing or the same.
-    """
+    """Mute a pair; ``False`` when it already was."""
     first, second = as_str(a), as_str(b)
     if not first or not second or first == second:
         raise ValueError("ignore_pair needs two distinct ids")

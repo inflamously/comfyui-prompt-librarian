@@ -1,5 +1,7 @@
 """Importing a portable envelope: replacing the library, or merging into it."""
 
+import json
+
 from ...shared import entries
 from ...shared.clock import new_id, now_iso
 from ...shared.library import Library
@@ -9,11 +11,7 @@ from .records import put_prompts, replace_prompts
 
 
 def import_library(lib: Library, raw: object, replace: bool = True) -> int:
-    """Import ``raw`` (coerced first, so junk is survivable); returns the record count.
-
-    ``replace`` rewrites the library atomically. Otherwise records whose id
-    already exists get a fresh id, and snippets and muted pairs are unioned.
-    """
+    """Import ``raw`` (coerced first, so junk is survivable); returns the record count."""
     incoming = coerce_envelope(raw)
     if replace:
         replace_prompts(lib, incoming["prompts"], lambda stored: _replaced(stored, incoming))
@@ -28,6 +26,13 @@ def import_library(lib: Library, raw: object, replace: bool = True) -> int:
     put_prompts(lib, incoming["prompts"], lambda stored: _merged(stored, incoming))
     return len(incoming["prompts"])
 
+
+
+def import_library_file(lib: Library, path: str, replace: bool = False) -> int:
+    """Import the JSON envelope stored at ``path``; see :func:`import_library`."""
+    with open(path, encoding="utf-8") as handle:
+        raw = json.load(handle)
+    return import_library(lib, raw, replace)
 
 def _replaced(stored: object, incoming: Envelope) -> Meta:
     meta = clean_meta(stored)

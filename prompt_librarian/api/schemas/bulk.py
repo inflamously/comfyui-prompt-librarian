@@ -8,12 +8,7 @@ from .search import SearchQuery
 
 @dataclass
 class BulkTarget(_Schema):
-    """The selection every `/bulk/*` body takes.
-
-    "Select all filtered" over a large library must not ship every id through
-    the browser, so the frontend may store the ``query`` instead and let the
-    server re-run it.
-    """
+    """The selection every `/bulk/*` body takes: explicit ids or a stored query."""
 
     ids: list[str] = field(default_factory=list)
     query: SearchQuery | None = None

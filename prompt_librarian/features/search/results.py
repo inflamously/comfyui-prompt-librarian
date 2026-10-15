@@ -48,11 +48,7 @@ def _passes_filters(  # noqa: C901 - a flat chain of independent filters
 
 
 def _sort_scored(scored: list[tuple[Doc, float]], sort: str) -> list[tuple[Doc, float]]:
-    """Sort scored docs; the last stable sort is the primary key.
-
-    Ties break on body text, because corpus-derived labels can change when
-    unrelated records are saved.
-    """
+    """Sort scored docs; the last stable sort is the primary key, body text breaks ties."""
     if sort == "az":
         scored.sort(key=lambda p: p[0].used, reverse=True)
         scored.sort(key=lambda p: p[0].body_disp_lower)
@@ -72,10 +68,7 @@ def _sort_scored(scored: list[tuple[Doc, float]], sort: str) -> list[tuple[Doc, 
 def _fold_groups(
     scored: list[tuple[Doc, float]], groups: Iterable[Iterable[str]]
 ) -> tuple[list[tuple[Doc, float]], dict[str, list[tuple[Doc, float]]]]:
-    """Use the first already-sorted member as the cluster representative.
-
-    A cluster with one surviving query match remains a plain row.
-    """
+    """Use the first already-sorted member as the cluster representative."""
     gid: dict[str, int] = {}
     for i, members in enumerate(groups or ()):
         for pid in members or ():

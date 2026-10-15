@@ -1,5 +1,5 @@
 /* ==========================================================================
-   browse/grouped-source.js — the duplicate accordion's index mapping
+   features/browse/grouped-source.js — the duplicate accordion's index mapping
 
    No DOM and no network: a fake PagedSource is enough, because the whole
    contract is "which flat index is which record". That mapping is what keeps
@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { imp } from "../harness/mount.js";
 
 const { GroupedView, attachMembers, MEMBERS } = await imp(
-  "prompt_librarian/browse/grouped-source.js",
+  "prompt_librarian/features/browse/grouped-source.js",
 );
 
 /** A resident-everything stand-in for PagedSource. */

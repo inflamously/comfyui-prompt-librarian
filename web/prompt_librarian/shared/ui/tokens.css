@@ -1,0 +1,67 @@
+/* Design tokens: the shared colours, sizes, fonts and timings. Scoped to the
+   pack's three roots so nothing leaks into ComfyUI. shared/styles.js loads this
+   file before any other sheet; new colours belong here, not in a component. */
+
+.pl-root,
+.pl-node-card,
+.pl-wordgen {
+  --pl-bg-page: #0a0d1c;
+  --pl-bg-chrome: #141a33;
+  --pl-bg-pane: #0f1428;
+  --pl-bg-input: #0a0f22;
+  --pl-bg-hover: #161d3a;
+  --pl-bg-sel: #202325;
+  --pl-skel: #161c37;
+
+  --pl-border: #2d396d;
+  --pl-border-soft: #222c58;
+  --pl-border-mute: rgba(123, 127, 143, 0.45);
+
+  --pl-text: #e7eaf6;
+  --pl-text-dim: #84868d;
+  --pl-text-mute: #66696e;
+
+  --pl-accent: #ffe000;
+  --pl-accent-ink: #0a0d1c;
+  --pl-accent-soft: #313122;
+  --pl-star: #ffdc11;
+
+  --pl-btn-tint: #1c202e;
+  --pl-btn-tint-hover: #262b3d;
+  --pl-btn-tint-soft: rgba(206, 200, 128, 0.05);
+
+  --pl-warn: #e8a33d;
+  --pl-warn-bg: #1e1f29;
+  --pl-warn-border: #7a5b32;
+  --pl-warn-chip: #443a29;
+
+  --pl-danger: #e25a5a;
+  --pl-danger-border: #6e343f;
+
+  --pl-ins-c: #7ce8ac;
+  --pl-del-c: #e88a8a;
+
+  /* --pl-row-h must match shared/ui/virtual-list.js row calculations. */
+  --pl-row-h: 96px;
+  /* Keep these metrics aligned with .pl-row-name; checkbox centering uses them. */
+  --pl-row-name-fs: 13.5px;
+  --pl-row-name-lh: calc(var(--pl-row-name-fs) * 1.45);
+  --pl-check-size: 20px;
+  --pl-twisty-size: calc(15px * 1.5);
+  --pl-radius: 8px;
+  --pl-radius-sm: 6px;
+  --pl-gap: 12px;
+  --pl-z: 2000000;
+
+  --pl-font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  --pl-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "DejaVu Sans Mono", monospace;
+  --pl-fs: 13px;
+  --pl-lh: 1.45;
+
+  --pl-fast: 120ms;
+  --pl-slow: 200ms;
+
+  color-scheme: dark;
+}

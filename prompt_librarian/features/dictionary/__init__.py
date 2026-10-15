@@ -1,10 +1,4 @@
-"""Plain definitions for prompt words, from WordNet, downloaded once.
-
-``install`` fetches Princeton WordNet 3.0 (about 11 MB) and converts it into
-``wordnet.sqlite3`` inside ``root``, a directory beside the library chosen by
-the composition root. After that every lookup and search is local. Nothing
-here touches the library's own database.
-"""
+"""Plain WordNet definitions for prompt words, downloaded once and looked up locally."""
 
 from .install import install
 from .lookup import define

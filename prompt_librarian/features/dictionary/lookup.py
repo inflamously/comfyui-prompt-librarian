@@ -23,21 +23,7 @@ def normalize(word: object) -> str:
 
 
 def define(root: str, word: str) -> dict[str, object]:
-    """The word's meanings from the downloaded dictionary.
-
-    Args:
-        root: The dictionary directory.
-        word: Any spelling; plurals and other inflections find their base form.
-
-    Returns:
-        ``{"word", "status", "lemma", "meanings", "parts", "source"}``.
-        ``status`` is ``found``, ``missing`` or ``not_installed``; ``lemma`` is
-        the base form that was found ("forests" -> "forest"); ``parts`` lists
-        the words of a missing phrase that the dictionary does know.
-
-    Raises:
-        ValueError: The word is empty.
-    """
+    """The word's meanings (inflections resolve to their base form) from the dictionary."""
     key = normalize(word)
     if not key:
         raise ValueError("word is empty")

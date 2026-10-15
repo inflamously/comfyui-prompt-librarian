@@ -28,14 +28,15 @@ const IMPORTABLE = ["harness/fake-api.js", "harness/fake-app.js", "harness/fake-
 /** Served-path stubs; they resolve only over HTTP, so they are parse-checked. */
 const URL_IMPORTERS = ["scripts/app.js", "scripts/api.js"];
 
-/** ui.js drives the page: it reads DOM elements at module scope by design. */
-const PAGE_ENTRY = "harness/ui.js";
+/** Each page and its entry module, which reads DOM elements at module scope by design. */
+const PAGES = { "index.html": "harness/ui.js", "widgets.html": "harness/widgets.js" };
 
 const read = (rel) => fs.readFileSync(path.join(DEVHARNESS, rel), "utf8");
 
 describe("devharness", () => {
   test("the files the dev server serves all exist", () => {
-    for (const rel of [...IMPORTABLE, ...URL_IMPORTERS, PAGE_ENTRY, "index.html", "harness/harness.css"]) {
+    const pages = Object.entries(PAGES).flat();
+    for (const rel of [...IMPORTABLE, ...URL_IMPORTERS, ...pages, "harness/harness.css", "harness/widgets.css"]) {
       assert.ok(fs.existsSync(path.join(DEVHARNESS, rel)), `missing devharness/${rel}`);
     }
   });
@@ -68,22 +69,25 @@ describe("devharness", () => {
     }
   });
 
-  test("index.html carries the sentinel devkit/server.py templates", () => {
+  test("each page carries the sentinel devkit/server.py templates", () => {
     // devkit/server.py does a literal string replace; if the comment is edited the
-    // page silently loses window.__DEV__ and boot.js throws on `.reload`.
-    assert.ok(
-      read("index.html").includes("<!-- __DEV_CONFIG__ : templated by scripts/devkit/server.py -->"),
-      "the __DEV_CONFIG__ sentinel is gone; devkit/server.py can no longer inject window.__DEV__",
-    );
+    // page silently loses window.__DEV__ and its entry throws on reading it.
+    for (const page of Object.keys(PAGES)) {
+      assert.ok(
+        read(page).includes("<!-- __DEV_CONFIG__ : templated by scripts/devkit/server.py -->"),
+        `the __DEV_CONFIG__ sentinel is gone from ${page}; devkit/server.py can no longer inject window.__DEV__`,
+      );
+    }
   });
 
-  test("index.html references only assets the dev server mounts", () => {
-    const html = read("index.html");
-    for (const m of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
-      const url = m[1];
-      if (!url.startsWith("/__dev/harness/")) continue;
-      const rel = url.replace("/__dev/harness/", "harness/");
-      assert.ok(fs.existsSync(path.join(DEVHARNESS, rel)), `index.html references missing ${url}`);
+  test("each page references only assets the dev server mounts", () => {
+    for (const page of Object.keys(PAGES)) {
+      for (const m of read(page).matchAll(/(?:src|href)="([^"]+)"/g)) {
+        const url = m[1];
+        if (!url.startsWith("/__dev/harness/")) continue;
+        const rel = url.replace("/__dev/harness/", "harness/");
+        assert.ok(fs.existsSync(path.join(DEVHARNESS, rel)), `${page} references missing ${url}`);
+      }
     }
   });
 
@@ -93,9 +97,11 @@ describe("devharness", () => {
     assert.ok(!fs.existsSync(path.join(ROOT, "web", "scripts")), "a host stub leaked into web/");
   });
 
-  test("the page entry is a module and is only loaded by index.html", () => {
-    assert.match(read("index.html"), /<script type="module" src="\/__dev\/harness\/ui\.js">/);
-    assert.match(read(PAGE_ENTRY), /^import /m, "ui.js should be an ES module");
+  test("each page loads its entry as a module", () => {
+    for (const [page, entry] of Object.entries(PAGES)) {
+      assert.ok(read(page).includes(`<script type="module" src="/__dev/${entry}"></script>`), page);
+      assert.match(read(entry), /^(import |const )/m, `${entry} should be an ES module`);
+    }
   });
 });
 
@@ -118,7 +124,7 @@ describe("devharness stands in for ComfyUI's queue", () => {
 
   test("graphToPrompt gives each Librarian node a workflow the generator accepts", async () => {
     const { app } = await imp("devharness/harness/fake-app.js");
-    const T = await imp("web/prompt_librarian/word-pictures/template.js");
+    const T = await imp("web/prompt_librarian/features/word-pictures/template.js");
     app.__dev.addNode({ id: 41, comfyClass: "PromptLibrarian", widgets: [{ name: "text", value: "long prompt" }] });
     app.__dev.addNode({ id: 42, comfyClass: "PromptLibrarian", widgets: [{ name: "text", value: "other" }] });
     try {
@@ -135,7 +141,7 @@ describe("devharness stands in for ComfyUI's queue", () => {
 
   test("a queued prompt's outputs come back as ComfyUI's execution events", async () => {
     const { api } = await imp("devharness/harness/fake-api.js");
-    const { render } = await imp("web/prompt_librarian/word-pictures/runner.js");
+    const { render } = await imp("web/prompt_librarian/features/word-pictures/runner.js");
     const images = [{ filename: "dev_temp_00001_.png", subfolder: "", type: "temp" }];
     globalThis.fetch = async (url) => {
       assert.equal(url, "/api/prompt");

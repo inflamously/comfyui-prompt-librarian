@@ -1,0 +1,38 @@
+/* Word-picture generator: a small progress card while ComfyUI renders words. */
+.pl-wordgen {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 10000;
+  width: 280px;
+  padding: 10px 12px;
+  border: 1px solid var(--pl-border);
+  border-radius: 8px;
+  background: var(--pl-bg-chrome);
+  box-shadow: 0 4px 16px #0006;
+}
+.pl-wordgen-title { font-weight: 600; margin-bottom: 4px; }
+.pl-wordgen-line {
+  color: var(--pl-text-dim);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pl-wordgen-bar {
+  height: 4px;
+  margin: 8px 0;
+  border-radius: 2px;
+  background: var(--pl-bg-input);
+  overflow: hidden;
+}
+.pl-wordgen-bar > div { height: 100%; width: 0; background: var(--pl-accent); transition: width 0.2s; }
+.pl-wordgen-actions { display: flex; justify-content: flex-end; }
+.pl-wordgen-actions button {
+  padding: 3px 10px;
+  border: 1px solid var(--pl-border);
+  border-radius: 4px;
+  background: var(--pl-bg-input);
+  color: var(--pl-text);
+  cursor: pointer;
+}

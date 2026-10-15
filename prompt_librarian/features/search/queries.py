@@ -1,8 +1,4 @@
-"""Search's SQL: candidate records for a query, and corpus statistics for scoring.
-
-The scorer still runs in Python over the candidates, so ordering and filters stay
-one implementation instead of drifting into SQL-specific behaviour.
-"""
+"""Search's SQL: candidate records for a query, and corpus statistics for scoring."""
 
 import sqlite3
 from typing import Any
@@ -15,10 +11,7 @@ from .config import EDIT1_MIN_LEN, FALLBACK_TERM_CAP, PREFIX_EXPAND_CAP
 def candidate_records(
     con: sqlite3.Connection, tokens: list[str], mode: str, fts5: bool
 ) -> list[dict[str, Any]]:
-    """Records whose postings match ``tokens`` by exact/prefix, else by infix/edit-1.
-
-    ``mode`` is ``"all"`` (every token) or ``"any"``. No tokens means every record.
-    """
+    """Records whose postings match ``tokens`` by exact/prefix, else by infix/edit-1."""
     tokens = [token for token in (normalize(t) for t in tokens) if token]
     if not tokens:
         return corpus.all_records(con)

@@ -1,0 +1,89 @@
+/* The narrow layout: Browse/Edit tabs replace the two columns. */
+
+.pl-root .pl-seg {
+  display: none;
+  align-items: center;
+  gap: 0;
+  margin: 12px 14px 0;
+  border: 1px solid var(--pl-border);
+  border-radius: var(--pl-radius-sm);
+  overflow: hidden;
+}
+
+.pl-root .pl-seg > [role="tab"] {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 7px 10px;
+  background: var(--pl-btn-tint-soft);
+  font-family: var(--pl-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--pl-text-dim);
+  text-align: center;
+  cursor: pointer;
+}
+
+.pl-root .pl-seg > [role="tab"][aria-selected="true"] {
+  background: var(--pl-accent-soft);
+  color: var(--pl-accent);
+}
+
+.pl-root[data-w="narrow"] {
+  padding: 0;
+}
+
+.pl-root[data-w="narrow"] .pl-card {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+
+.pl-root[data-w="narrow"] .pl-seg {
+  display: flex;
+}
+
+.pl-root[data-w="narrow"] .pl-body {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.pl-root[data-w="narrow"] .pl-rail {
+  border-right: 0;
+}
+
+.pl-root[data-w="narrow"] .pl-body[data-pane="browse"] .pl-inspect,
+.pl-root[data-w="narrow"] .pl-body[data-pane="edit"] .pl-rail {
+  display: none;
+}
+
+.pl-root[data-w="narrow"] .pl-head {
+  flex-wrap: wrap;
+  gap: 6px 9px;
+}
+
+.pl-root[data-w="narrow"] .pl-sub {
+  flex: 1 1 100%;
+  order: 5;
+}
+
+.pl-root[data-w="narrow"] .pl-stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pl-root[data-w="narrow"] .pl-stat:nth-child(3) {
+  border-left: 0;
+}
+
+.pl-root[data-w="narrow"] .pl-actions {
+  flex-wrap: wrap;
+}
+
+.pl-root[data-w="narrow"] .pl-btn-danger {
+  margin-left: 0;
+}
+
+.pl-root[data-w="narrow"] .pl-dialog {
+  width: calc(100% - 16px);
+  max-height: calc(100% - 16px);
+}

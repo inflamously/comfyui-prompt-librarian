@@ -62,9 +62,8 @@ async def remove_word_image_route(request):
     data = await _body(request)
     word = _str(data.get("word"))
     removed = await _offload(word_images.remove_word_image, _root(), word, _str(data.get("id")))
-    images = await _offload(word_images.list_word_images, _root())
-    return _json({"word": word, "removed": removed,
-                  "image": images.get(" ".join(word.split()).lower())})
+    image = await _offload(word_images.word_image_entry, _root(), word)
+    return _json({"word": word, "removed": removed, "image": image})
 
 
 @_route("post", "/word_image/order", op="orderWordImages",
